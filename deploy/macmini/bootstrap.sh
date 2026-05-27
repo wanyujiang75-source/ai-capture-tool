@@ -22,6 +22,11 @@ for arg in "$@"; do
 done
 
 mkdir -p "$CONFIG_DIR" "$RUNTIME_DIR" "$SHARED_DIR/releases"
+mkdir -p "$SHARED_DIR/tools/frida"
+
+if compgen -G "$ROOT_DIR/tools/frida/*" >/dev/null; then
+  cp -n "$ROOT_DIR"/tools/frida/* "$SHARED_DIR/tools/frida/" 2>/dev/null || true
+fi
 
 if [[ ! -f "$CONFIG_DIR/devices.macmini.json" ]]; then
   cp "$ROOT_DIR/config/devices.macmini.json.example" "$CONFIG_DIR/devices.macmini.json"

@@ -4,8 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
-TOOLS_DIR="${TOOLS_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)/tools/frida}"
 RUNTIME_DIR="${RUNTIME_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)/runtime}"
+DEFAULT_TOOLS_DIR="$(dirname "$RUNTIME_DIR")/tools/frida"
+TOOLS_DIR="${TOOLS_DIR:-$DEFAULT_TOOLS_DIR}"
 FRIDA_VERSION="${FRIDA_VERSION:-$(frida --version)}"
 FRIDA_ARCH="${FRIDA_ARCH:-android-arm64}"
 FRIDA_ASSET="frida-server-${FRIDA_VERSION}-${FRIDA_ARCH}.xz"
