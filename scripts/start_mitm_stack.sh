@@ -2,6 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -9,7 +11,7 @@ PROXY_PORT="${PROXY_PORT:-9090}"
 WEB_PORT="${WEB_PORT:-9091}"
 MITMWEB_PASSWORD="${MITMWEB_PASSWORD:-android-capture}"
 MITMPROXY_IGNORE_HOSTS="${MITMPROXY_IGNORE_HOSTS:-}"
-RUNTIME_DIR="${RUNTIME_DIR:-$(cd "$(dirname "$0")/.." && pwd)/runtime}"
+RUNTIME_DIR="${RUNTIME_DIR:-$ROOT_DIR/runtime}"
 LOG_FILE="$RUNTIME_DIR/mitmweb-${PROXY_PORT}.log"
 PID_FILE="$RUNTIME_DIR/mitmweb-${PROXY_PORT}.pid"
 LAUNCHER_FILE="$RUNTIME_DIR/launch-mitmweb-${PROXY_PORT}.sh"
@@ -78,13 +80,7 @@ else
   echo $! >"$PID_FILE"
 fi
 
-sleep 2
-
-if ! lsof -iTCP:"$PROXY_PORT" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-  echo "mitmweb failed to bind to port $PROXY_PORT" >&2
-  tail -n 20 "$LOG_FILE" 2>/dev/null >&2 || true
-  exit 1
-fi
+wait_for_listen_port "$PROXY_PORT" 30
 
 echo "mitmweb started"
 echo "proxy: 0.0.0.0:$PROXY_PORT"

@@ -75,13 +75,7 @@ else
   echo $! >"$PID_FILE"
 fi
 
-sleep 2
-
-if ! lsof -iTCP:"$PROXY_PORT" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
-  echo "mitmweb socks5 failed to bind to port $PROXY_PORT" >&2
-  tail -n 30 "$LOG_FILE" 2>/dev/null >&2 || true
-  exit 1
-fi
+wait_for_listen_port "$PROXY_PORT" 30
 
 echo "mitmweb socks5 started"
 echo "socks5 proxy: 0.0.0.0:$PROXY_PORT"
