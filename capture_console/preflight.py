@@ -16,6 +16,7 @@ PROJECT_PROCESS_MARKERS = (
     "mitmweb-",
     "launch-mitmweb",
     "web_password=android-capture",
+    "adb -L tcp:5037 fork-server",
 )
 
 
