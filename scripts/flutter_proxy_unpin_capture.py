@@ -317,7 +317,18 @@ def main():
         state["detached"] = False
         log(f"frida hooks loaded pid={target_pid}; keep this process running while capturing")
 
-    attach_to_pid(pid)
+    attach_deadline = time.time() + 45
+    while True:
+        try:
+            attach_to_pid(pid)
+            break
+        except Exception as exc:
+            log(f"initial frida attach failed pid={pid}: {type(exc).__name__}: {exc}")
+            if time.time() >= attach_deadline:
+                log("initial frida attach timed out; keeping hook process alive for reattach")
+                break
+            time.sleep(2)
+            pid = current_pid(args.serial, args.package) or pid
 
     stop = {"value": False}
 
