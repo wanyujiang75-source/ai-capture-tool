@@ -13,7 +13,12 @@ import { matchesMethod, methodFilterOptions } from "./flowMethods.js";
 import { compactTimestamp, flowTimingInfo, flowTimingRows, flowTimingSummary } from "./flowTiming.js";
 import { networkModeLabel, preflightSummary } from "./networkDiagnostics.js";
 import { scheduleDelayedReadinessRefresh } from "./readinessRefresh.js";
-import { setupCurrentStep, setupDeviceSummary, shouldShowSetupWizard } from "./setupWizard.js";
+import {
+  setupDeviceSummary,
+  setupNextAction,
+  setupStageSummary,
+  shouldShowSetupWizard,
+} from "./setupWizard.js";
 import { buildUploadInstallPath } from "./uploadPackage.js";
 import "./styles.css";
 
@@ -627,6 +632,27 @@ function App() {
   const residentStatus = residentSummary(devices);
   const showSetupWizard = shouldShowSetupWizard(setup, setupForcedOpen);
 
+  useEffect(() => {
+    if (!showSetupWizard) return undefined;
+    let cancelled = false;
+
+    const refreshSetup = async () => {
+      try {
+        const data = await api("/api/setup/check", { method: "POST" });
+        if (!cancelled) setSetup(data.setup);
+      } catch {
+        // Main status polling still reports user-visible errors; setup polling should stay quiet.
+      }
+    };
+
+    refreshSetup();
+    const timer = window.setInterval(refreshSetup, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [showSetupWizard, selectedDeviceId]);
+
   return (
     <main className="console-shell">
       <header className="topbar">
@@ -946,12 +972,16 @@ function SetupWizard({
   onComplete,
   onClose,
 }) {
-  const current = setupCurrentStep(setup);
-  const summary = setupDeviceSummary(setup?.devices || []);
+  const summary = setup?.completed
+    ? { ok: true, label: "初始化已完成" }
+    : setupDeviceSummary(setup?.devices || []);
+  const stages = setupStageSummary(setup);
   const selectedDevice = (setup?.devices || []).find((device) => device.device_id === selectedDeviceId) || setup?.devices?.[0];
+  const nextAction = setupNextAction(setup, selectedDevice, apps);
   const envChecks = setup?.env?.checks || [];
-  const steps = setup?.steps || [];
+  const failedEnvChecks = envChecks.filter((check) => !check.ok);
   const hasApp = apps.length > 0;
+  const googleRequired = Boolean(setup?.google_login_required);
   const selectedEmulatorReady = Boolean(
     selectedDevice?.emulator?.adb_online &&
     selectedDevice?.emulator?.boot_completed &&
@@ -977,46 +1007,41 @@ function SetupWizard({
       >
         <div className="setup-hero">
           <div>
-            <strong>{setup?.completed ? "初始化已完成" : "当前状态：服务已启动，设备尚未完成准入"}</strong>
-            <p>{current.label}：{current.description}</p>
+            <strong>{nextAction.title}</strong>
+            <p>{nextAction.description}</p>
           </div>
-          <span className={summary.ok ? "status-chip ok" : "status-chip warn"}>{summary.label}</span>
+          <div className="setup-hero-meta">
+            <span className={summary.ok ? "status-chip ok" : "status-chip warn"}>{summary.label}</span>
+            <small>每 5 秒自动检测</small>
+          </div>
         </div>
 
         <div className="setup-steps">
-          {steps.length ? steps.map((step) => (
-            <div className={step.current ? "setup-step current" : step.ok ? "setup-step ok" : "setup-step"} key={step.key}>
-              <span>{step.ok ? "✓" : step.current ? "•" : "○"}</span>
-              <strong>{step.label}</strong>
-              <small>{step.description}</small>
+          {stages.map((stage) => (
+            <div className={stage.current ? "setup-step current" : stage.ok ? "setup-step ok" : "setup-step"} key={stage.key}>
+              <span>{stage.ok ? "✓" : stage.current ? "•" : "○"}</span>
+              <strong>{stage.label}</strong>
+              <small>{stage.description}</small>
             </div>
-          )) : <p className="muted">点击“开始检查”读取部署环境状态。</p>}
+          ))}
         </div>
 
-        <div className="setup-grid">
-          <section className="setup-card">
+        <div className="setup-focus-grid">
+          <section className="setup-card setup-next-card">
             <div className="setup-card-head">
-              <strong>服务环境</strong>
-              <span className={setup?.env?.ok ? "status-chip ok" : "status-chip warn"}>{setup?.env?.ok ? "通过" : "待检查"}</span>
+              <strong>下一步</strong>
+              <span className={setup?.checked ? "status-chip ok" : "status-chip warn"}>{setup?.checked ? "已检测" : "检测中"}</span>
             </div>
-            <div className="setup-check-list">
-              {envChecks.length ? envChecks.map((check) => (
-                <details className={`setup-check ${check.ok ? "ok" : "fail"}`} key={check.name}>
-                  <summary>
-                    <span>{check.ok ? "绿灯" : "红灯"}</span>
-                    <strong>{check.name}</strong>
-                    <small>{check.user_message}</small>
-                  </summary>
-                  <p>{check.detail}</p>
-                  {check.fix ? <code>{check.fix}</code> : null}
-                </details>
-              )) : <p className="muted">尚未执行完整环境检查。</p>}
-            </div>
+            <h3>{nextAction.primary}</h3>
+            <p>{nextAction.description}</p>
+            {failedEnvChecks.length ? (
+              <p className="setup-warning">{failedEnvChecks.length} 个环境项需要处理，展开“完整诊断”查看。</p>
+            ) : null}
           </section>
 
           <section className="setup-card">
             <div className="setup-card-head">
-              <strong>设备准入</strong>
+              <strong>当前设备</strong>
               <select value={selectedDeviceId} onChange={(event) => onSelectDevice(event.target.value)}>
                 {(setup?.devices || []).map((device) => (
                   <option key={device.device_id} value={device.device_id}>
@@ -1028,8 +1053,11 @@ function SetupWizard({
             {selectedDevice ? (
               <div className="setup-device-status">
                 <StatusLine ok={selectedEmulatorReady} label="模拟器" text={selectedEmulatorMessage} />
-                <StatusLine ok={selectedDevice.emulator?.unlocked} label="解锁" text={selectedDevice.emulator?.unlocked ? "已解锁" : "需要手动解锁"} />
-                <StatusLine ok={selectedDevice.google_state?.ok} label="Google" text={selectedDevice.google_state?.user_message || "未检查"} />
+                <StatusLine
+                  ok={!googleRequired || selectedDevice.google_state?.ok}
+                  label={googleRequired ? "Google" : "Google 可选"}
+                  text={googleRequired ? selectedDevice.google_state?.user_message || "未检查" : "内部模式不强制登录"}
+                />
                 <StatusLine ok={selectedDevice.frida_state?.ok} label="Frida" text={selectedDevice.frida_state?.detail || "未检查"} />
                 <StatusLine ok={hasApp} label="应用" text={hasApp ? `${apps.length} 个应用可选` : "请上传 APK 或添加应用"} />
                 <StatusLine ok={setup?.validation_passed} label="冒烟" text={setup?.validation_passed ? "已有抓包校验通过" : "需要完成一次抓包校验"} />
@@ -1041,44 +1069,92 @@ function SetupWizard({
         </div>
 
         <div className="actions setup-actions">
-          <button onClick={onCheck} disabled={loading}>{setup?.checked ? "重新检查" : "开始检查"}</button>
-          <button className="secondary" onClick={onStartDevice} disabled={loading}>启动模拟器</button>
-          <button className="secondary" onClick={onOpenPreview} disabled={loading || !selectedDevice}>
-            查看模拟器
-          </button>
-          <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading || selectedDevice?.google_state?.ok}>去登录 Google</button>
-          <button className="secondary" onClick={onPrepareFrida} disabled={loading || !selectedDevice?.emulator?.adb_online}>启动 Frida</button>
-          <label className={loading ? "file-button disabled" : "file-button"}>
-            上传生产包 APK
-            <input
-              type="file"
-              accept=".apk,.apks,.zip"
-              disabled={loading}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onInstall("production", file);
-                event.target.value = "";
-              }}
-            />
-          </label>
-          <label className={loading ? "file-button disabled" : "file-button secondary-upload"}>
-            上传测试包 APK
-            <input
-              type="file"
-              accept=".apk,.apks,.zip"
-              disabled={loading}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onInstall("test", file);
-                event.target.value = "";
-              }}
-            />
-          </label>
-          <button className="secondary" onClick={onValidate} disabled={loading || !selectedApp}>启动抓包测试</button>
+          <button onClick={onCheck} disabled={loading}>自动检测</button>
+          {!selectedDevice?.emulator?.adb_online ? (
+            <button className="secondary" onClick={onStartDevice} disabled={loading}>启动模拟器</button>
+          ) : (
+            <button className="secondary" onClick={onOpenPreview} disabled={loading || !selectedDevice}>查看模拟器</button>
+          )}
+          {googleRequired && !selectedDevice?.google_state?.ok ? (
+            <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading}>去登录 Google</button>
+          ) : null}
+          {selectedDevice?.emulator?.adb_online && !selectedDevice?.frida_state?.ok ? (
+            <button className="secondary" onClick={onPrepareFrida} disabled={loading}>启动 Frida</button>
+          ) : null}
+          {!hasApp ? <UploadButtons loading={loading} onInstall={onInstall} /> : null}
+          {hasApp && !setup?.validation_passed ? (
+            <button className="secondary" onClick={onValidate} disabled={loading || !selectedApp}>启动抓包测试</button>
+          ) : null}
           <button onClick={onComplete} disabled={loading || !setup?.ready_to_complete}>完成初始化</button>
         </div>
+
+        <details className="setup-more">
+          <summary>完整诊断与高级操作</summary>
+          <div className="setup-more-grid">
+            <section>
+              <strong>环境诊断</strong>
+              <div className="setup-check-list">
+                {envChecks.length ? envChecks.map((check) => (
+                  <details className={`setup-check ${check.ok ? "ok" : "fail"}`} key={check.name}>
+                    <summary>
+                      <span>{check.ok ? "绿灯" : "红灯"}</span>
+                      <strong>{check.name}</strong>
+                      <small>{check.user_message}</small>
+                    </summary>
+                    <p>{check.detail}</p>
+                    {check.fix ? <code>{check.fix}</code> : null}
+                  </details>
+                )) : <p className="muted">正在自动检测环境。</p>}
+              </div>
+            </section>
+            <section>
+              <strong>全部操作</strong>
+              <div className="actions setup-actions compact-actions">
+                <button className="secondary" onClick={onStartDevice} disabled={loading}>启动模拟器</button>
+                <button className="secondary" onClick={onOpenPreview} disabled={loading || !selectedDevice}>查看模拟器</button>
+                <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading || selectedDevice?.google_state?.ok}>去登录 Google</button>
+                <button className="secondary" onClick={onPrepareFrida} disabled={loading || !selectedDevice?.emulator?.adb_online}>启动 Frida</button>
+                <UploadButtons loading={loading} onInstall={onInstall} />
+                <button className="secondary" onClick={onValidate} disabled={loading || !selectedApp}>启动抓包测试</button>
+              </div>
+            </section>
+          </div>
+        </details>
       </Panel>
     </section>
+  );
+}
+
+function UploadButtons({ loading, onInstall }) {
+  return (
+    <>
+      <label className={loading ? "file-button disabled" : "file-button"}>
+        上传生产包
+        <input
+          type="file"
+          accept=".apk,.apks,.zip"
+          disabled={loading}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onInstall("production", file);
+            event.target.value = "";
+          }}
+        />
+      </label>
+      <label className={loading ? "file-button disabled" : "file-button secondary-upload"}>
+        上传测试包
+        <input
+          type="file"
+          accept=".apk,.apks,.zip"
+          disabled={loading}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onInstall("test", file);
+            event.target.value = "";
+          }}
+        />
+      </label>
+    </>
   );
 }
 
