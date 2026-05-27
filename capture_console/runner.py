@@ -19,6 +19,7 @@ DESTRUCTIVE_COMMAND_PATTERNS = (
     ("adb", "pm", "clear"),
     ("adb", "uninstall"),
 )
+GOOGLE_LOGIN_REQUIRED = os.environ.get("REQUIRE_GOOGLE_LOGIN", "0").lower() in {"1", "true", "yes", "on"}
 RETAINED_ADB_SERIAL = "emulator-5554"
 RETAINED_AVD_NAME = "Medium_Phone_API_36.1"
 
@@ -655,10 +656,11 @@ class ConsoleRunner:
         )
 
         google = self.google_state(device_ok=device_ok)
+        google_ok = bool(google.get("ok")) or not GOOGLE_LOGIN_REQUIRED
         checks.append(
             health_check_item(
                 "google_login",
-                bool(google.get("ok")),
+                google_ok,
                 google.get("detail") or google.get("state", ""),
                 google.get("user_message", "Google 登录状态不可用。"),
                 google.get("fix", ""),
