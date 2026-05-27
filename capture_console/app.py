@@ -37,6 +37,7 @@ WEB_URL = "http://127.0.0.1:9091/?token=android-capture"
 IDLE_SLEEP_SECONDS = int(os.environ.get("CAPTURE_IDLE_SLEEP_SECONDS", "1800"))
 SETUP_COMPLETED_KEY = "setup_completed"
 SETUP_CHECKED_KEY = "setup_checked"
+GOOGLE_LOGIN_REQUIRED = os.environ.get("REQUIRE_GOOGLE_LOGIN", "0").lower() in {"1", "true", "yes", "on"}
 
 store = CaptureStore(RUNTIME_DIR / "console.db", devices_config_path=os.environ.get("CAPTURE_DEVICES_CONFIG"))
 runner = ConsoleRunner(ROOT_DIR)
@@ -364,7 +365,7 @@ def ensure_google_ready(device_runner: Any, *, device_id: str = DEFAULT_DEVICE_I
     emulator = device_runner.emulator_status() if hasattr(device_runner, "emulator_status") else {}
     device_ok = bool(emulator.get("adb_online", True))
     state = device_runner.google_state(device_ok=device_ok)
-    if not state.get("ok"):
+    if GOOGLE_LOGIN_REQUIRED and not state.get("ok"):
         raise HTTPException(status_code=409, detail=google_not_ready_detail(state, device_id=device_id))
     return state
     if not emulator.get("unlocked"):
@@ -682,7 +683,8 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
         )
         frida = frida_state_for_device(device, emulator)
         emulator_ready = bool(emulator.get("adb_online") and emulator.get("boot_completed") and emulator.get("unlocked"))
-        ready = bool(emulator_ready and google.get("ok") and frida.get("ok"))
+        google_ready = bool(google.get("ok")) or not GOOGLE_LOGIN_REQUIRED
+        ready = bool(emulator_ready and google_ready and frida.get("ok"))
         if ready:
             ready_device_count += 1
         devices.append({
@@ -712,7 +714,12 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
             ),
             "启动设备、等待 Android 系统完成启动，并在模拟器内解锁屏幕。",
         ),
-        ("google", "Google 登录", any(device.get("google_state", {}).get("ok") for device in devices), "在模拟器内登录 Google 账号。"),
+        (
+            "google",
+            "Google 登录",
+            True if not GOOGLE_LOGIN_REQUIRED else any(device.get("google_state", {}).get("ok") for device in devices),
+            "内部模式下不强制 Google 登录；如需 Google Play 账号能力，可在模拟器内登录。",
+        ),
         ("frida", "Frida 准入", any(device.get("frida_state", {}).get("ok") for device in devices), "启动 Frida server 并确认可连接。"),
         ("app", "上传或选择 App", app_count > 0, "上传 APK 或选择已有应用。"),
         ("smoke", "抓包冒烟测试", validation_passed, "完成一次抓包校验并捕获接口。"),
@@ -741,6 +748,7 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
         "checked": checked,
         "current_step": current_step,
         "ready_to_complete": bool(env.get("ok") and ready_device_count >= 1 and validation_passed),
+        "google_login_required": GOOGLE_LOGIN_REQUIRED,
         "env": env,
         "devices": devices,
         "app_count": app_count,

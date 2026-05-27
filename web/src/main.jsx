@@ -606,7 +606,8 @@ function App() {
   const emulator = selectedDevice?.emulator || status?.emulator;
   const emulatorReady = Boolean(emulator?.adb_online && emulator?.boot_completed);
   const emulatorUnlocked = Boolean(emulatorReady && emulator?.unlocked);
-  const googleReady = Boolean(selectedGoogleReady);
+  const googleRequired = Boolean(setup?.google_login_required);
+  const googleReady = !googleRequired || Boolean(selectedGoogleReady);
   const selectedMode = selectedApp?.default_mode || selectedDeviceCapture?.mode || "-";
   const captureRunning = selectedDeviceCapture?.health === "running" || Boolean(selectedDeviceActiveSession);
   const selectedSessionIsLive = Boolean(selectedSession?.id && selectedDeviceActiveSession?.id === selectedSession.id && sessionView === "live");
@@ -620,7 +621,7 @@ function App() {
       ? "请先启动模拟器，等待系统启动完成后再上传更新包。"
       : !emulator?.unlocked
         ? "请先解锁模拟器后再上传更新包。"
-        : !googleReady
+        : googleRequired && !googleReady
           ? selectedGoogleState.user_message || "请先完成 Google 登录后再上传更新包。"
         : "";
   const residentStatus = residentSummary(devices);
@@ -766,7 +767,7 @@ function App() {
               <button className="secondary" onClick={() => launchSelectedApp(selectedApp)} disabled={loading || !canOperateSelectedApp}>
                 打开应用
               </button>
-              <button className="secondary" onClick={openGoogleLogin} disabled={loading || googleReady || !selectedDeviceReady}>
+              <button className="secondary" onClick={openGoogleLogin} disabled={loading || selectedGoogleReady || !selectedDeviceReady}>
                 去登录 Google
               </button>
               <button onClick={() => startCapture(selectedApp, selectedApp?.default_mode)} disabled={loading || !canOperateSelectedApp || captureRunning}>
