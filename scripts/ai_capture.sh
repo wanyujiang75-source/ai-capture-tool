@@ -319,6 +319,46 @@ resolve_app_activity() {
   fi
 }
 
+python_can_import_frida() {
+  local candidate="${1:-}"
+  local resolved=""
+
+  [[ -n "$candidate" ]] || return 1
+  if [[ "$candidate" == */* ]]; then
+    [[ -x "$candidate" ]] || return 1
+    resolved="$candidate"
+  else
+    resolved="$(command -v "$candidate" 2>/dev/null || true)"
+    [[ -n "$resolved" ]] || return 1
+  fi
+
+  "$resolved" -c 'import frida' >/dev/null 2>&1
+}
+
+select_frida_python() {
+  local candidate
+  local resolved
+  for candidate in \
+    "${FRIDA_PYTHON_BIN:-}" \
+    "python3" \
+    "$ROOT_DIR/.venv-console/bin/python3" \
+    "$ROOT_DIR/.venv-console/bin/python" \
+    "$ROOT_DIR/.venv/bin/python3" \
+    "$ROOT_DIR/.venv/bin/python" \
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/python3"; do
+    if python_can_import_frida "$candidate"; then
+      if [[ "$candidate" == */* ]]; then
+        printf '%s\n' "$candidate"
+      else
+        resolved="$(command -v "$candidate")"
+        printf '%s\n' "$resolved"
+      fi
+      return 0
+    fi
+  done
+  return 1
+}
+
 start_flutter_socks_hook() {
   if [[ -z "$APP_PACKAGE" ]]; then
     echo "--package is required with --mode flutter-socks" >&2
@@ -326,16 +366,24 @@ start_flutter_socks_hook() {
   fi
   resolve_app_activity
 
-  local frida_python="${FRIDA_PYTHON_BIN:-/Applications/Xcode.app/Contents/Developer/usr/bin/python3}"
-  if [[ ! -x "$frida_python" ]]; then
-    frida_python="python3"
+  local frida_python=""
+  if ! frida_python="$(select_frida_python)"; then
+    cat >&2 <<EOF
+unable to find a Python interpreter with the frida package installed.
+Install console dependencies first:
+  python3 -m venv .venv-console
+  .venv-console/bin/pip install -r requirements-console.txt
+Or set FRIDA_PYTHON_BIN to a Python executable that can import frida.
+EOF
+    exit 1
   fi
+  local hook_path="$ROOT_DIR/.venv-console/bin:$ROOT_DIR/.venv/bin:$HOME/Library/Python/3.9/bin:$ANDROID_SDK_ROOT/platform-tools:/opt/homebrew/bin:/usr/local/bin"
 
   {
     printf '#!/usr/bin/env bash\n'
     printf 'echo $$ > %q\n' "$FRIDA_PID_FILE"
     printf 'cd %q\n' "$ROOT_DIR"
-    printf 'export PATH=%q:"$PATH"\n' "$HOME/Library/Python/3.9/bin:$ANDROID_SDK_ROOT/platform-tools:/opt/homebrew/bin:/usr/local/bin"
+    printf 'export PATH=%q:"$PATH"\n' "$hook_path"
     printf 'exec %q %q ' "$frida_python" "$SCRIPT_DIR/flutter_proxy_unpin_capture.py"
     printf '%q ' \
       --serial "$ADB_SERIAL" \
