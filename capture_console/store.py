@@ -254,6 +254,14 @@ class CaptureStore:
             self._ensure_column(conn, "capture_devices", "last_release_at", "TEXT")
             self._seed_default_devices(conn)
             self._ensure_system_state(conn)
+            self._dedupe_active_sessions(conn)
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_sessions_one_active_per_device
+                    ON capture_sessions(device_id)
+                    WHERE status IN ('starting', 'running', 'stopping')
+                """
+            )
 
     def _ensure_column(self, conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
         columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -364,6 +372,41 @@ class CaptureStore:
             INSERT INTO system_state (key, value, updated_at)
             VALUES ('state', 'running', ?)
             ON CONFLICT(key) DO NOTHING
+            """,
+            (timestamp,),
+        )
+
+    def _dedupe_active_sessions(self, conn: sqlite3.Connection) -> None:
+        """Normalize legacy/racy DB state before creating the active-session index."""
+        timestamp = now_iso()
+        conn.execute(
+            """
+            UPDATE capture_sessions
+            SET status='stopped',
+                stopped_at=COALESCE(stopped_at, ?),
+                updated_at=?
+            WHERE status IN ('starting', 'running', 'stopping')
+              AND id NOT IN (
+                SELECT MAX(id)
+                FROM capture_sessions
+                WHERE status IN ('starting', 'running', 'stopping')
+                GROUP BY device_id
+              )
+            """,
+            (timestamp, timestamp),
+        )
+        conn.execute(
+            """
+            UPDATE capture_devices
+            SET current_session_id=(
+                    SELECT id
+                    FROM capture_sessions
+                    WHERE capture_sessions.device_id=capture_devices.device_id
+                      AND status IN ('starting', 'running', 'stopping')
+                    ORDER BY id DESC
+                    LIMIT 1
+                ),
+                updated_at=?
             """,
             (timestamp,),
         )
@@ -625,8 +668,6 @@ class CaptureStore:
         web_url: str = "",
         error: str = "",
     ) -> Dict[str, Any]:
-        if status in ACTIVE_STATUSES and self.active_session(device_id=device_id) is not None:
-            raise ValueError("another capture session is already active on this device")
         if mode not in {"system", "flutter-socks"}:
             raise ValueError("mode must be system or flutter-socks")
 
@@ -634,38 +675,51 @@ class CaptureStore:
         device = self.get_device(device_id) or self.default_device()
         timestamp = now_iso()
         with self.connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO capture_sessions (
-                    platform, device_id, device_name, avd_name, adb_serial, proxy_port, web_port, frida_port,
-                    app_id, app_name, package_name, mode, outdir, status, web_url, error,
-                    started_at, created_at, updated_at
+            if status in ACTIVE_STATUSES:
+                placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
+                existing = conn.execute(
+                    f"SELECT id FROM capture_sessions WHERE status IN ({placeholders}) AND device_id=? LIMIT 1",
+                    (*ACTIVE_STATUSES, device["device_id"]),
+                ).fetchone()
+                if existing is not None:
+                    raise ValueError("another capture session is already active on this device")
+            try:
+                cur = conn.execute(
+                    """
+                    INSERT INTO capture_sessions (
+                        platform, device_id, device_name, avd_name, adb_serial, proxy_port, web_port, frida_port,
+                        app_id, app_name, package_name, mode, outdir, status, web_url, error,
+                        started_at, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    RETURNING *
+                    """,
+                    (
+                        app["platform"] if app else "android",
+                        device["device_id"],
+                        device.get("name", ""),
+                        device["avd_name"],
+                        device["adb_serial"],
+                        device["proxy_port"],
+                        device["web_port"],
+                        device["frida_port"],
+                        app_id,
+                        app["name"] if app else "",
+                        app["package_name"] if app else "",
+                        mode,
+                        outdir,
+                        status,
+                        web_url,
+                        error,
+                        timestamp if status in ACTIVE_STATUSES else None,
+                        timestamp,
+                        timestamp,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING *
-                """,
-                (
-                    app["platform"] if app else "android",
-                    device["device_id"],
-                    device.get("name", ""),
-                    device["avd_name"],
-                    device["adb_serial"],
-                    device["proxy_port"],
-                    device["web_port"],
-                    device["frida_port"],
-                    app_id,
-                    app["name"] if app else "",
-                    app["package_name"] if app else "",
-                    mode,
-                    outdir,
-                    status,
-                    web_url,
-                    error,
-                    timestamp if status in ACTIVE_STATUSES else None,
-                    timestamp,
-                    timestamp,
-                ),
-            )
+            except sqlite3.IntegrityError as exc:
+                if status in ACTIVE_STATUSES:
+                    raise ValueError("another capture session is already active on this device") from exc
+                raise
             session = dict(cur.fetchone())
             if status in ACTIVE_STATUSES:
                 conn.execute(

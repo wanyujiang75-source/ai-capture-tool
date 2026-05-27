@@ -11,6 +11,58 @@ from capture_console.store import CaptureStore
 
 
 class CaptureConsoleApiTests(unittest.TestCase):
+    def test_reconcile_replaces_stale_active_session_with_runtime_outdir(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class RuntimeRunner:
+            def for_device(self, device):
+                return self
+
+            def capture_status(self):
+                return {
+                    "health": "running",
+                    "exporter": "running",
+                    "frida_hook": "running",
+                    "outdir": "/tmp/current-runtime-capture",
+                    "package": "com.example.app",
+                    "mode": "flutter-socks",
+                    "web": "http://127.0.0.1:9091/?token=android-capture",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = RuntimeRunner()
+                app = app_module.store.create_app(
+                    name="Example",
+                    package_name="com.example.app",
+                    default_mode="flutter-socks",
+                )
+                stale = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="flutter-socks",
+                    outdir="/tmp/stale-db-capture",
+                    status="running",
+                )
+                current = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="flutter-socks",
+                    outdir="/tmp/current-runtime-capture",
+                    status="stopped",
+                )
+
+                app_module.reconcile_active_session("device-1")
+
+                self.assertEqual(app_module.store.get_session(stale["id"])["status"], "stopped")
+                self.assertEqual(app_module.store.get_session(current["id"])["status"], "running")
+                self.assertEqual(app_module.store.active_session("device-1")["id"], current["id"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_system_preflight_api_reports_port_conflicts(self):
         original_store = app_module.store
         original_collect = app_module.collect_port_listeners
@@ -566,6 +618,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
     def test_start_capture_rejects_when_google_account_is_missing(self):
         original_store = app_module.store
         original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
 
         class MissingGoogleRunner:
             def capture_status(self):
@@ -588,6 +641,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
                 app_module.runner = MissingGoogleRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = True
                 app = app_module.store.create_app(
                     platform="android",
                     name="MelodyCraft",
@@ -605,12 +659,17 @@ class CaptureConsoleApiTests(unittest.TestCase):
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_launch_app_rejects_when_google_play_is_missing(self):
         original_store = app_module.store
         original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
 
         class MissingPlayStoreRunner:
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True}
+
             def google_state(self, **kwargs):
                 return {
                     "ok": False,
@@ -628,6 +687,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
                 app_module.runner = MissingPlayStoreRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = True
                 app = app_module.store.create_app(
                     platform="android",
                     name="MelodyCraft",
@@ -645,9 +705,11 @@ class CaptureConsoleApiTests(unittest.TestCase):
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_package_install_readiness_rejects_when_google_login_is_missing(self):
         original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
 
         class MissingGoogleRunner:
             def emulator_status(self):
@@ -665,6 +727,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
 
         try:
             app_module.runner = MissingGoogleRunner()
+            app_module.GOOGLE_LOGIN_REQUIRED = True
 
             with self.assertRaises(HTTPException) as ctx:
                 app_module.ensure_emulator_ready_for_install(device_id="device-1")
@@ -673,6 +736,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
             self.assertEqual(ctx.exception.detail["state"], "not_logged_in")
         finally:
             app_module.runner = original_runner
+            app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_devices_api_recovers_running_capture_for_each_device(self):
         original_store = app_module.store

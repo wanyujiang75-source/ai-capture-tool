@@ -478,6 +478,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertIn("[redacted-email]", state["detail"])
 
     def test_health_check_includes_google_login_requirement(self):
+        from capture_console import runner as runner_module
         from capture_console.runner import CommandResult, ConsoleRunner
 
         class MissingGoogleRunner(ConsoleRunner):
@@ -497,11 +498,16 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                     return CommandResult(1, "", "Error: package not found")
                 return CommandResult(0, "", "")
 
-        health = MissingGoogleRunner("/tmp").health_check(
-            package_name="com.example.app",
-            mode="system",
-            activity="com.example.app/.MainActivity",
-        )
+        original_google_required = runner_module.GOOGLE_LOGIN_REQUIRED
+        try:
+            runner_module.GOOGLE_LOGIN_REQUIRED = True
+            health = MissingGoogleRunner("/tmp").health_check(
+                package_name="com.example.app",
+                mode="system",
+                activity="com.example.app/.MainActivity",
+            )
+        finally:
+            runner_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
         self.assertFalse(health["ok"])
         google = next(check for check in health["checks"] if check["name"] == "google_login")
@@ -545,6 +551,43 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                 status="running",
             )
             self.assertEqual(second["outdir"], "/tmp/capture-two")
+
+    def test_store_enforces_single_active_capture_at_database_level(self):
+        from capture_console.store import CaptureStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "console.db"
+            store = CaptureStore(db_path)
+            app = store.create_app(
+                name="MelodyCraft",
+                package_name="com.meta.inno.monopoly_sticker",
+                default_mode="flutter-socks",
+            )
+            first = store.create_session(
+                app_id=app["id"],
+                mode="flutter-socks",
+                outdir="/tmp/capture-one",
+                status="running",
+            )
+
+            with sqlite3.connect(db_path) as conn:
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute(
+                        """
+                        INSERT INTO capture_sessions (
+                            platform, device_id, device_name, avd_name, adb_serial, proxy_port, web_port, frida_port,
+                            app_id, app_name, package_name, mode, outdir, status, web_url, error,
+                            started_at, created_at, updated_at
+                        )
+                        SELECT
+                            platform, device_id, device_name, avd_name, adb_serial, proxy_port, web_port, frida_port,
+                            app_id, app_name, package_name, mode, ?, status, web_url, error,
+                            started_at, created_at, updated_at
+                        FROM capture_sessions
+                        WHERE id=?
+                        """,
+                        ("/tmp/capture-racy-duplicate", first["id"]),
+                    )
 
     def test_store_seeds_device_pool_and_locks_active_sessions_per_device(self):
         from capture_console.store import CaptureStore

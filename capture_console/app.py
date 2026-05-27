@@ -270,6 +270,11 @@ def reconcile_active_session(device_id: str = DEFAULT_DEVICE_ID) -> None:
         return
     if status.get("exporter") != "running" and status.get("frida_hook") != "running":
         store.update_session_status(active["id"], "stopped")
+        return
+    runtime_outdir = status.get("outdir") or ""
+    if runtime_outdir and active.get("outdir") != runtime_outdir:
+        store.update_session_status(active["id"], "stopped")
+        recover_running_session(status, device_id=device_id)
 
 
 def recover_running_session(status: Dict[str, str], *, device_id: str = DEFAULT_DEVICE_ID) -> None:
@@ -344,6 +349,15 @@ def ensure_emulator_ready_for_install(device_id: str = DEFAULT_DEVICE_ID) -> Non
                 "emulator": emulator,
             },
         )
+    if not emulator.get("unlocked"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "emulator is locked",
+                "user_message": "请先解锁模拟器后再上传更新包。",
+                "emulator": emulator,
+            },
+        )
     ensure_google_ready(device_runner, device_id=device_id)
 
 
@@ -368,15 +382,6 @@ def ensure_google_ready(device_runner: Any, *, device_id: str = DEFAULT_DEVICE_I
     if GOOGLE_LOGIN_REQUIRED and not state.get("ok"):
         raise HTTPException(status_code=409, detail=google_not_ready_detail(state, device_id=device_id))
     return state
-    if not emulator.get("unlocked"):
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "emulator is locked",
-                "user_message": "请先解锁模拟器后再上传更新包。",
-                "emulator": emulator,
-            },
-        )
 
 
 def version_code_number(value: Any) -> Optional[int]:
