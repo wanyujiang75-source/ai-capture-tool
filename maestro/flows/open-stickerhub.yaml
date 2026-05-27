@@ -1,0 +1,4 @@
+appId: com.meta.inno.sticker
+---
+- launchApp:
+    clearState: false

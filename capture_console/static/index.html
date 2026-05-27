@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI抓包工具</title>
+    <style>
+      :root {
+        color: #17201b;
+        background: #eef0e6;
+        font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 8% 8%, rgba(217, 120, 67, 0.22), transparent 28rem),
+          radial-gradient(circle at 92% 10%, rgba(48, 112, 84, 0.18), transparent 26rem),
+          linear-gradient(135deg, #f5f0de 0%, #e2eadb 100%);
+      }
+      header {
+        padding: 28px 34px 18px;
+        border-bottom: 1px solid rgba(23, 32, 27, 0.12);
+      }
+      h1 {
+        margin: 0;
+        font-size: 34px;
+        letter-spacing: -0.04em;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .mark {
+        display: inline-grid;
+        width: 44px;
+        height: 44px;
+        place-items: center;
+        border-radius: 12px;
+        background: #17201b;
+        color: #f8f3df;
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+      .subtitle {
+        margin-top: 4px;
+        color: #486052;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .warning {
+        margin-top: 10px;
+        max-width: 920px;
+        color: #7a3d20;
+        font-weight: 700;
+      }
+      main {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+        padding: 22px 34px 42px;
+      }
+      section {
+        background: rgba(255, 255, 247, 0.78);
+        border: 1px solid rgba(23, 32, 27, 0.12);
+        border-radius: 22px;
+        box-shadow: 0 20px 60px rgba(23, 32, 27, 0.08);
+        padding: 18px;
+      }
+      h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        box-sizing: border-box;
+        width: 100%;
+        border-radius: 13px;
+        border: 1px solid rgba(23, 32, 27, 0.16);
+        padding: 10px 12px;
+        font: inherit;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        margin: 10px 0;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #486052;
+      }
+      button {
+        cursor: pointer;
+        border: 0;
+        background: #17201b;
+        color: #f8f3df;
+        font-weight: 800;
+      }
+      button.secondary {
+        background: #d9dfcf;
+        color: #17201b;
+      }
+      button.danger {
+        background: #9b3d2b;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        border: 1px solid rgba(23, 32, 27, 0.1);
+        background: rgba(255, 255, 255, 0.58);
+        border-radius: 16px;
+        padding: 12px;
+      }
+      .selected-card {
+        border-color: rgba(23, 32, 27, 0.42);
+        box-shadow: inset 0 0 0 2px rgba(23, 32, 27, 0.1);
+      }
+      .muted {
+        color: #68736b;
+        font-size: 13px;
+      }
+      .pill {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 4px 9px;
+        background: #dbe7d8;
+        margin-right: 6px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .platforms {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .platform {
+        border-radius: 16px;
+        padding: 12px;
+        background: #eef3e4;
+      }
+      .platform.active {
+        background: #17201b;
+        color: #f8f3df;
+      }
+      .platform.active .muted {
+        color: #dbe7d8;
+      }
+      pre {
+        overflow: auto;
+        max-height: 460px;
+        padding: 14px;
+        border-radius: 16px;
+        background: #17201b;
+        color: #f8f3df;
+        font-size: 12px;
+      }
+      a {
+        color: #195e3c;
+        font-weight: 800;
+      }
+      @media (max-width: 980px) {
+        main {
+          grid-template-columns: 1fr;
+          padding: 16px;
+        }
+        header {
+          padding: 22px 16px 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark">TD</span>
+        <div>
+          <h1>AI抓包工具</h1>
+          <div class="subtitle">AI Packet Capture Console</div>
+        </div>
+      </div>
+      <div class="warning">移动端接口观测与取证工作台。仅限本机可信环境使用：页面会原样展示 Authorization、Token、请求体和响应体。</div>
+    </header>
+    <main>
+      <div class="stack">
+        <section>
+          <h2>平台入口</h2>
+          <div class="platforms">
+            <div class="platform active"><b>Android</b><div class="muted">当前已实现，固定使用 Medium_Phone_API_36.1 / emulator-5554。</div></div>
+            <div class="platform"><b>iOS</b><div class="muted">V1 仅保留入口，暂不执行 iOS 抓包。</div></div>
+          </div>
+        </section>
+        <section>
+          <h2>状态</h2>
+          <div id="status" class="muted">加载中...</div>
+          <div class="row" style="margin-top: 12px">
+            <button onclick="refreshAll()">刷新</button>
+            <button class="danger" onclick="cleanup()">一键清理</button>
+          </div>
+        </section>
+        <section>
+          <h2>应用库</h2>
+          <label>平台
+            <select id="appPlatform">
+              <option value="android">Android</option>
+              <option value="ios">iOS（预留入口，暂不可抓包）</option>
+            </select>
+          </label>
+          <label>名称 <input id="appName" value="MelodyCraft" /></label>
+          <label>包名 <input id="appPkg" value="com.meta.inno.monopoly_sticker" /></label>
+          <label>Activity <input id="appActivity" value="com.meta.inno.monopoly_sticker/.MainActivity" /></label>
+          <label>默认模式
+            <select id="appMode">
+              <option value="flutter-socks">flutter-socks</option>
+              <option value="system">system</option>
+            </select>
+          </label>
+          <label>备注 <textarea id="appNotes">Google Play AVD 已登录</textarea></label>
+          <button onclick="saveApp().catch((error) => alert(error.message))">保存应用</button>
+          <div id="apps" class="stack" style="margin-top: 12px"></div>
+        </section>
+        <section>
+          <h2>抓包任务</h2>
+          <label>应用
+            <select id="captureApp"></select>
+          </label>
+          <label>模式
+            <select id="captureMode">
+              <option value="">使用应用默认值</option>
+              <option value="flutter-socks">flutter-socks</option>
+              <option value="system">system</option>
+            </select>
+          </label>
+          <div class="row">
+            <button onclick="startCapture().catch((error) => alert(error.message))">启动抓包</button>
+            <button class="danger" onclick="stopCapture().catch((error) => alert(error.message))">停止抓包</button>
+          </div>
+          <p><a href="http://127.0.0.1:9091/?token=android-capture#/flows" target="_blank">打开 mitmweb</a></p>
+        </section>
+      </div>
+      <section>
+        <h2>历史与接口</h2>
+        <div id="sessions" class="stack"></div>
+        <hr />
+        <div id="flows" class="stack"></div>
+        <div id="detail"></div>
+      </section>
+    </main>
+    <script>
+      const api = async (path, options = {}) => {
+        const res = await fetch(path, {
+          headers: { "content-type": "application/json" },
+          ...options,
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const ct = res.headers.get("content-type") || "";
+        return ct.includes("application/json") ? res.json() : res.text();
+      };
+
+      const esc = (text) => String(text ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m]));
+      const pretty = (value) => JSON.stringify(value, null, 2);
+
+      async function refreshStatus() {
+        const status = await api("/api/status");
+        document.getElementById("status").innerHTML = `
+          <div><span class="pill">${esc(status.health)}</span><span class="pill">${esc(status.mode)}</span></div>
+          <div class="muted">proxy: ${esc(status.proxy)} | exporter: ${esc(status.exporter)} | frida: ${esc(status.frida_hook)}</div>
+          <div class="muted">foreground: ${esc(status.foreground || "-")}</div>
+        `;
+      }
+
+      async function refreshApps() {
+        const data = await api("/api/apps");
+        const select = document.getElementById("captureApp");
+        const previous = select.value;
+        select.innerHTML = '<option value="">请选择应用</option>' + data.apps.map((app) => `
+          <option value="${app.id}" data-platform="${esc(app.platform || "android")}">
+            ${esc(app.name)} · ${esc(app.package_name)} · ${esc(app.platform || "android")}
+          </option>
+        `).join("");
+        if (previous && Array.from(select.options).some((option) => option.value === previous)) {
+          select.value = previous;
+        } else {
+          const firstAndroid = data.apps.find((app) => (app.platform || "android") === "android") || data.apps[0];
+          select.value = firstAndroid ? String(firstAndroid.id) : "";
+        }
+        document.getElementById("apps").innerHTML = data.apps.map((app) => `
+          <div class="card ${String(app.id) === select.value ? "selected-card" : ""}">
+            <b>${esc(app.name)}</b>
+            <div class="muted">${esc(app.package_name)}</div>
+            <div>
+              <span class="pill">${esc(app.platform || "android")}</span>
+              <span class="pill">${esc(app.default_mode)}</span>
+            </div>
+            <button class="secondary" onclick="selectApp(${app.id})">选择</button>
+          </div>
+        `).join("") || '<div class="muted">还没有应用。</div>';
+      }
+
+      async function selectApp(id) {
+        document.getElementById("captureApp").value = String(id);
+        await refreshApps();
+      }
+
+      async function refreshSessions() {
+        const data = await api("/api/captures");
+        document.getElementById("sessions").innerHTML = data.sessions.map((session) => `
+          <div class="card">
+            <b>#${session.id} ${esc(session.app_name || session.package_name || "Imported")}</b>
+            <div class="muted">${esc(session.status)} · ${esc(session.mode)} · ${esc(session.outdir)}</div>
+            <button class="secondary" onclick="openSession(${session.id})">查看接口</button>
+          </div>
+        `).join("") || '<div class="muted">暂无历史任务。</div>';
+      }
+
+      async function saveApp() {
+        await api("/api/apps", {
+          method: "POST",
+          body: JSON.stringify({
+            platform: document.getElementById("appPlatform").value,
+            name: document.getElementById("appName").value,
+            package_name: document.getElementById("appPkg").value,
+            activity: document.getElementById("appActivity").value,
+            default_mode: document.getElementById("appMode").value,
+            notes: document.getElementById("appNotes").value,
+          }),
+        });
+        await refreshApps();
+      }
+
+      async function startCapture() {
+        const select = document.getElementById("captureApp");
+        const appId = Number(select.value);
+        const platform = select.selectedOptions[0]?.dataset.platform || "android";
+        if (!appId) throw new Error("请先选择应用");
+        if (platform !== "android") throw new Error("当前版本只支持 Android 抓包；iOS 仅预留入口，暂未实现。");
+        const mode = document.getElementById("captureMode").value || null;
+        await api("/api/captures/start", { method: "POST", body: JSON.stringify({ app_id: appId, mode }) });
+        await refreshAll();
+      }
+
+      async function stopCapture() {
+        await api("/api/captures/stop", { method: "POST" });
+        await refreshAll();
+      }
+
+      async function cleanup() {
+        await api("/api/cleanup", { method: "POST" });
+        await refreshAll();
+      }
+
+      async function openSession(id) {
+        const data = await api(`/api/captures/${id}/flows`);
+        document.getElementById("flows").innerHTML = data.flows.slice().reverse().map((flow) => `
+          <div class="card">
+            <div><span class="pill">${esc(flow.method)}</span><span class="pill">${esc(flow.status)}</span><b>${esc(flow.path)}</b></div>
+            <div class="muted">${esc(flow.url)}</div>
+            <button class="secondary" onclick="openFlow(${id}, ${JSON.stringify(flow.id)})">详情</button>
+          </div>
+        `).join("") || '<div class="muted">暂无接口。</div>';
+        document.getElementById("detail").innerHTML = "";
+      }
+
+      async function openFlow(sessionId, flowId) {
+        const encodedFlowId = encodeURIComponent(flowId);
+        const data = await api(`/api/captures/${sessionId}/flows/${encodedFlowId}`);
+        const curl = await api(`/api/captures/${sessionId}/flows/${encodedFlowId}/curl`);
+        document.getElementById("detail").innerHTML = `
+          <h2>接口详情</h2>
+          <div class="card"><b>${esc(data.method)} ${esc(data.url)}</b><div class="muted">status: ${esc(data.status)}</div></div>
+          <h3>cURL</h3><pre>${esc(curl)}</pre>
+          <h3>Request Headers</h3><pre>${esc(pretty(data.meta_json?.summary?.request_headers || []))}</pre>
+          <h3>Request</h3><pre>${esc(data.request_json !== null ? pretty(data.request_json) : data.request_text)}</pre>
+          <h3>Response Headers</h3><pre>${esc(pretty(data.meta_json?.summary?.response_headers || []))}</pre>
+          <h3>Response</h3><pre>${esc(data.response_json !== null ? pretty(data.response_json) : data.response_text)}</pre>
+          <h3>Files</h3><pre>${esc(pretty(data.files))}</pre>
+        `;
+      }
+
+      async function refreshAll() {
+        try {
+          await refreshStatus();
+          await refreshApps();
+          await refreshSessions();
+        } catch (error) {
+          alert(error.message);
+        }
+      }
+
+      refreshAll();
+      setInterval(refreshStatus, 5000);
+    </script>
+  </body>
+</html>

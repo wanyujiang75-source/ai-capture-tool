@@ -1,0 +1,52 @@
+{
+  "devices": [
+    {
+      "device_id": "device-1",
+      "name": "Mac mini 常驻设备 1",
+      "avd_name": "Capture_AVD_01",
+      "adb_serial": "emulator-5554",
+      "proxy_port": 9090,
+      "web_port": 9091,
+      "frida_port": 27042,
+      "enabled": 1,
+      "resident": 1,
+      "idle_release_minutes": 0
+    },
+    {
+      "device_id": "device-2",
+      "name": "Mac mini 常驻设备 2",
+      "avd_name": "Capture_AVD_02",
+      "adb_serial": "emulator-5556",
+      "proxy_port": 9100,
+      "web_port": 9101,
+      "frida_port": 27142,
+      "enabled": 1,
+      "resident": 1,
+      "idle_release_minutes": 0
+    },
+    {
+      "device_id": "device-3",
+      "name": "Mac mini 按需设备 3",
+      "avd_name": "Capture_AVD_03",
+      "adb_serial": "emulator-5558",
+      "proxy_port": 9110,
+      "web_port": 9111,
+      "frida_port": 27242,
+      "enabled": 1,
+      "resident": 0,
+      "idle_release_minutes": 10
+    },
+    {
+      "device_id": "device-4",
+      "name": "Mac mini 预留设备 4",
+      "avd_name": "Capture_AVD_04",
+      "adb_serial": "emulator-5560",
+      "proxy_port": 9120,
+      "web_port": 9121,
+      "frida_port": 27342,
+      "enabled": 0,
+      "resident": 0,
+      "idle_release_minutes": 10
+    }
+  ]
+}

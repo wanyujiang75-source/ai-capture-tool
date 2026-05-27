@@ -1,0 +1,76 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.venv-*/
+
+# Node / frontend
+web/node_modules/
+web/dist/
+node_modules/
+
+# Local browser/test artifacts
+.playwright-cli/
+.superpowers/
+output/
+*.pid
+
+# Runtime state: contains captures, logs, DBs, pids, uploaded APKs, tokens/cookies.
+runtime/
+
+# Release bundles are generated artifacts.
+release/*.tar.gz
+release/*.zip
+release/*.sha256
+
+# Downloaded/vendor binaries.
+tools/frida/
+tools/rootAVD/Magisk.zip
+tools/httptoolkit-frida/**
+!tools/httptoolkit-frida/
+!tools/httptoolkit-frida/LICENSE
+!tools/httptoolkit-frida/README.md
+!tools/httptoolkit-frida/config.js
+!tools/httptoolkit-frida/frida-script.js
+!tools/httptoolkit-frida/native-connect-hook.js
+!tools/httptoolkit-frida/native-tls-hook.js
+!tools/httptoolkit-frida/android/
+tools/httptoolkit-frida/android/**
+!tools/httptoolkit-frida/android/android-disable-flutter-certificate-pinning.js
+!tools/httptoolkit-frida/android/android-proxy-override.js
+!tools/httptoolkit-frida/android/android-system-certificate-injection.js
+
+tools/nviso-disable-flutter-tls/**
+!tools/nviso-disable-flutter-tls/
+!tools/nviso-disable-flutter-tls/README.md
+!tools/nviso-disable-flutter-tls/disable-flutter-tls.js
+
+tools/rootAVD/**
+!tools/rootAVD/
+!tools/rootAVD/LICENSE
+!tools/rootAVD/README.md
+!tools/rootAVD/CompatibilityChart.md
+!tools/rootAVD/frida.rc
+!tools/rootAVD/rootAVD.sh
+!tools/rootAVD/rootAVD.bat
+
+# Nested vendor repo metadata. Keep source files, not their local git histories.
+tools/**/.git/
+
+# Android packages and capture dumps.
+*.apk
+*.apks
+*.aab
+*.pcap
+*.har
+*.db
+*.sqlite
+
+# Local environment overrides.
+.env
+.env.*
+!.env.example

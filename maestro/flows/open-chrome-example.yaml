@@ -1,0 +1,21 @@
+appId: com.android.chrome
+---
+- launchApp:
+    clearState: false
+- tapOn:
+    text: "Use without an account"
+    optional: true
+- tapOn:
+    text: "No thanks"
+    optional: true
+- tapOn:
+    text: "Don’t allow"
+    optional: true
+- tapOn:
+    text: "Got it"
+    optional: true
+- openLink: "https://example.com"
+- tapOn:
+    text: "Got it"
+    optional: true
+- assertVisible: "Example Domain"
