@@ -667,10 +667,10 @@ function App() {
           <span className={selectedDeviceReady ? "status-chip ok" : "status-chip warn"}>
             {selectedDeviceReady ? "当前设备在线" : "当前设备未就绪"}
           </span>
-          <span className="status-chip">系统 {status?.system?.state || "running"}</span>
           <span className={residentStatus.ready ? "status-chip ok" : "status-chip warn"}>{residentStatus.label}</span>
-          <span className={`status-chip ${googleStateClass(selectedGoogleState)}`}>{googleStateLabel(selectedGoogleState)}</span>
-          <span className="status-chip">Android V1</span>
+          {googleRequired ? (
+            <span className={`status-chip ${googleStateClass(selectedGoogleState)}`}>{googleStateLabel(selectedGoogleState)}</span>
+          ) : null}
           <button className="ghost-button" onClick={checkSetup} disabled={loading}>环境检查</button>
           <button className="ghost-button" onClick={() => runAction("刷新状态", loadAll)} disabled={loading}>刷新</button>
           <a className="ghost-button" href={mitmWebUrl} target="_blank" rel="noreferrer">
