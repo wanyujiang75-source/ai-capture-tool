@@ -11,6 +11,7 @@ FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-7002}"
 START_FRONTEND_DEV="${START_FRONTEND_DEV:-0}"
 OPEN_WEB="${OPEN_WEB:-1}"
+source "$ROOT_DIR/scripts/console_python.sh"
 
 BACKEND_PID_FILE="$RUNTIME_DIR/web-backend.pid"
 FRONTEND_PID_FILE="$RUNTIME_DIR/web-frontend.pid"
@@ -18,8 +19,8 @@ BACKEND_LOG="$RUNTIME_DIR/web-backend.log"
 FRONTEND_LOG="$RUNTIME_DIR/web-frontend.log"
 BACKEND_LAUNCHER_FILE="$RUNTIME_DIR/launch-web-backend.sh"
 FRONTEND_LAUNCHER_FILE="$RUNTIME_DIR/launch-web-frontend.sh"
-BACKEND_SCREEN_SESSION="ai-capture-web-backend"
-FRONTEND_SCREEN_SESSION="ai-capture-web-frontend"
+BACKEND_SCREEN_SESSION="${BACKEND_SCREEN_SESSION:-ai-capture-web-backend}"
+FRONTEND_SCREEN_SESSION="${FRONTEND_SCREEN_SESSION:-ai-capture-web-frontend}"
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -29,17 +30,7 @@ is_port_listening() {
 }
 
 ensure_backend_env() {
-  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-    if [[ -z "$CONSOLE_PYTHON" ]]; then
-      for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
-        if command -v "$candidate" >/dev/null 2>&1; then
-          CONSOLE_PYTHON="$(command -v "$candidate")"
-          break
-        fi
-      done
-    fi
-    "${CONSOLE_PYTHON:-python3}" -m venv "$VENV_DIR"
-  fi
+  ensure_console_venv
 
   if [[ "${CONSOLE_SKIP_INSTALL:-0}" != "1" ]]; then
     "$VENV_DIR/bin/python" -m pip install -r "$ROOT_DIR/requirements-console.txt" >/dev/null
@@ -159,7 +150,7 @@ if [[ "$START_FRONTEND_DEV" == "1" ]]; then
 fi
 
 echo
-echo "AI抓包工具已启动："
+echo "TraceDeck 已启动："
 echo "- 页面入口: http://$BACKEND_HOST:$BACKEND_PORT"
 echo "- 后端 API : http://$BACKEND_HOST:$BACKEND_PORT"
 if [[ "$START_FRONTEND_DEV" == "1" ]]; then
@@ -167,10 +158,10 @@ if [[ "$START_FRONTEND_DEV" == "1" ]]; then
 fi
 echo
 echo "后续操作全部在 Web 页面完成："
-echo "1. 点击“启动模拟器”启动保留 AVD"
-echo "2. 选择应用并启动抓包"
-echo "3. 在模拟器里手动操作 App"
-echo "4. 在页面接口分析区查看请求和响应"
+echo "1. 连接 Android 设备或启动本机模拟器"
+echo "2. 在页面发现设备并添加目标 App"
+echo "3. 启动抓包后手动操作 App"
+echo "4. 在接口分析区查看请求、响应和 cURL"
 echo
 echo "logs:"
 echo "- $BACKEND_LOG"

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .device_discovery import parse_adb_devices
 from .network import build_device_network_state
 from .status import parse_capture_status
 
@@ -75,7 +76,8 @@ class ConsoleRunner:
         self.mitm_password = mitm_password
         self.capture_instance = capture_instance
         self.allow_non_retained = allow_non_retained
-        self.adb_bin = Path.home() / "Library/Android/sdk/platform-tools/adb"
+        sdk_root = Path(os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
+        self.adb_bin = sdk_root / "platform-tools" / "adb"
         if not self.adb_bin.exists():
             self.adb_bin = Path("adb")
 
@@ -176,6 +178,12 @@ class ConsoleRunner:
 
     def adb(self, args: List[str], *, timeout: int = 20) -> CommandResult:
         return self.run([str(self.adb_bin), "-s", self.adb_serial, *args], timeout=timeout)
+
+    def discover_adb_devices(self) -> List[Dict[str, str]]:
+        result = self.run([str(self.adb_bin), "devices", "-l"], timeout=10)
+        if not result.ok:
+            return []
+        return parse_adb_devices(result.stdout)
 
     def emulator_status(self) -> Dict[str, Any]:
         process = self.run(["pgrep", "-af", f"emulator.*-avd {self.avd_name}"], timeout=10)

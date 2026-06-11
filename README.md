@@ -1,266 +1,112 @@
-# AI抓包工具
+# TraceDeck
 
-Local Web console for long-lived Android packet capture and API analysis.
+TraceDeck 是 macOS 优先的本机 Android 抓包工作台。下载源码或 release 包后，在自己的 Mac 上运行 `./setup.sh` 和 `./start.sh`，打开 `http://127.0.0.1:7001`，即可通过页面完成环境检查、设备发现、App 添加、抓包启动、接口查看和 cURL 导出。
 
-This workspace contains helper scripts and a retained daily-use Android emulator
-based on:
+项目默认是空状态：不预置 App、不预置设备池、不包含历史抓包结果，也不绑定 MelodyCraft、Jenkins、服务器或固定 AVD。
 
-- Retained Android capture AVD: `Medium_Phone_API_36.1`
-- Legacy rootable lab AVD: `lab-android35-gapi`
-- `mitmweb` on host ports `9090` and `9091`
-- mitmweb UI token: `android-capture`
-- Android global proxy: `10.0.2.2:9090`
-- Android global proxy setup for the retained Google Play emulator
-- Optional temporary system CA overlay for rootable lab emulators
-- Maestro for Playwright-style Android UI automation
+## 快速开始
 
-The Google Play emulator is a non-root production build. It keeps installed apps
-and Google account state, but HTTPS decryption may require a user CA install and
-some apps may still reject interception because of certificate pinning.
+```bash
+git clone <your-tracedeck-repo-url>
+cd TraceDeck
+./setup.sh
+./start.sh
+```
 
-Emulator app data is persistent as long as you keep using the same AVD and do
-not wipe or delete it. The retained Android emulator for everyday use and
-capture is `Medium_Phone_API_36.1`; installed apps and the Google account should
-continue to exist there across restarts.
+打开：
 
-## Prerequisites
+```text
+http://127.0.0.1:7001
+```
 
-- Android SDK at `$HOME/Library/Android/sdk`
-- An existing Google Play AVD named `Medium_Phone_API_36.1`
-- Optional rootable lab AVD named `lab-android35-gapi`
-- `adb`, `openssl`, and `mitmweb` available on the host
-- Optional Android UI automation: `maestro`
+首次抓包流程：
 
-## Typical flow
+1. 在 Mac 上启动一个 Android 模拟器，或连接一台开启 USB 调试的 Android 真机。
+2. 在页面执行环境检查和设备发现。
+3. 添加目标 App：手动输入包名/Activity、从已安装 App 列表选择，或上传 APK 后解析。
+4. 点击默认的 `auto` 自动抓包；需要排查时再手动切换 `system` 或 `flutter-socks`。
+5. 手动操作 App，在接口列表查看请求、响应和 cURL。
+6. 停止抓包后，结果保存在 `runtime/captures/<session>/`。
 
-Start the Web backend and frontend only:
+## 依赖
 
-`./start_capture.sh`
+macOS 首版需要：
 
-Then open the frontend page:
+- Python 3.12+
+- Node.js 和 npm
+- Android Studio 或 Android SDK
+- `adb`、`emulator`、`sdkmanager`、`avdmanager`
+- `mitmproxy`，提供 `mitmweb`
+- Frida 工具链，提供 `frida` 和 `frida-ps`
 
-`http://127.0.0.1:7002`
+常见安装方式：
 
-Daily operation is handled in the Web page:
+```bash
+brew install node mitmproxy
+python3 -m pip install frida-tools
+```
 
-1. Click `启动模拟器` to start the retained AVD from the page.
-2. Add or select the target Android app.
-3. Click `按默认模式启动`, `system`, or `flutter-socks` to start capture.
-4. Operate the app manually in the emulator.
-5. Use the interface analysis panel to view request/response data and export cURL.
+如果首次执行 `./setup.sh` 时 PyPI 或 npm 下载较慢，可以临时指定镜像或代理：
 
-The Web console is the recommended long-term entrypoint. It keeps an app library,
-starts and stops one capture session at a time, links to mitmweb, indexes
-`runtime/captures/<session>/candidates.tsv`, and shows full request/response
-details with cURL export. It still delegates capture work to the existing
-`ai_capture.sh`, `ai_capture_stop.sh`, `ai_capture_status.sh`, mitmproxy, and
-Frida scripts instead of replacing them.
+```bash
+export PIP_INDEX_URL="https://pypi.org/simple"
+export PIP_PROXY=
+export npm_config_registry="https://registry.npmjs.org/"
+./setup.sh
+```
 
-Console capture task records are project-run scoped. When the Web service is
-closed and started again, the page clears previous capture link/interface
-records from SQLite while keeping the app library and raw files under
-`runtime/captures/`.
+在公司网络或本机代理环境下，如果 pip 报 `127.0.0.1:<port>` 的 502/超时，先确认该代理是否可用；不需要代理时可用 `PIP_PROXY=` 覆盖。
 
-`./start_capture.sh` is now a Web service launcher. It does not start the
-emulator and does not start packet capture automatically.
+Android SDK 默认从 `$ANDROID_SDK_ROOT` 或 `$HOME/Library/Android/sdk` 读取。也可以编辑 `config/local.json`：
 
-Services:
+```json
+{
+  "console": { "host": "127.0.0.1", "port": 7001 },
+  "android": { "sdk_root": "/Users/you/Library/Android/sdk" },
+  "capture": {
+    "proxy_port_start": 9090,
+    "web_port_start": 9091,
+    "frida_port_start": 27042,
+    "mitmweb_token": "android-capture"
+  }
+}
+```
 
-- Frontend: `http://127.0.0.1:7002`
-- Backend API: `http://127.0.0.1:7001`
+`config/local.json` 是本机文件，不会进入发布包。
 
-Stop the Web services:
+## 抓包模式
 
-`./scripts/stop_web_services.sh`
+- `auto`：默认模式。TraceDeck 会优先使用该 App 上次成功的抓包模式；没有历史结果时依次尝试 `system` 和 `flutter-socks`。App 冒烟校验会在无接口或启动失败时切换候选模式，并记住成功模式。
+- `system`：通过 Android 系统代理配合 mitmproxy 抓包。
+- `flutter-socks`：通过 Frida/Flutter hook 辅助抓包，适用于部分 Flutter App。
 
-If you intentionally need the old direct CLI capture flow, use:
+启动抓包前，后端会检查设备在线、App 可启动、端口可用，以及 `flutter-socks` 模式下 Frida 是否可连接。端口被其他项目占用时只报错，不会 kill 未知进程。自动校验过程中如果某个模式失败，会停止当前临时抓包并清理 Android 代理后再尝试下一个模式。
 
-`./scripts/ai_capture.sh android`
+## 重要限制
 
-If `npm` is available, the frontend dev service is started from `web/`. If you
-only need the backend-served built production UI, run `./scripts/start_console.sh`
-and open `http://127.0.0.1:7001`.
+- App 使用证书绑定、内置 CA、双向 TLS 或不信任用户 CA 时，HTTPS 响应可能无法解密。
+- Google 登录、支付、风控等流程可能因为代理、证书或设备状态而失败。
+- 真机抓包需要用户自行处理证书安装、USB 调试授权和系统代理限制。
+- iOS 仅保留数据模型和 UI 扩展边界，当前版本不执行 iOS 抓包。
 
-Do not pass a target URL to the discovery launcher. Start capture, operate any
-app on the emulator, then read the discovered likely business APIs from:
+## 发布包
 
-- `runtime/captures/ai-discover-*/summary.md`
-- `runtime/captures/ai-discover-*/candidates.tsv`
-- `runtime/captures/ai-discover-*/*.request.*`
-- `runtime/captures/ai-discover-*/*.response.*`
+生成干净 release 包：
 
-Check or stop the current discovery worker:
+```bash
+./release/package.sh
+```
 
-`./scripts/ai_capture_status.sh`
+发布包包含后端代码、抓包脚本、`web/dist`、配置模板、README、`setup.sh`、`start.sh` 和 `requirements-console.txt`。
 
-`./scripts/ai_capture_stop.sh`
+发布包排除：
 
-Compatibility Android proxy setup on the retained emulator:
+- `runtime/`
+- `.venv*`
+- `web/node_modules`
+- `config/local.json`
+- 抓包结果、上传 APK、本机数据库、cookie、token 和账号状态
 
-`./scripts/play_capture_up.sh`
+## Legacy
 
-Prepare a user CA manually only if you intentionally use a non-root emulator:
-
-`./scripts/install_play_user_ca.sh`
-
-Run a Maestro UI automation flow on the Play emulator:
-
-`./scripts/maestro_run.sh`
-
-1. Bring the whole lab up in one command:
-
-   `./scripts/lab_up.sh`
-
-Everyday Android emulator:
-
-`./scripts/start_android_emulator.sh`
-
-Compatibility launcher for the retained Android AVD:
-
-`./scripts/start_play_emulator.sh`
-
-2. Or run the individual steps:
-
-   Start the emulator:
-
-   `./scripts/start_lab_emulator.sh`
-
-3. Start mitmweb:
-
-   `./scripts/start_mitm_stack.sh`
-
-4. Point Android at the host proxy:
-
-   `./scripts/apply_android_proxy.sh`
-
-5. Inject the mitmproxy CA into the emulator trust store:
-
-   `./scripts/install_mitm_system_ca.sh`
-
-6. Verify the environment:
-
-   `./scripts/verify_lab.sh`
-
-7. Optionally start Frida on the emulator for pinning bypass work:
-
-   `./scripts/start_frida_server.sh`
-
-8. Stop Frida when you no longer need it:
-
-   `./scripts/stop_frida_server.sh`
-
-9. Tear the lab down when needed:
-
-   `./scripts/lab_down.sh`
-
-## User CA fallback
-
-The default retained emulator `Medium_Phone_API_36.1` is non-root, so use this
-flow when HTTPS decryption is needed and the app trusts user CAs.
-
-1. Start the Play capture flow:
-
-   `./scripts/play_capture_up.sh`
-
-2. If the emulator was reset or the user CA is missing, prepare the CA:
-
-   `./scripts/install_play_user_ca.sh`
-
-3. Finish the Android Settings prompts on the emulator:
-
-   `More security & privacy -> Encryption & credentials -> Install a certificate -> CA certificate`
-
-4. Accept `INSTALL ANYWAY`, enter PIN `0000`, then choose
-   `Downloads/mitmproxy-ca-cert.cer.crt`.
-
-5. Verify it under:
-
-   `Settings -> Trusted credentials -> User -> mitmproxy`
-
-Some apps and Google services may still reject HTTPS interception even with the
-user CA installed because they pin certificates or do not trust user CAs.
-
-## Android UI automation
-
-Maestro is installed as the high-level Android automation layer, similar in use
-to Playwright for web flows.
-
-Run the sample Chrome flow:
-
-`./scripts/maestro_run.sh`
-
-Launch StickerHub through Maestro:
-
-`./scripts/maestro_run.sh maestro/flows/open-stickerhub.yaml`
-
-Run a custom flow:
-
-`./scripts/maestro_run.sh maestro/flows/open-app.yaml`
-
-For `open-app.yaml`, pass the target package:
-
-`APP_ID=com.example.app ./scripts/maestro_run.sh maestro/flows/open-app.yaml`
-
-## Persistent app workflow
-
-Keep `Medium_Phone_API_36.1` as the retained daily driver and archive app
-installers locally only when you need a backup installer.
-
-1. Use the retained Android AVD for long-lived installs and account login:
-
-   `./scripts/start_play_emulator.sh`
-
-2. Archive an installed app from the current device into the workspace:
-
-   `./scripts/archive_installed_app.sh com.meta.inno.sticker stickerhub`
-
-3. List archived installers:
-
-   `./scripts/list_archived_apps.sh`
-
-4. Reinstall an archived app onto the currently selected emulator:
-
-   `./scripts/install_archived_app.sh stickerhub`
-
-Archived split APKs are stored under `runtime/apks/<archive-name>/` with a
-`metadata.txt` file that records package name, version, and launcher activity.
-
-## Notes
-
-- The mitmproxy web UI listens on
-  `http://127.0.0.1:9091/?token=android-capture`.
-- The proxy listener is `10.0.2.2:9090` from inside the emulator.
-- `./start_capture.sh` starts only the Web backend/frontend services. Emulator
-  startup and capture startup are explicit actions in the Web page.
-- The active `Android` capture path targets `Medium_Phone_API_36.1`, the retained
-  emulator that keeps your installed apps and Google account.
-- The AI discovery flow captures first and discovers URLs afterward. It filters
-  out common Google, connectivity, ad, crash, and analytics noise, then groups
-  remaining app traffic by similar URL patterns.
-- The `iOS` path is currently kept as a reserved entry only. The active
-  automated capture flow is `Android`.
-- Use `Medium_Phone_API_36.1` as the default retained Android emulator for future
-  app installs, login flows, and anything that should keep app data.
-- `./scripts/play_capture_up.sh` and `./scripts/start_play_emulator.sh` are
-  compatibility entrypoints and now default to `Medium_Phone_API_36.1`.
-- On rootable lab emulators, the system CA overlay is temporary; rerun
-  `./scripts/install_mitm_system_ca.sh` after each emulator reboot.
-- On macOS, the emulator launch script opens a new Terminal window.
-- On macOS, `mitmweb` prefers a detached `screen` session instead of a GUI Terminal.
-- All Android-side scripts accept `ADB_SERIAL=<serial>` if you want to pin them to
-  a specific emulator or physical device.
-- The CA installer also overlays the `com.android.networkstack.process` mount
-  namespace so Android's own connectivity checks do not falsely show "No internet"
-  while the global proxy is enabled.
-- To clear the Android proxy manually:
-
-  `adb shell settings put global http_proxy :0`
-
-- Chrome first-run traffic and some Google endpoints may still fail TLS inspection even
-  when the lab is configured correctly. Treat those as noise unless you are
-  specifically testing Google services.
-- App-specific legacy captures such as PokeHub use mitmproxy `ignore_hosts` passthrough for Google
-  auth plus ad/analytics SDK domains such as AppLovin/Applvn, UnityAds, Facebook,
-  DoubleClick, Adjust, Axon, Firebase logging/in-app messaging/remote config.
-  Those connections are forwarded without decryption so the proxy view stays
-  focused on app feature traffic.
+服务器、Mac mini、Jenkins、固定 AVD 和保留设备池相关能力仍保留在代码与脚本中，作为 legacy/advanced 场景使用。新用户主流程不需要这些内容。

@@ -12,6 +12,8 @@ from .platforms import validate_platform
 
 
 ACTIVE_STATUSES = {"starting", "running", "stopping"}
+CAPTURE_MODES = {"system", "flutter-socks"}
+APP_DEFAULT_MODES = CAPTURE_MODES | {"auto"}
 APP_ENVIRONMENTS = {"production", "test"}
 DEFAULT_DEVICE_ID = "device-1"
 DEFAULT_CAPTURE_DEVICES = [
@@ -142,6 +144,7 @@ class CaptureStore:
                     last_validation_status TEXT NOT NULL DEFAULT '',
                     last_validation_message TEXT NOT NULL DEFAULT '',
                     last_validation_at TEXT,
+                    last_success_mode TEXT NOT NULL DEFAULT '',
                     last_success_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -240,6 +243,8 @@ class CaptureStore:
             self._ensure_column(conn, "apps", "last_validation_status", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "apps", "last_validation_message", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "apps", "last_validation_at", "TEXT")
+            self._ensure_column(conn, "apps", "last_success_mode", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "apps", "last_success_at", "TEXT")
             self._ensure_column(conn, "capture_sessions", "platform", "TEXT NOT NULL DEFAULT 'android'")
             self._ensure_column(conn, "capture_sessions", "device_id", "TEXT NOT NULL DEFAULT 'device-1'")
             self._ensure_column(conn, "capture_sessions", "device_name", "TEXT NOT NULL DEFAULT ''")
@@ -332,7 +337,7 @@ class CaptureStore:
 
     def _configured_devices(self) -> List[Dict[str, Any]]:
         if not self.devices_config_path:
-            return DEFAULT_CAPTURE_DEVICES
+            return []
         try:
             payload = json.loads(self.devices_config_path.read_text(encoding="utf-8"))
         except OSError as exc:
@@ -424,8 +429,8 @@ class CaptureStore:
     ) -> Dict[str, Any]:
         platform = validate_platform(platform)
         environment = validate_app_environment(environment)
-        if default_mode not in {"system", "flutter-socks"}:
-            raise ValueError("default_mode must be system or flutter-socks")
+        if default_mode not in APP_DEFAULT_MODES:
+            raise ValueError("default_mode must be auto, system, or flutter-socks")
         timestamp = now_iso()
         with self.connect() as conn:
             cur = conn.execute(
@@ -465,6 +470,7 @@ class CaptureStore:
             "last_validation_status",
             "last_validation_message",
             "last_validation_at",
+            "last_success_mode",
             "last_success_at",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
@@ -472,8 +478,10 @@ class CaptureStore:
             updates["platform"] = validate_platform(updates["platform"])
         if "environment" in updates:
             updates["environment"] = validate_app_environment(updates["environment"])
-        if "default_mode" in updates and updates["default_mode"] not in {"system", "flutter-socks"}:
-            raise ValueError("default_mode must be system or flutter-socks")
+        if "default_mode" in updates and updates["default_mode"] not in APP_DEFAULT_MODES:
+            raise ValueError("default_mode must be auto, system, or flutter-socks")
+        if "last_success_mode" in updates and updates["last_success_mode"] not in (CAPTURE_MODES | {""}):
+            raise ValueError("last_success_mode must be system or flutter-socks")
         if not updates:
             app = self.get_app(app_id)
             if app is None:
@@ -523,6 +531,95 @@ class CaptureStore:
         if device is None:
             raise KeyError(f"default device not found: {DEFAULT_DEVICE_ID}")
         return device
+
+    def upsert_device(
+        self,
+        *,
+        device_id: str,
+        name: str,
+        avd_name: str = "",
+        adb_serial: str,
+        proxy_port: int,
+        web_port: int,
+        frida_port: int,
+        enabled: int = 1,
+        resident: int = 0,
+        idle_release_minutes: int = 10,
+        sleep_state: str = "awake",
+        error: str = "",
+    ) -> Dict[str, Any]:
+        if not device_id:
+            raise ValueError("device_id is required")
+        if not adb_serial:
+            raise ValueError("adb_serial is required")
+        timestamp = now_iso()
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO capture_devices (
+                    device_id, name, avd_name, adb_serial, proxy_port, web_port, frida_port,
+                    enabled, resident, idle_release_minutes, lease_status, sleep_state, error,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                    name=excluded.name,
+                    avd_name=excluded.avd_name,
+                    adb_serial=excluded.adb_serial,
+                    proxy_port=excluded.proxy_port,
+                    web_port=excluded.web_port,
+                    frida_port=excluded.frida_port,
+                    enabled=excluded.enabled,
+                    resident=excluded.resident,
+                    idle_release_minutes=excluded.idle_release_minutes,
+                    sleep_state=excluded.sleep_state,
+                    error=excluded.error,
+                    updated_at=excluded.updated_at
+                RETURNING *
+                """,
+                (
+                    device_id,
+                    name,
+                    avd_name,
+                    adb_serial,
+                    int(proxy_port),
+                    int(web_port),
+                    int(frida_port),
+                    int(enabled),
+                    int(resident),
+                    int(idle_release_minutes),
+                    sleep_state,
+                    error,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            return dict(cur.fetchone())
+
+    def disable_devices_except(self, device_ids: List[str]) -> None:
+        timestamp = now_iso()
+        keep = set(device_ids)
+        with self.connect() as conn:
+            if keep:
+                placeholders = ",".join("?" for _ in keep)
+                conn.execute(
+                    f"""
+                    UPDATE capture_devices
+                    SET enabled=0, updated_at=?
+                    WHERE device_id NOT IN ({placeholders})
+                      AND current_session_id IS NULL
+                    """,
+                    (timestamp, *sorted(keep)),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE capture_devices
+                    SET enabled=0, updated_at=?
+                    WHERE current_session_id IS NULL
+                    """,
+                    (timestamp,),
+                )
 
     def update_device(self, device_id: str, **fields: Any) -> Dict[str, Any]:
         allowed = {
@@ -668,11 +765,13 @@ class CaptureStore:
         web_url: str = "",
         error: str = "",
     ) -> Dict[str, Any]:
-        if mode not in {"system", "flutter-socks"}:
+        if mode not in CAPTURE_MODES:
             raise ValueError("mode must be system or flutter-socks")
 
         app = self.get_app(app_id) if app_id else None
-        device = self.get_device(device_id) or self.default_device()
+        device = self.get_device(device_id)
+        if device is None:
+            raise KeyError(f"device not found: {device_id}")
         timestamp = now_iso()
         with self.connect() as conn:
             if status in ACTIVE_STATUSES:
@@ -921,7 +1020,10 @@ class CaptureStore:
             last_validation_at=now_iso(),
         )
 
-    def mark_app_success(self, app_id: Optional[int]) -> None:
+    def mark_app_success(self, app_id: Optional[int], *, mode: str = "") -> None:
         if not app_id:
             return
-        self.update_app(app_id, last_success_at=now_iso())
+        fields: Dict[str, Any] = {"last_success_at": now_iso()}
+        if mode in CAPTURE_MODES:
+            fields["last_success_mode"] = mode
+        self.update_app(app_id, **fields)

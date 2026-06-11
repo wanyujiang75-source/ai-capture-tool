@@ -74,3 +74,4 @@ tools/**/.git/
 .env
 .env.*
 !.env.example
+config/local.json

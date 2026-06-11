@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import tempfile
 import unittest
@@ -7,6 +6,31 @@ from pathlib import Path
 
 
 class CaptureConsoleCoreTests(unittest.TestCase):
+    def add_test_device(
+        self,
+        store,
+        *,
+        device_id: str = "device-1",
+        adb_serial: str = "emulator-5554",
+        proxy_port: int = 9090,
+        web_port: int = 9091,
+        frida_port: int = 27042,
+        resident: int = 1,
+        idle_release_minutes: int = 0,
+    ):
+        return store.upsert_device(
+            device_id=device_id,
+            name=f"Test Device {device_id}",
+            avd_name=f"Test_AVD_{device_id}",
+            adb_serial=adb_serial,
+            proxy_port=proxy_port,
+            web_port=web_port,
+            frida_port=frida_port,
+            enabled=1,
+            resident=resident,
+            idle_release_minutes=idle_release_minutes,
+        )
+
     def test_preflight_classifies_capture_ports_without_killing_other_projects(self):
         from capture_console.preflight import classify_port
 
@@ -71,6 +95,25 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertNotIn("lsof -tiTCP:\"$PROXY_PORT\"", script)
         self.assertNotIn("lsof -tiTCP:\"$WEB_PORT\"", script)
 
+    def test_console_launchers_reject_python_below_mitmproxy_requirement(self):
+        helper = Path("scripts/console_python.sh").read_text(encoding="utf-8")
+
+        self.assertIn("CONSOLE_MIN_PYTHON_MAJOR", helper)
+        self.assertIn("CONSOLE_MIN_PYTHON_MINOR", helper)
+        self.assertIn("python_supports_console_requirements", helper)
+        self.assertIn("sys.version_info >= (major, minor)", helper)
+        self.assertIn("recreate incompatible console venv", helper)
+        for script_path in ["setup.sh", "scripts/start_console.sh", "scripts/start_web_services.sh"]:
+            script = Path(script_path).read_text(encoding="utf-8")
+            self.assertIn("scripts/console_python.sh", script)
+            self.assertIn("ensure_console_venv", script)
+
+    def test_ai_capture_flutter_socks_preserves_running_app_processes(self):
+        script = Path("scripts/ai_capture.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--no-force-stop", script)
+        self.assertIn("--pid-timeout", script)
+
     def test_stop_web_services_only_stops_owned_processes(self):
         script = Path("scripts/stop_web_services.sh").read_text(encoding="utf-8")
 
@@ -82,6 +125,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
             app = store.create_app(
                 name="MelodyCraft",
                 package_name="com.meta.inno.monopoly_sticker",
@@ -98,6 +142,87 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
             self.assertEqual(app["platform"], "android")
             self.assertEqual(session["platform"], "android")
+
+    def test_store_starts_without_default_apps_or_capture_devices(self):
+        from capture_console.store import CaptureStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CaptureStore(Path(tmp) / "console.db")
+
+            self.assertEqual(store.list_apps(), [])
+            self.assertEqual(store.list_devices(), [])
+            with self.assertRaises(KeyError):
+                store.default_device()
+
+    def test_store_requires_known_device_before_creating_session(self):
+        from capture_console.store import CaptureStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CaptureStore(Path(tmp) / "console.db")
+            app = store.create_app(
+                name="Example",
+                package_name="com.example.app",
+                default_mode="flutter-socks",
+            )
+
+            with self.assertRaises(KeyError):
+                store.create_session(
+                    app_id=app["id"],
+                    mode="flutter-socks",
+                    outdir="/tmp/android-capture",
+                    status="running",
+                )
+
+    def test_local_config_defaults_to_safe_macos_localhost_values(self):
+        from capture_console.local_config import load_local_config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = load_local_config(root_dir=Path(tmp), env={})
+
+            self.assertEqual(config["console"]["host"], "127.0.0.1")
+            self.assertEqual(config["console"]["port"], 7001)
+            self.assertEqual(config["capture"]["proxy_port_start"], 9090)
+            self.assertEqual(config["capture"]["mitmweb_token"], "android-capture")
+
+    def test_adb_device_discovery_parses_online_devices_only(self):
+        from capture_console.device_discovery import parse_adb_devices
+
+        devices = parse_adb_devices(
+            "List of devices attached\n"
+            "emulator-5554\tdevice product:sdk_gphone model:sdk_gphone\n"
+            "192.168.1.50:5555\toffline\n"
+            "R5CT123ABC\tdevice usb:336592896X\n"
+        )
+
+        self.assertEqual([device["serial"] for device in devices], ["emulator-5554", "R5CT123ABC"])
+        self.assertEqual(devices[0]["kind"], "emulator")
+        self.assertEqual(devices[1]["kind"], "physical")
+
+    def test_discovered_device_port_assignment_skips_occupied_slots(self):
+        from capture_console.device_discovery import build_discovered_devices
+
+        devices = build_discovered_devices(
+            [{"serial": "emulator-5554", "kind": "emulator"}, {"serial": "R5CT123ABC", "kind": "physical"}],
+            proxy_port_start=9090,
+            web_port_start=9091,
+            frida_port_start=27042,
+            occupied_ports={9090, 9091, 27042},
+        )
+
+        self.assertEqual(devices[0]["device_id"], "device-1")
+        self.assertEqual(devices[0]["proxy_port"], 9100)
+        self.assertEqual(devices[0]["web_port"], 9101)
+        self.assertEqual(devices[0]["frida_port"], 27142)
+        self.assertEqual(devices[1]["device_id"], "device-2")
+        self.assertEqual(devices[1]["proxy_port"], 9110)
+
+    def test_release_package_script_excludes_local_runtime_state(self):
+        script = Path("release/package.sh").read_text(encoding="utf-8")
+
+        self.assertIn("--exclude=runtime", script)
+        self.assertIn("--exclude=config/local.json", script)
+        self.assertIn("--exclude=web/node_modules", script)
+        self.assertIn("web/dist", script)
 
     def test_store_defaults_to_production_and_persists_test_environment(self):
         from capture_console.store import CaptureStore
@@ -519,6 +644,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
             app = store.create_app(
                 name="MelodyCraft",
                 package_name="com.meta.inno.monopoly_sticker",
@@ -552,12 +678,59 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             )
             self.assertEqual(second["outdir"], "/tmp/capture-two")
 
+    def test_store_allows_auto_default_mode_and_records_last_success_mode(self):
+        from capture_console.store import CaptureStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
+            app = store.create_app(
+                name="Generic App",
+                package_name="com.example.generic",
+                default_mode="auto",
+            )
+
+            self.assertEqual(app["default_mode"], "auto")
+            self.assertEqual(app["last_success_mode"], "")
+
+            store.mark_app_success(app["id"], mode="flutter-socks")
+            updated = store.get_app(app["id"])
+
+            self.assertEqual(updated["last_success_mode"], "flutter-socks")
+            self.assertIsNotNone(updated["last_success_at"])
+
+    def test_store_promotes_starting_session_to_running_without_unique_conflict(self):
+        from capture_console.store import CaptureStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
+            app = store.create_app(
+                name="MelodyCraft",
+                package_name="com.meta.inno.monopoly_sticker",
+                activity="com.meta.inno.monopoly_sticker/.MainActivity",
+                default_mode="flutter-socks",
+            )
+
+            session = store.create_session(
+                app_id=app["id"],
+                mode="flutter-socks",
+                outdir="/tmp/capture-starting",
+                status="starting",
+            )
+
+            running = store.update_session_status(session["id"], "running")
+
+            self.assertEqual(running["status"], "running")
+            self.assertEqual(store.active_session("device-1")["id"], session["id"])
+
     def test_store_enforces_single_active_capture_at_database_level(self):
         from capture_console.store import CaptureStore
 
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "console.db"
             store = CaptureStore(db_path)
+            self.add_test_device(store)
             app = store.create_app(
                 name="MelodyCraft",
                 package_name="com.meta.inno.monopoly_sticker",
@@ -589,11 +762,13 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                         ("/tmp/capture-racy-duplicate", first["id"]),
                     )
 
-    def test_store_seeds_device_pool_and_locks_active_sessions_per_device(self):
+    def test_store_locks_active_sessions_per_discovered_device(self):
         from capture_console.store import CaptureStore
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store, device_id="device-1", adb_serial="emulator-5554", proxy_port=9090, web_port=9091, frida_port=27042, resident=1, idle_release_minutes=0)
+            self.add_test_device(store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
             app = store.create_app(
                 name="PokeHub",
                 package_name="com.mi.poketrade",
@@ -601,17 +776,15 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             )
 
             devices = store.list_devices()
-            self.assertGreaterEqual(len(devices), 3)
+            self.assertEqual(len(devices), 2)
             self.assertEqual(devices[0]["device_id"], "device-1")
             self.assertEqual(devices[0]["adb_serial"], "emulator-5554")
             self.assertEqual(devices[0]["proxy_port"], 9090)
             self.assertEqual(devices[0]["resident"], 1)
             self.assertEqual(devices[0]["idle_release_minutes"], 0)
             self.assertEqual(devices[1]["device_id"], "device-2")
-            self.assertEqual(devices[1]["resident"], 1)
-            self.assertEqual(devices[2]["device_id"], "device-3")
-            self.assertEqual(devices[2]["resident"], 0)
-            self.assertEqual(devices[2]["idle_release_minutes"], 10)
+            self.assertEqual(devices[1]["resident"], 0)
+            self.assertEqual(devices[1]["idle_release_minutes"], 10)
 
             first = store.create_session(
                 app_id=app["id"],
@@ -677,6 +850,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
             app = store.create_app(
                 name="PokeHub",
                 package_name="com.mi.poketrade",
@@ -707,6 +881,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
             app = store.create_app(
                 name="MelodyCraft",
                 package_name="com.meta.inno.monopoly_sticker",
@@ -731,6 +906,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             store = CaptureStore(Path(tmp) / "console.db")
+            self.add_test_device(store)
             app = store.create_app(
                 name="MelodyCraft",
                 package_name="com.meta.inno.monopoly_sticker",
@@ -1001,6 +1177,85 @@ Packages:
             detail = get_flow_detail(outdir, flows[0]["id"])
             self.assertEqual(detail["response_finished_at"], "2026-05-20T10:15:00.380+08:00")
             self.assertEqual(detail["total_duration_ms"], 280)
+
+    def test_result_indexer_does_not_decode_binary_image_response_as_text(self):
+        from capture_console.results import get_flow_detail, scan_capture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            prefix = "20260603-172345_GET_200_assets.example__icons_v2_3351.png_flow-1"
+            meta_name = f"{prefix}.meta.json"
+            request_name = f"{prefix}.request.bin"
+            response_name = f"{prefix}.response.bin"
+
+            (outdir / "all-flows.tsv").write_text(
+                "\t".join(
+                    [
+                        "time",
+                        "kind",
+                        "score",
+                        "method",
+                        "status",
+                        "host",
+                        "pattern",
+                        "url",
+                        "noise_reason",
+                        "meta",
+                        "request_bin",
+                        "response_bin",
+                    ]
+                )
+                + "\n"
+                + "\t".join(
+                    [
+                        "2026-06-03T17:23:45+08:00",
+                        "candidate",
+                        "28",
+                        "GET",
+                        "200",
+                        "assets.example",
+                        "https://assets.example/icons_v2/3351.png",
+                        "https://assets.example/icons_v2/3351.png",
+                        "",
+                        meta_name,
+                        request_name,
+                        response_name,
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (outdir / meta_name).write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "id": "flow-1",
+                            "url": "https://assets.example/icons_v2/3351.png",
+                            "response_content_type": "image/png",
+                            "response_headers": [["Content-Type", "image/png"], ["Content-Length", "16"]],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            (outdir / request_name).write_bytes(b"")
+            (outdir / response_name).write_bytes(png_bytes)
+
+            flows = scan_capture(outdir)
+            detail = get_flow_detail(outdir, flows[0]["id"])
+
+            self.assertEqual(detail["response_body_kind"], "binary")
+            self.assertEqual(detail["response_text"], "")
+            self.assertEqual(detail["response_body"]["content_type"], "image/png")
+            self.assertEqual(detail["response_body"]["size_bytes"], len(png_bytes))
+
+    def test_exporter_does_not_render_image_content_as_latin1_text(self):
+        from scripts.ai_capture_export import render_text_content
+
+        png_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+
+        self.assertEqual(render_text_content(png_bytes, "image/png"), "")
 
     def test_result_indexer_reads_all_exported_flows_not_only_candidates(self):
         from capture_console.results import get_flow_detail, scan_capture

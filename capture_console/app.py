@@ -18,6 +18,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .device_discovery import build_discovered_devices
+from .local_config import load_local_config
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
 from .platforms import capture_supported, unsupported_platform_detail
 from .preflight import build_port_preflight, collect_port_listeners
@@ -25,22 +27,31 @@ from .preview import preview_base_url, preview_token, preview_url
 from .readiness import build_readiness_report
 from .results import build_curl, get_flow_detail, scan_capture
 from .runner import CommandResult, ConsoleRunner
-from .store import CaptureStore, DEFAULT_DEVICE_ID, validate_app_environment
+from .store import CAPTURE_MODES, CaptureStore, DEFAULT_DEVICE_ID, validate_app_environment
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+LOCAL_CONFIG = load_local_config(root_dir=ROOT_DIR)
+if LOCAL_CONFIG.get("android", {}).get("sdk_root"):
+    os.environ.setdefault("ANDROID_SDK_ROOT", str(LOCAL_CONFIG["android"]["sdk_root"]))
 RUNTIME_DIR = Path(os.environ.get("CAPTURE_RUNTIME_DIR") or ROOT_DIR / "runtime").expanduser().resolve()
 CAPTURES_DIR = RUNTIME_DIR / "captures"
 UPLOADS_DIR = RUNTIME_DIR / "uploads"
 LATEST_APKS_DIR = RUNTIME_DIR / "apks" / "latest"
-WEB_URL = "http://127.0.0.1:9091/?token=android-capture"
+WEB_URL = f"http://127.0.0.1:{LOCAL_CONFIG['capture']['web_port_start']}/?token={LOCAL_CONFIG['capture']['mitmweb_token']}"
 IDLE_SLEEP_SECONDS = int(os.environ.get("CAPTURE_IDLE_SLEEP_SECONDS", "1800"))
 SETUP_COMPLETED_KEY = "setup_completed"
 SETUP_CHECKED_KEY = "setup_checked"
 GOOGLE_LOGIN_REQUIRED = os.environ.get("REQUIRE_GOOGLE_LOGIN", "0").lower() in {"1", "true", "yes", "on"}
 
 store = CaptureStore(RUNTIME_DIR / "console.db", devices_config_path=os.environ.get("CAPTURE_DEVICES_CONFIG"))
-runner = ConsoleRunner(ROOT_DIR)
+runner = ConsoleRunner(
+    ROOT_DIR,
+    proxy_port=int(LOCAL_CONFIG["capture"]["proxy_port_start"]),
+    web_port=int(LOCAL_CONFIG["capture"]["web_port_start"]),
+    frida_port=int(LOCAL_CONFIG["capture"]["frida_port_start"]),
+    mitm_password=str(LOCAL_CONFIG["capture"]["mitmweb_token"]),
+)
 app = FastAPI(title="TraceDeck API", version="1.0.0")
 
 
@@ -50,7 +61,7 @@ class AppPayload(BaseModel):
     name: str
     package_name: str
     activity: str = ""
-    default_mode: str = "system"
+    default_mode: str = "auto"
     notes: str = ""
 
 
@@ -58,6 +69,30 @@ class CaptureStartPayload(BaseModel):
     app_id: int
     device_id: str = DEFAULT_DEVICE_ID
     mode: Optional[str] = None
+
+
+def normalize_requested_capture_mode(target_app: Dict[str, Any], mode: Optional[str]) -> str:
+    requested = (mode or target_app.get("default_mode") or "auto").strip()
+    allowed = CAPTURE_MODES | {"auto"}
+    if requested not in allowed:
+        raise HTTPException(status_code=400, detail=f"mode must be auto, system, or flutter-socks: {requested}")
+    return requested
+
+
+def capture_mode_candidates(target_app: Dict[str, Any], requested_mode: str) -> list[str]:
+    if requested_mode in CAPTURE_MODES:
+        return [requested_mode]
+
+    candidates: list[str] = []
+    for mode in (
+        target_app.get("last_success_mode", ""),
+        target_app.get("default_mode", ""),
+        "system",
+        "flutter-socks",
+    ):
+        if mode in CAPTURE_MODES and mode not in candidates:
+            candidates.append(mode)
+    return candidates
 
 
 def clear_project_capture_records() -> None:
@@ -82,7 +117,7 @@ def runner_for_device_id(device_id: str):
 
 
 def device_web_url(device: Dict[str, Any]) -> str:
-    return f"http://127.0.0.1:{device['web_port']}/?token=android-capture"
+    return f"http://127.0.0.1:{device['web_port']}/?token={LOCAL_CONFIG['capture']['mitmweb_token']}"
 
 
 def parse_timestamp(value: Any) -> Optional[datetime]:
@@ -123,7 +158,7 @@ def release_device_runtime(device_id: str, *, force_shutdown: bool = False) -> D
     stop_result = device_runner.stop_capture()
     if active:
         store.update_session_status(active["id"], "stopped")
-        store.mark_app_success(active.get("app_id"))
+        store.mark_app_success(active.get("app_id"), mode=active.get("mode", ""))
     clear_result = (
         device_runner.clear_android_proxy()
         if hasattr(device_runner, "clear_android_proxy")
@@ -147,6 +182,16 @@ def release_device_runtime(device_id: str, *, force_shutdown: bool = False) -> D
         "proxy": {"stdout": clear_result.stdout, "stderr": clear_result.stderr},
         "emulator": {"stdout": kill_result.stdout, "stderr": kill_result.stderr},
     }
+
+
+def stop_capture_and_clear_proxy(device_runner: Any) -> tuple[CommandResult, CommandResult]:
+    stop_result = device_runner.stop_capture()
+    clear_result = (
+        device_runner.clear_android_proxy()
+        if hasattr(device_runner, "clear_android_proxy")
+        else CommandResult(0, "", "")
+    )
+    return stop_result, clear_result
 
 
 def auto_release_idle_on_demand_devices() -> list[Dict[str, Any]]:
@@ -267,6 +312,8 @@ def reconcile_active_session(device_id: str = DEFAULT_DEVICE_ID) -> None:
     status = device_runner.capture_status()
     if not active:
         recover_running_session(status, device_id=device_id)
+        return
+    if active.get("status") == "starting":
         return
     if status.get("exporter") != "running" and status.get("frida_hook") != "running":
         store.update_session_status(active["id"], "stopped")
@@ -650,7 +697,7 @@ def assert_device_ports_available(device_id: str) -> Dict[str, Any]:
             status_code=409,
             detail={
                 "message": "capture device ports are occupied by another project",
-                "user_message": "目标设备端口被其他项目占用，已拒绝启动抓包，避免误杀服务器上的其他服务。",
+                "user_message": "目标设备端口被其他项目占用，已拒绝启动抓包，避免误操作本机其他服务。",
                 "blocking_ports": blocking,
                 "preflight": preflight,
             },
@@ -707,23 +754,23 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
     checked = force_progress or store.get_system_value(SETUP_CHECKED_KEY, "0").get("value") == "1"
     step_defs = [
         ("env", "服务环境检查", bool(env.get("ok")), "检查 Python、Node、Android SDK、mitmproxy、Frida 等依赖。"),
-        ("devices", "设备池检查", bool(devices), "检查至少一台启用设备。"),
+        ("devices", "设备发现", bool(devices), "发现至少一台在线 Android 设备。"),
         (
             "emulator",
-            "启动并解锁模拟器",
+            "设备就绪",
             any(
                 device.get("emulator", {}).get("adb_online")
                 and device.get("emulator", {}).get("boot_completed")
                 and device.get("emulator", {}).get("unlocked")
                 for device in devices
             ),
-            "启动设备、等待 Android 系统完成启动，并在模拟器内解锁屏幕。",
+            "确认设备在线、Android 系统完成启动，并完成解锁。",
         ),
         (
             "google",
-            "Google 登录",
+            "Google 状态",
             True if not GOOGLE_LOGIN_REQUIRED else any(device.get("google_state", {}).get("ok") for device in devices),
-            "内部模式下不强制 Google 登录；如需 Google Play 账号能力，可在模拟器内登录。",
+            "按目标 App 需要确认 Google Play 或账号状态。",
         ),
         ("frida", "Frida 准入", any(device.get("frida_state", {}).get("ok") for device in devices), "启动 Frida server 并确认可连接。"),
         ("app", "上传或选择 App", app_count > 0, "上传 APK 或选择已有应用。"),
@@ -775,12 +822,30 @@ def shutdown() -> None:
 
 @app.get("/api/status")
 def api_status() -> Dict[str, Any]:
-    reconcile_active_session(DEFAULT_DEVICE_ID)
-    default_runner = runner_for_device_id(DEFAULT_DEVICE_ID)
+    device = store.get_device(DEFAULT_DEVICE_ID)
+    if device is not None and not device.get("enabled"):
+        device = None
+    if device is None:
+        devices = store.list_devices(include_disabled=False)
+        device = devices[0] if devices else None
+    if device is None:
+        return {
+            "health": "idle",
+            "exporter": "missing",
+            "frida_hook": "missing",
+            "active_session": None,
+            "emulator": {"adb_online": False, "boot_completed": False, "unlocked": False},
+            "system": store.get_system_state(),
+            "user_message": "未发现在线设备。请连接 Android 设备或启动模拟器后刷新设备。",
+        }
+    device_id = str(device["device_id"])
+    reconcile_active_session(device_id)
+    default_runner = runner_for_device_id(device_id)
     status = default_runner.capture_status()
-    status["active_session"] = store.active_session(device_id=DEFAULT_DEVICE_ID)
+    status["active_session"] = store.active_session(device_id=device_id)
     status["emulator"] = default_runner.emulator_status()
     status["system"] = store.get_system_state()
+    status["device_id"] = device_id
     return status
 
 
@@ -848,12 +913,69 @@ def runner_network_state(device_runner: Any) -> Dict[str, Any]:
     return build_device_network_state(emulator)
 
 
+def discovery_occupied_ports(slot_count: int = 20) -> set[int]:
+    capture = LOCAL_CONFIG["capture"]
+    ports: set[int] = set()
+    for slot in range(slot_count):
+        for port in (
+            int(capture["proxy_port_start"]) + slot * 10,
+            int(capture["web_port_start"]) + slot * 10,
+            int(capture["frida_port_start"]) + slot * 100,
+        ):
+            if collect_port_listeners(port):
+                ports.add(port)
+    return ports
+
+
 @app.get("/api/devices")
 def api_list_devices() -> Dict[str, Any]:
     maybe_auto_sleep()
     return {
         "system": store.get_system_state(),
         "devices": [build_device_status(device) for device in store.list_devices(include_disabled=False)],
+    }
+
+
+@app.get("/api/devices/discover")
+def api_discover_devices() -> Dict[str, Any]:
+    adb_devices = runner.discover_adb_devices() if hasattr(runner, "discover_adb_devices") else []
+    discovered = build_discovered_devices(
+        adb_devices,
+        proxy_port_start=int(LOCAL_CONFIG["capture"]["proxy_port_start"]),
+        web_port_start=int(LOCAL_CONFIG["capture"]["web_port_start"]),
+        frida_port_start=int(LOCAL_CONFIG["capture"]["frida_port_start"]),
+        occupied_ports=discovery_occupied_ports(),
+    )
+    device_fields = {
+        "device_id",
+        "name",
+        "avd_name",
+        "adb_serial",
+        "proxy_port",
+        "web_port",
+        "frida_port",
+        "enabled",
+        "resident",
+        "idle_release_minutes",
+    }
+    seen_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    persisted = []
+    for device in discovered:
+        stored_device = store.upsert_device(**{key: device[key] for key in device_fields})
+        stored_device = store.update_device(
+            stored_device["device_id"],
+            sleep_state="awake",
+            error="",
+            last_active_at=seen_at,
+        )
+        persisted.append(stored_device)
+    if hasattr(store, "disable_devices_except"):
+        store.disable_devices_except([str(device["device_id"]) for device in persisted])
+    return {
+        "devices": persisted,
+        "count": len(persisted),
+        "source": "adb",
+        "user_message": "已发现在线 Android 设备。" if persisted else "未发现在线设备。请连接设备或启动模拟器后重试。",
     }
 
 
@@ -1039,11 +1161,16 @@ def api_system_resources() -> Dict[str, Any]:
 @app.post("/api/cleanup")
 def api_cleanup(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
-    result = device_runner.stop_capture()
+    result, proxy_result = stop_capture_and_clear_proxy(device_runner)
     active = store.active_session(device_id=device_id)
     if active:
         store.update_session_status(active["id"], "stopped")
-    return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr}
+    return {
+        "ok": result.ok and proxy_result.ok,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
+    }
 
 
 @app.get("/api/apps")
@@ -1131,6 +1258,11 @@ def api_app_readiness(app_id: int, device_id: str = DEFAULT_DEVICE_ID) -> Dict[s
 
 @app.get("/api/installed-apps")
 def api_installed_apps(query: str = "", device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
+    return api_apps_installed(query=query, device_id=device_id)
+
+
+@app.get("/api/apps/installed")
+def api_apps_installed(query: str = "", device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     return {"apps": runner_for_device_id(device_id).scan_installed_apps(query=query)}
 
 
@@ -1223,99 +1355,134 @@ def api_validate_capture(app_id: int, device_id: str = DEFAULT_DEVICE_ID) -> Dic
     ensure_google_ready(device_runner, device_id=device_id)
     assert_device_ports_available(device_id)
 
-    mode = target_app.get("default_mode") or "flutter-socks"
-    if mode == "flutter-socks":
-        if hasattr(device_runner, "enter_capture_network"):
-            network_switch = device_runner.enter_capture_network()
-            if not network_switch.get("ok"):
-                message = "切换抓包网络失败。"
-                updated = store.update_app_validation(app_id, status="failed", message=message)
-                store.update_device_app_validation(device_id, app_id, status="failed", message=message)
-                return {**validation_result("failed", message), "app": updated, "network": network_switch}
-        elif hasattr(device_runner, "clear_android_proxy"):
-            device_runner.clear_android_proxy()
+    requested_mode = normalize_requested_capture_mode(target_app, None)
+    candidates = capture_mode_candidates(target_app, requested_mode)
+    mode_attempts: list[Dict[str, Any]] = []
 
-    health = device_runner.health_check(
-        package_name=target_app["package_name"],
-        mode=mode,
-        activity=target_app.get("activity", ""),
-    )
-    if not health["ok"]:
-        message = "抓包健康检查未通过。"
-        updated = store.update_app_validation(app_id, status="failed", message=message)
-        store.update_device_app_validation(device_id, app_id, status="failed", message=message)
-        return {**validation_result("failed", message), "app": updated, "health": health}
+    for mode in candidates:
+        attempt: Dict[str, Any] = {"mode": mode, "status": "starting"}
+        mode_attempts.append(attempt)
+        if mode == "flutter-socks":
+            if hasattr(device_runner, "enter_capture_network"):
+                network_switch = device_runner.enter_capture_network()
+                attempt["network"] = network_switch
+                if not network_switch.get("ok"):
+                    attempt["status"] = "failed"
+                    attempt["reason"] = "network"
+                    stop_capture_and_clear_proxy(device_runner)
+                    continue
+            elif hasattr(device_runner, "clear_android_proxy"):
+                device_runner.clear_android_proxy()
 
-    activity = target_app.get("activity") or health.get("resolved_activity", "")
-    launch = device_runner.launch_app(package_name=target_app["package_name"], activity=activity)
-    if not launch.ok:
-        message = "应用启动失败，无法进行抓包校验。"
-        updated = store.update_app_validation(app_id, status="failed", message=message)
-        store.update_device_app_validation(device_id, app_id, status="failed", message=message)
-        return {**validation_result("failed", message), "app": updated, "output": launch.text}
-
-    outdir = str(device_runner.make_outdir(f"{target_app['name']}-validation"))
-    session = store.create_session(
-        app_id=app_id,
-        device_id=device_id,
-        mode=mode,
-        outdir=outdir,
-        status="starting",
-        web_url=device_web_url(device_or_404(device_id)),
-    )
-    started = False
-    try:
-        started_capture = device_runner.start_capture(
+        health = device_runner.health_check(
             package_name=target_app["package_name"],
-            activity=activity,
+            mode=mode,
+            activity=target_app.get("activity", ""),
+        )
+        attempt["health"] = health
+        if not health["ok"]:
+            attempt["status"] = "failed"
+            attempt["reason"] = "health"
+            stop_capture_and_clear_proxy(device_runner)
+            continue
+
+        activity = target_app.get("activity") or health.get("resolved_activity", "")
+        launch = device_runner.launch_app(package_name=target_app["package_name"], activity=activity)
+        if not launch.ok:
+            attempt["status"] = "failed"
+            attempt["reason"] = "launch"
+            attempt["output"] = launch.text
+            stop_capture_and_clear_proxy(device_runner)
+            continue
+
+        outdir_name = f"{target_app['name']}-validation" if len(candidates) == 1 else f"{target_app['name']}-validation-{mode}"
+        outdir = str(device_runner.make_outdir(outdir_name))
+        session = store.create_session(
+            app_id=app_id,
+            device_id=device_id,
             mode=mode,
             outdir=outdir,
-            interval=1.0,
+            status="starting",
+            web_url=device_web_url(device_or_404(device_id)),
         )
-        if not started_capture.ok:
-            failed_session = store.update_session_status(session["id"], "failed", error=started_capture.text)
-            message = "抓包启动失败。"
-            updated = store.update_app_validation(app_id, status="failed", message=message)
-            store.update_device_app_validation(device_id, app_id, status="failed", message=message)
-            return {
-                **validation_result("failed", message, session=failed_session),
-                "app": updated,
-                "output": started_capture.text,
-            }
-
-        started = True
-        store.update_session_status(session["id"], "running", web_url=device_web_url(device_or_404(device_id)))
-        deadline = time.time() + 30
-        flows = []
-        while time.time() < deadline:
-            flows = scan_capture(Path(outdir))
-            if any(flow.get("has_request_json") or flow.get("has_response_json") for flow in flows):
-                break
-            time.sleep(2)
-
-        flow_count = len(flows)
-        has_payload = any(flow.get("has_request_json") or flow.get("has_response_json") for flow in flows)
-        if has_payload:
-            status = "passed"
-            message = f"抓包校验通过，捕获到 {flow_count} 条接口。"
-        else:
-            status = "warning"
-            message = "应用已启动，但 30 秒内未捕获到可解析接口；请手动操作应用进一步确认。"
-        updated = store.update_app_validation(app_id, status=status, message=message)
-        store.update_device_app_validation(device_id, app_id, status=status, message=message)
-        device_runner.stop_capture()
-        stopped_session = store.update_session_status(session["id"], "stopped")
         started = False
-        return {
-            **validation_result(status, message, flow_count=flow_count, session=stopped_session),
-            "app": updated,
-        }
-    finally:
-        if started:
-            device_runner.stop_capture()
-            active = store.get_session(session["id"])
-            if active and active.get("status") in {"starting", "running", "stopping"}:
-                store.update_session_status(session["id"], "stopped")
+        try:
+            started_capture = device_runner.start_capture(
+                package_name=target_app["package_name"],
+                activity=activity,
+                mode=mode,
+                outdir=outdir,
+                interval=1.0,
+            )
+            if not started_capture.ok:
+                failed_session = store.update_session_status(session["id"], "failed", error=started_capture.text)
+                attempt["status"] = "failed"
+                attempt["reason"] = "start"
+                attempt["session"] = failed_session
+                attempt["output"] = started_capture.text
+                stop_capture_and_clear_proxy(device_runner)
+                continue
+
+            started = True
+            store.update_session_status(session["id"], "running", web_url=device_web_url(device_or_404(device_id)))
+            deadline = time.time() + 30
+            flows = []
+            while time.time() < deadline:
+                flows = scan_capture(Path(outdir))
+                if any(flow.get("has_request_json") or flow.get("has_response_json") for flow in flows):
+                    break
+                time.sleep(2)
+
+            flow_count = len(flows)
+            has_payload = any(flow.get("has_request_json") or flow.get("has_response_json") for flow in flows)
+            stopped_session = store.update_session_status(session["id"], "stopped")
+            stop_capture_and_clear_proxy(device_runner)
+            started = False
+            attempt["flow_count"] = flow_count
+            attempt["session_id"] = stopped_session["id"]
+            if has_payload:
+                status = "passed"
+                message = f"抓包校验通过，捕获到 {flow_count} 条接口。"
+                updated = store.update_app_validation(app_id, status=status, message=message)
+                store.update_device_app_validation(device_id, app_id, status=status, message=message)
+                store.mark_app_success(app_id, mode=mode)
+                attempt["status"] = "passed"
+                return {
+                    **validation_result(status, message, flow_count=flow_count, session=stopped_session),
+                    "app": updated,
+                    "requested_mode": requested_mode,
+                    "mode_attempts": mode_attempts,
+                }
+
+            attempt["status"] = "warning"
+            attempt["reason"] = "no_json"
+            if requested_mode != "auto" or mode == candidates[-1]:
+                status = "warning"
+                message = "应用已启动，但 30 秒内未捕获到可解析接口；请手动操作应用进一步确认。"
+                updated = store.update_app_validation(app_id, status=status, message=message)
+                store.update_device_app_validation(device_id, app_id, status=status, message=message)
+                return {
+                    **validation_result(status, message, flow_count=flow_count, session=stopped_session),
+                    "app": updated,
+                    "requested_mode": requested_mode,
+                    "mode_attempts": mode_attempts,
+                }
+        finally:
+            if started:
+                stop_capture_and_clear_proxy(device_runner)
+                active = store.get_session(session["id"])
+                if active and active.get("status") in {"starting", "running", "stopping"}:
+                    store.update_session_status(session["id"], "stopped")
+
+    message = "没有可用的抓包模式。"
+    updated = store.update_app_validation(app_id, status="failed", message=message)
+    store.update_device_app_validation(device_id, app_id, status="failed", message=message)
+    return {
+        **validation_result("failed", message),
+        "app": updated,
+        "requested_mode": requested_mode,
+        "mode_attempts": mode_attempts,
+    }
 
 
 @app.get("/api/captures")
@@ -1344,59 +1511,105 @@ def api_start_capture(payload: CaptureStartPayload) -> Dict[str, Any]:
     ensure_google_ready(device_runner, device_id=device_id)
     assert_device_ports_available(device_id)
 
-    mode = payload.mode or target_app["default_mode"]
-    if mode == "flutter-socks":
-        if hasattr(device_runner, "enter_capture_network"):
-            network_switch = device_runner.enter_capture_network()
-            if not network_switch.get("ok"):
-                raise HTTPException(status_code=400, detail={"message": "failed to switch emulator network to capture mode", **network_switch})
-        elif hasattr(device_runner, "clear_android_proxy"):
-            clear = device_runner.clear_android_proxy()
-            if not clear.ok:
-                raise HTTPException(status_code=400, detail={"message": "failed to clear Android proxy", "output": clear.text})
+    requested_mode = normalize_requested_capture_mode(target_app, payload.mode)
+    candidates = capture_mode_candidates(target_app, requested_mode)
+    mode_attempts: list[Dict[str, Any]] = []
 
-    health = device_runner.health_check(package_name=target_app["package_name"], mode=mode, activity=target_app.get("activity", ""))
-    if not health["ok"]:
-        raise HTTPException(status_code=400, detail={"message": "health check failed", "health": health})
+    for mode in candidates:
+        attempt: Dict[str, Any] = {"mode": mode, "status": "starting"}
+        mode_attempts.append(attempt)
+        if mode == "flutter-socks":
+            if hasattr(device_runner, "enter_capture_network"):
+                network_switch = device_runner.enter_capture_network()
+                attempt["network"] = network_switch
+                if not network_switch.get("ok"):
+                    attempt["status"] = "failed"
+                    attempt["reason"] = "network"
+                    stop_capture_and_clear_proxy(device_runner)
+                    continue
+            elif hasattr(device_runner, "clear_android_proxy"):
+                clear = device_runner.clear_android_proxy()
+                if not clear.ok:
+                    attempt["status"] = "failed"
+                    attempt["reason"] = "network"
+                    attempt["output"] = clear.text
+                    stop_capture_and_clear_proxy(device_runner)
+                    continue
 
-    activity = target_app["activity"] or health.get("resolved_activity", "")
-    outdir = str(device_runner.make_outdir(target_app["name"]))
-    try:
-        session = store.create_session(
-            app_id=target_app["id"],
-            device_id=device_id,
+        health = device_runner.health_check(package_name=target_app["package_name"], mode=mode, activity=target_app.get("activity", ""))
+        attempt["health"] = health
+        if not health["ok"]:
+            attempt["status"] = "failed"
+            attempt["reason"] = "health"
+            stop_capture_and_clear_proxy(device_runner)
+            continue
+
+        activity = target_app["activity"] or health.get("resolved_activity", "")
+        outdir_name = target_app["name"] if len(candidates) == 1 else f"{target_app['name']}-{mode}"
+        outdir = str(device_runner.make_outdir(outdir_name))
+        try:
+            session = store.create_session(
+                app_id=target_app["id"],
+                device_id=device_id,
+                mode=mode,
+                outdir=outdir,
+                status="starting",
+                web_url=device_web_url(device_or_404(device_id)),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        result = device_runner.start_capture(
+            package_name=target_app["package_name"],
+            activity=activity,
             mode=mode,
             outdir=outdir,
-            status="starting",
-            web_url=device_web_url(device_or_404(device_id)),
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not result.ok:
+            failed = store.update_session_status(session["id"], "failed", error=result.text)
+            attempt["status"] = "failed"
+            attempt["reason"] = "start"
+            attempt["session"] = failed
+            attempt["output"] = result.text
+            stop_capture_and_clear_proxy(device_runner)
+            continue
 
-    result = device_runner.start_capture(
-        package_name=target_app["package_name"],
-        activity=activity,
-        mode=mode,
-        outdir=outdir,
+        running = store.update_session_status(session["id"], "running", web_url=device_web_url(device_or_404(device_id)))
+        attempt["status"] = "running"
+        attempt["session_id"] = running["id"]
+        return {
+            "session": running,
+            "output": result.stdout,
+            "requested_mode": requested_mode,
+            "mode_attempts": mode_attempts,
+        }
+
+    raise HTTPException(
+        status_code=500 if any(attempt.get("reason") == "start" for attempt in mode_attempts) else 400,
+        detail={
+            "message": "no capture mode could start",
+            "requested_mode": requested_mode,
+            "mode_attempts": mode_attempts,
+        },
     )
-    if not result.ok:
-        failed = store.update_session_status(session["id"], "failed", error=result.text)
-        raise HTTPException(status_code=500, detail={"message": "capture start failed", "session": failed, "output": result.text})
-
-    running = store.update_session_status(session["id"], "running", web_url=device_web_url(device_or_404(device_id)))
-    return {"session": running, "output": result.stdout}
 
 
 @app.post("/api/captures/stop")
 def api_stop_capture(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
-    result = device_runner.stop_capture()
+    result, proxy_result = stop_capture_and_clear_proxy(device_runner)
     active = store.active_session(device_id=device_id)
     session = None
     if active:
         session = store.update_session_status(active["id"], "stopped")
-        store.mark_app_success(active.get("app_id"))
-    return {"ok": result.ok, "session": session, "stdout": result.stdout, "stderr": result.stderr}
+        store.mark_app_success(active.get("app_id"), mode=active.get("mode", ""))
+    return {
+        "ok": result.ok and proxy_result.ok,
+        "session": session,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
+    }
 
 
 @app.post("/api/captures/{session_id}/stop")
@@ -1404,10 +1617,16 @@ def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
     device_id = session.get("device_id") or DEFAULT_DEVICE_ID
     device_runner = runner_for_device_id(device_id)
-    result = device_runner.stop_capture()
+    result, proxy_result = stop_capture_and_clear_proxy(device_runner)
     stopped = store.update_session_status(session_id, "stopped")
-    store.mark_app_success(session.get("app_id"))
-    return {"ok": result.ok, "session": stopped, "stdout": result.stdout, "stderr": result.stderr}
+    store.mark_app_success(session.get("app_id"), mode=session.get("mode", ""))
+    return {
+        "ok": result.ok and proxy_result.ok,
+        "session": stopped,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
+    }
 
 
 @app.get("/api/captures/{session_id}")

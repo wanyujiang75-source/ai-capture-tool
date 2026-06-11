@@ -1,8 +1,8 @@
 export const SETUP_STEP_COPY = {
   env: ["服务环境检查", "检查 Python、Node、Android SDK、mitmproxy、Frida 等依赖。"],
-  devices: ["设备池检查", "检查至少一台启用设备。"],
-  emulator: ["启动并解锁模拟器", "启动设备、等待 Android 系统完成启动，并在模拟器内解锁屏幕。"],
-  google: ["Google 登录", "在模拟器内登录 Google 账号。"],
+  devices: ["设备发现", "发现至少一台在线 Android 设备。"],
+  emulator: ["设备就绪", "确认设备在线、Android 系统启动完成，并完成解锁。"],
+  google: ["Google 状态", "按目标 App 需要确认 Google Play 或账号状态。"],
   frida: ["Frida 准入", "启动 Frida server 并确认可连接。"],
   app: ["上传或选择 App", "上传 APK 或选择已有应用。"],
   smoke: ["抓包冒烟测试", "完成一次抓包校验并捕获接口。"],
@@ -65,7 +65,7 @@ export function setupNextAction(setup, selectedDevice, apps = []) {
     return {
       key: "done",
       title: "初始化已完成",
-      description: "可以进入控制台启动模拟器、选择应用并开始抓包。",
+      description: "可以进入控制台选择设备、添加应用并开始抓包。",
       primary: "进入控制台",
     };
   }
@@ -74,17 +74,17 @@ export function setupNextAction(setup, selectedDevice, apps = []) {
     return {
       key: current.key,
       title: "自动检测运行环境",
-      description: "系统会自动检查依赖、端口和设备池；失败项只在完整诊断中展示。",
+      description: "系统会自动检查依赖、端口和已连接设备；失败项只在完整诊断中展示。",
       primary: "自动检测",
     };
   }
 
   if (current.key === "emulator") {
-    const title = emulator.adb_online ? "解锁模拟器" : "启动模拟器";
+    const title = emulator.adb_online ? "解锁设备" : "连接设备";
     const description = emulator.adb_online
-      ? "模拟器已启动，请在画面中完成解锁，页面会自动识别。"
-      : "启动一台设备后，等待 Android 完成启动并解锁。";
-    return { key: "emulator", title, description, primary: emulator.adb_online ? "查看模拟器" : "启动模拟器" };
+      ? "设备已在线，请在画面中完成解锁，页面会自动识别。"
+      : "连接 Android 真机或启动本机模拟器后，等待系统完成启动并解锁。";
+    return { key: "emulator", title, description, primary: emulator.adb_online ? "查看设备" : "发现设备" };
   }
 
   if (current.key === "google" && !googleOk) {
@@ -118,7 +118,7 @@ export function setupNextAction(setup, selectedDevice, apps = []) {
     return {
       key: "smoke",
       title: "进行抓包验证",
-      description: "启动短时间抓包后，在模拟器内操作 App，捕获到业务接口即可完成初始化。",
+      description: "启动短时间抓包后，操作 App 并捕获到业务接口即可完成初始化。",
       primary: "启动抓包测试",
     };
   }

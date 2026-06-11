@@ -1,0 +1,15 @@
+{
+  "console": {
+    "host": "127.0.0.1",
+    "port": 7001
+  },
+  "android": {
+    "sdk_root": ""
+  },
+  "capture": {
+    "proxy_port_start": 9090,
+    "web_port_start": 9091,
+    "frida_port_start": 27042,
+    "mitmweb_token": "android-capture"
+  }
+}

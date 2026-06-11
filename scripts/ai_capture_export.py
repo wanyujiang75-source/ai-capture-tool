@@ -296,9 +296,48 @@ def maybe_decode_content(data):
     return data
 
 
+TEXT_CONTENT_TYPES = {
+    "application/graphql",
+    "application/javascript",
+    "application/json",
+    "application/ld+json",
+    "application/x-ndjson",
+    "application/x-www-form-urlencoded",
+    "application/xml",
+    "application/yaml",
+    "image/svg+xml",
+}
+BINARY_CONTENT_PREFIXES = ("audio/", "font/", "image/", "video/")
+BINARY_CONTENT_TYPES = {
+    "application/gzip",
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+}
+
+
+def normalized_content_type(value):
+    return (value or "").split(";", 1)[0].strip().lower()
+
+
+def content_type_is_text(value):
+    normalized = normalized_content_type(value)
+    if not normalized:
+        return True
+    if normalized.startswith("text/") or normalized in TEXT_CONTENT_TYPES:
+        return True
+    if normalized.endswith("+json") or normalized.endswith("+xml"):
+        return True
+    if normalized.startswith(BINARY_CONTENT_PREFIXES) or normalized in BINARY_CONTENT_TYPES:
+        return False
+    return True
+
+
 def render_text_content(data, content_type):
     data = maybe_decode_content(data)
     if not data:
+        return ""
+    if not content_type_is_text(content_type):
         return ""
     text = None
     for encoding in ("utf-8", "utf-16", "latin-1"):

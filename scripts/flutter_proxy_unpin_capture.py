@@ -148,7 +148,7 @@ def adb(serial, args, check=True):
     return proc.stdout.strip()
 
 
-def wait_for_pid(serial, package, timeout=20):
+def wait_for_pid(serial, package, timeout=60):
     deadline = time.time() + timeout
     while time.time() < deadline:
         pid = current_pid(serial, package)
@@ -239,6 +239,7 @@ def main():
     parser.add_argument("--httptoolkit-dir", default=os.path.join(root, "tools", "httptoolkit-frida"))
     parser.add_argument("--outdir", default=os.path.join(root, "runtime", "captures", f"flutter-proxy-unpin-{now_label()}"))
     parser.add_argument("--no-force-stop", action="store_true")
+    parser.add_argument("--pid-timeout", type=int, default=60, help="Seconds to wait for the target package process after launch.")
     parser.add_argument("--no-proxy-env", action="store_true", help="Do not inject HTTP_PROXY/HTTPS_PROXY. Use this with SOCKS5 native transparent redirection to avoid protocol conflicts.")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--native-tls-hook", action="store_true", help="Also load HTTP Toolkit native TLS hook. Usually not needed for Flutter dart:io.")
@@ -264,7 +265,7 @@ def main():
         time.sleep(0.5)
 
     adb(args.serial, ["shell", "am", "start", "-n", args.activity])
-    pid = wait_for_pid(args.serial, args.package)
+    pid = wait_for_pid(args.serial, args.package, timeout=args.pid_timeout)
     log(f"started package={args.package} pid={pid} proxy=http://{args.proxy_host}:{args.proxy_port}")
 
     def on_message(message, data):

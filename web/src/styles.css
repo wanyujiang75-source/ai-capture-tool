@@ -639,6 +639,7 @@ small,
 .session,
 .app-list-button,
 .emulator-card,
+.mode-summary,
 .flow-filters,
 .empty-state,
 .advanced-panel,
@@ -687,6 +688,27 @@ small,
   display: grid;
   gap: 5px;
   min-width: 0;
+}
+
+.mode-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 18px;
+}
+
+.mode-summary > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-attempt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .google-state-card {

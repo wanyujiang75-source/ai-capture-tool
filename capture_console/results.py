@@ -10,6 +10,24 @@ from urllib.parse import urlparse
 
 
 MAX_TEXT_BYTES = 2 * 1024 * 1024
+TEXT_CONTENT_TYPES = {
+    "application/graphql",
+    "application/javascript",
+    "application/json",
+    "application/ld+json",
+    "application/x-ndjson",
+    "application/x-www-form-urlencoded",
+    "application/xml",
+    "application/yaml",
+    "image/svg+xml",
+}
+BINARY_CONTENT_PREFIXES = ("audio/", "font/", "image/", "video/")
+BINARY_CONTENT_TYPES = {
+    "application/gzip",
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+}
 
 
 def _safe_join(outdir: Path, name: str) -> Path:
@@ -41,6 +59,44 @@ def _read_text(path: Path) -> str:
     else:
         suffix = ""
     return data.decode("utf-8", errors="replace") + suffix
+
+
+def _normalized_content_type(value: Any) -> str:
+    return str(value or "").split(";", 1)[0].strip().lower()
+
+
+def _looks_like_text(data: bytes) -> bool:
+    if not data:
+        return True
+    sample = data[:4096]
+    if b"\x00" in sample:
+        return False
+    try:
+        sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    control = sum(1 for byte in sample if byte < 32 and byte not in {9, 10, 13})
+    return control / max(len(sample), 1) < 0.08
+
+
+def _is_text_body(path: Path, content_type: str) -> bool:
+    normalized = _normalized_content_type(content_type)
+    if normalized.startswith("text/") or normalized in TEXT_CONTENT_TYPES:
+        return True
+    if normalized.endswith("+json") or normalized.endswith("+xml"):
+        return True
+    if normalized.startswith(BINARY_CONTENT_PREFIXES) or normalized in BINARY_CONTENT_TYPES:
+        return False
+    return _looks_like_text(path.read_bytes())
+
+
+def _body_info(path: Optional[Path], content_type: str, kind: str) -> Dict[str, Any]:
+    return {
+        "kind": kind,
+        "content_type": _normalized_content_type(content_type),
+        "size_bytes": path.stat().st_size if path and path.exists() else 0,
+        "path": str(path) if path else "",
+    }
 
 
 def _load_meta(outdir: Path, meta_name: str) -> Dict[str, Any]:
@@ -174,21 +230,44 @@ def get_flow_detail(outdir: str | Path, flow_id: str) -> Dict[str, Any]:
     detail["response_json"] = None
     detail["request_text"] = ""
     detail["response_text"] = ""
+    detail["request_body_kind"] = "empty"
+    detail["response_body_kind"] = "empty"
+    detail["request_body"] = _body_info(None, "", "empty")
+    detail["response_body"] = _body_info(None, "", "empty")
 
     request_json = _safe_join(outdir, _json_sidecar(flow["request_bin"]))
     response_json = _safe_join(outdir, _json_sidecar(flow["response_bin"]))
     request_bin = _safe_join(outdir, flow["request_bin"]) if flow["request_bin"] else None
     response_bin = _safe_join(outdir, flow["response_bin"]) if flow["response_bin"] else None
+    summary = meta.get("summary", {}) if isinstance(meta, dict) else {}
+    request_content_type = str(summary.get("request_content_type") or "")
+    response_content_type = str(summary.get("response_content_type") or "")
 
     if request_json.exists():
         detail["request_json"] = _read_json(request_json)
+        detail["request_body_kind"] = "json"
+        detail["request_body"] = _body_info(request_bin, request_content_type, "json")
     elif request_bin and request_bin.exists():
-        detail["request_text"] = _read_text(request_bin)
+        if _is_text_body(request_bin, request_content_type):
+            detail["request_text"] = _read_text(request_bin)
+            detail["request_body_kind"] = "text"
+            detail["request_body"] = _body_info(request_bin, request_content_type, "text")
+        else:
+            detail["request_body_kind"] = "binary"
+            detail["request_body"] = _body_info(request_bin, request_content_type, "binary")
 
     if response_json.exists():
         detail["response_json"] = _read_json(response_json)
+        detail["response_body_kind"] = "json"
+        detail["response_body"] = _body_info(response_bin, response_content_type, "json")
     elif response_bin and response_bin.exists():
-        detail["response_text"] = _read_text(response_bin)
+        if _is_text_body(response_bin, response_content_type):
+            detail["response_text"] = _read_text(response_bin)
+            detail["response_body_kind"] = "text"
+            detail["response_body"] = _body_info(response_bin, response_content_type, "text")
+        else:
+            detail["response_body_kind"] = "binary"
+            detail["response_body"] = _body_info(response_bin, response_content_type, "binary")
 
     detail["files"] = {
         "meta": str(_safe_join(outdir, flow["meta"])) if flow["meta"] else "",

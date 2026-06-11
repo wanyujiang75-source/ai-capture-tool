@@ -6,8 +6,8 @@ RUNTIME_DIR="${CAPTURE_RUNTIME_DIR:-$ROOT_DIR/runtime}"
 source "$ROOT_DIR/scripts/common.sh"
 BACKEND_PORT="${CONSOLE_PORT:-7001}"
 FRONTEND_PORT="${FRONTEND_PORT:-7002}"
-BACKEND_SCREEN_SESSION="ai-capture-web-backend"
-FRONTEND_SCREEN_SESSION="ai-capture-web-frontend"
+BACKEND_SCREEN_SESSION="${BACKEND_SCREEN_SESSION:-ai-capture-web-backend}"
+FRONTEND_SCREEN_SESSION="${FRONTEND_SCREEN_SESSION:-ai-capture-web-frontend}"
 
 stop_screen() {
   local session="$1"

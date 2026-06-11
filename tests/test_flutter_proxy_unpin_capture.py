@@ -23,6 +23,13 @@ class FlutterProxyUnpinCaptureTests(unittest.TestCase):
         self.assertTrue(module.needs_reattach(attached_pid=1234, current_pid=1234, detached=True))
         self.assertFalse(module.needs_reattach(attached_pid=1234, current_pid=None, detached=False))
 
+    def test_wait_for_pid_allows_slow_login_or_cold_start_flows(self):
+        module = load_module()
+
+        default_timeout = module.wait_for_pid.__defaults__[0]
+
+        self.assertGreaterEqual(default_timeout, 60)
+
 
 if __name__ == "__main__":
     unittest.main()

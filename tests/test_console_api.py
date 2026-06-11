@@ -11,6 +11,184 @@ from capture_console.store import CaptureStore
 
 
 class CaptureConsoleApiTests(unittest.TestCase):
+    def add_test_device(
+        self,
+        store,
+        *,
+        device_id: str = "device-1",
+        adb_serial: str = "emulator-5554",
+        proxy_port: int = 9090,
+        web_port: int = 9091,
+        frida_port: int = 27042,
+        enabled: int = 1,
+        resident: int = 1,
+        idle_release_minutes: int = 0,
+    ):
+        return store.upsert_device(
+            device_id=device_id,
+            name=f"Test Device {device_id}",
+            avd_name=f"Test_AVD_{device_id}",
+            adb_serial=adb_serial,
+            proxy_port=proxy_port,
+            web_port=web_port,
+            frida_port=frida_port,
+            enabled=enabled,
+            resident=resident,
+            idle_release_minutes=idle_release_minutes,
+        )
+
+    def test_devices_api_handles_empty_project_without_seeded_device_pool(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class RunnerShouldNotBeCalled:
+            def for_device(self, device):
+                raise AssertionError("empty device list must not build device runners")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = RunnerShouldNotBeCalled()
+
+                result = app_module.api_list_devices()
+
+                self.assertEqual(result["devices"], [])
+                self.assertEqual(result["system"]["state"], "running")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_status_api_treats_disabled_default_device_as_empty_state(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class RunnerShouldNotBeCalled:
+            def for_device(self, device):
+                raise AssertionError("disabled default device must not be used for status")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, enabled=0)
+                app_module.runner = RunnerShouldNotBeCalled()
+
+                result = app_module.api_status()
+
+                self.assertEqual(result["health"], "idle")
+                self.assertIsNone(result["active_session"])
+                self.assertIn("未发现在线设备", result["user_message"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_devices_api_persists_adb_devices_without_fixed_avd_pool(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [
+                    {"serial": "emulator-5554", "kind": "emulator"},
+                    {"serial": "R5CT123ABC", "kind": "physical"},
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = DiscoverRunner()
+
+                result = app_module.api_discover_devices()
+
+                self.assertEqual([device["device_id"] for device in result["devices"]], ["device-1", "device-2"])
+                self.assertEqual(result["devices"][0]["adb_serial"], "emulator-5554")
+                self.assertEqual(app_module.store.list_devices()[1]["adb_serial"], "R5CT123ABC")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_devices_api_disables_stale_legacy_devices(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [{"serial": "emulator-5556", "kind": "emulator"}]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142)
+                self.add_test_device(app_module.store, device_id="device-3", adb_serial="emulator-5558", proxy_port=9110, web_port=9111, frida_port=27242)
+                app_module.runner = DiscoverRunner()
+
+                result = app_module.api_discover_devices()
+
+                self.assertEqual([device["device_id"] for device in result["devices"]], ["device-1"])
+                self.assertEqual(app_module.store.get_device("device-1")["adb_serial"], "emulator-5556")
+                self.assertEqual(app_module.store.list_devices(include_disabled=False)[0]["device_id"], "device-1")
+                self.assertEqual(app_module.store.get_device("device-2")["enabled"], 0)
+                self.assertEqual(app_module.store.get_device("device-3")["enabled"], 0)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_devices_api_refreshes_existing_device_activity(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [{"serial": "emulator-5554", "kind": "emulator"}]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                stale_at = "2000-01-01T00:00:00+00:00"
+                app_module.store.update_device("device-1", last_active_at=stale_at, sleep_state="sleeping", error="old")
+                app_module.runner = DiscoverRunner()
+
+                result = app_module.api_discover_devices()
+
+                self.assertEqual(result["devices"][0]["device_id"], "device-1")
+                self.assertEqual(result["devices"][0]["sleep_state"], "awake")
+                self.assertEqual(result["devices"][0]["error"], "")
+                self.assertNotEqual(result["devices"][0]["last_active_at"], stale_at)
+                self.assertEqual(app_module.store.get_device("device-1")["sleep_state"], "awake")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_apps_installed_api_uses_selected_discovered_device(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class InstalledRunner:
+            def __init__(self):
+                self.device_ids = []
+
+            def for_device(self, device):
+                self.device_ids.append(device["device_id"])
+                return self
+
+            def scan_installed_apps(self, query=""):
+                return [{"package_name": "com.example.app", "activity": "com.example.app/.MainActivity"}]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = InstalledRunner()
+                app_module.runner = runner
+
+                result = app_module.api_apps_installed(device_id="device-1")
+
+                self.assertEqual(result["apps"][0]["package_name"], "com.example.app")
+                self.assertEqual(runner.device_ids, ["device-1"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_reconcile_replaces_stale_active_session_with_runtime_outdir(self):
         original_store = app_module.store
         original_runner = app_module.runner
@@ -33,6 +211,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = RuntimeRunner()
                 app = app_module.store.create_app(
                     name="Example",
@@ -63,6 +242,50 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_reconcile_leaves_starting_session_untouched_during_capture_start(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class IdleRunner:
+            def for_device(self, device):
+                return self
+
+            def capture_status(self):
+                return {
+                    "health": "idle",
+                    "exporter": "missing",
+                    "frida_hook": "missing",
+                    "outdir": "/tmp/previous-runtime-capture",
+                    "package": "com.example.app",
+                    "mode": "flutter-socks",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = IdleRunner()
+                app = app_module.store.create_app(
+                    name="Example",
+                    package_name="com.example.app",
+                    default_mode="flutter-socks",
+                )
+                starting = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="flutter-socks",
+                    outdir="/tmp/new-starting-capture",
+                    status="starting",
+                )
+
+                app_module.reconcile_active_session("device-1")
+
+                self.assertEqual(app_module.store.get_session(starting["id"])["status"], "starting")
+                self.assertEqual(app_module.store.active_session("device-1")["id"], starting["id"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_system_preflight_api_reports_port_conflicts(self):
         original_store = app_module.store
         original_collect = app_module.collect_port_listeners
@@ -75,6 +298,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.collect_port_listeners = fake_collect
 
                 result = app_module.api_system_preflight()
@@ -117,6 +341,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 runner = NetworkRunner()
                 app_module.runner = runner
 
@@ -167,6 +392,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = SetupRunner()
 
                 result = app_module.api_setup_state()
@@ -212,6 +438,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = ReadyRunner()
 
                 with self.assertRaises(HTTPException) as ctx:
@@ -268,6 +495,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = LockedRunner()
                 app_module.store.set_system_value(app_module.SETUP_CHECKED_KEY, "1")
 
@@ -306,6 +534,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
                 runner = FridaRunner()
                 app_module.runner = runner
 
@@ -340,6 +570,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = EnvRunner()
 
                 result = app_module.api_system_env_check()
@@ -377,6 +608,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
                 app_module.store.create_app(
                     platform="android",
                     name="MelodyCraft 测试包",
@@ -423,6 +656,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = ReadinessRunner()
                 app = app_module.store.create_app(
                     platform="android",
@@ -481,6 +715,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 runner = LaunchRunner()
                 app_module.runner = runner
                 app = app_module.store.create_app(
@@ -503,7 +738,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
-    def test_devices_api_lists_seeded_device_pool_and_system_state(self):
+    def test_devices_api_lists_connected_devices_and_system_state(self):
         original_store = app_module.store
         original_runner = app_module.runner
 
@@ -530,21 +765,19 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = DeviceStatusRunner()
 
                 result = app_module.api_list_devices()
 
                 self.assertEqual(result["system"]["state"], "running")
-                self.assertGreaterEqual(len(result["devices"]), 3)
+                self.assertEqual(len(result["devices"]), 1)
                 self.assertEqual(result["devices"][0]["device_id"], "device-1")
                 self.assertIn("emulator", result["devices"][0])
                 self.assertEqual(result["devices"][0]["resident"], 1)
                 self.assertEqual(result["devices"][0]["runtime_policy"], "resident")
                 self.assertEqual(result["devices"][0]["release_behavior"], "keep_emulator")
                 self.assertFalse(result["devices"][0]["can_shutdown"])
-                self.assertEqual(result["devices"][2]["runtime_policy"], "on_demand")
-                self.assertEqual(result["devices"][2]["release_behavior"], "shutdown_emulator")
-                self.assertTrue(result["devices"][2]["can_shutdown"])
                 self.assertEqual(result["devices"][0]["google_state"]["state"], "ok")
             finally:
                 app_module.store = original_store
@@ -568,6 +801,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = GoogleStateRunner()
 
                 result = app_module.api_device_google_state("device-1")
@@ -603,6 +837,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 runner = GoogleLoginRunner()
                 app_module.runner = runner
 
@@ -640,6 +875,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = MissingGoogleRunner()
                 app_module.GOOGLE_LOGIN_REQUIRED = True
                 app = app_module.store.create_app(
@@ -660,6 +896,76 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
                 app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+    def test_start_capture_auto_falls_back_to_flutter_socks_when_system_is_not_ready(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class AutoFallbackRunner:
+            def __init__(self):
+                self.health_modes = []
+                self.started_modes = []
+                self.network_switches = 0
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def enter_capture_network(self):
+                self.network_switches += 1
+                return {"ok": True, "mode": "direct"}
+
+            def health_check(self, *, package_name, mode, activity=""):
+                self.health_modes.append(mode)
+                if mode == "system":
+                    return {"ok": False, "checks": [{"name": "proxy", "ok": False}], "resolved_activity": activity}
+                return {"ok": True, "checks": [], "resolved_activity": activity}
+
+            def make_outdir(self, app_name):
+                return Path(tempfile.gettempdir()) / f"{app_name}-{len(self.started_modes)}"
+
+            def start_capture(self, **kwargs):
+                self.started_modes.append(kwargs["mode"])
+                return CommandResult(0, f"mode: {kwargs['mode']}\n", "")
+
+            def stop_capture(self):
+                return CommandResult(0, "", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = AutoFallbackRunner()
+                app_module.runner = runner
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Generic",
+                    package_name="com.example.generic",
+                    activity="com.example.generic/.MainActivity",
+                    default_mode="auto",
+                )
+
+                result = app_module.api_start_capture(
+                    app_module.CaptureStartPayload(app_id=app["id"], device_id="device-1", mode="auto")
+                )
+
+                self.assertEqual(result["session"]["mode"], "flutter-socks")
+                self.assertEqual(result["requested_mode"], "auto")
+                self.assertEqual(result["mode_attempts"][0]["mode"], "system")
+                self.assertEqual(result["mode_attempts"][0]["status"], "failed")
+                self.assertEqual(result["mode_attempts"][1]["mode"], "flutter-socks")
+                self.assertEqual(result["mode_attempts"][1]["status"], "running")
+                self.assertEqual(runner.health_modes, ["system", "flutter-socks"])
+                self.assertEqual(runner.started_modes, ["flutter-socks"])
+                self.assertEqual(runner.network_switches, 1)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
 
     def test_launch_app_rejects_when_google_play_is_missing(self):
         original_store = app_module.store
@@ -686,6 +992,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = MissingPlayStoreRunner()
                 app_module.GOOGLE_LOGIN_REQUIRED = True
                 app = app_module.store.create_app(
@@ -708,6 +1015,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_package_install_readiness_rejects_when_google_login_is_missing(self):
+        original_store = app_module.store
         original_runner = app_module.runner
         original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
 
@@ -725,18 +1033,22 @@ class CaptureConsoleApiTests(unittest.TestCase):
                     "fix": "点击“去登录 Google”，完成登录后刷新状态。",
                 }
 
-        try:
-            app_module.runner = MissingGoogleRunner()
-            app_module.GOOGLE_LOGIN_REQUIRED = True
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = MissingGoogleRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = True
 
-            with self.assertRaises(HTTPException) as ctx:
-                app_module.ensure_emulator_ready_for_install(device_id="device-1")
+                with self.assertRaises(HTTPException) as ctx:
+                    app_module.ensure_emulator_ready_for_install(device_id="device-1")
 
-            self.assertEqual(ctx.exception.status_code, 409)
-            self.assertEqual(ctx.exception.detail["state"], "not_logged_in")
-        finally:
-            app_module.runner = original_runner
-            app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+                self.assertEqual(ctx.exception.status_code, 409)
+                self.assertEqual(ctx.exception.detail["state"], "not_logged_in")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_devices_api_recovers_running_capture_for_each_device(self):
         original_store = app_module.store
@@ -789,6 +1101,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
                 app_module.store.create_app(
                     platform="android",
                     name="MelodyCraft 测试包",
@@ -815,6 +1129,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
 
                 result = app_module.api_create_app(
                     app_module.AppPayload(
@@ -836,6 +1151,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app = app_module.store.create_app(
                     platform="android",
                     environment="test",
@@ -871,6 +1187,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = RunnerShouldNotRun()
                 app = app_module.store.create_app(
                     platform="ios",
@@ -899,6 +1216,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = RunnerShouldNotRun()
                 app = app_module.store.create_app(
                     platform="ios",
@@ -936,6 +1254,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = VersionRunner()
                 app = app_module.store.create_app(
                     platform="android",
@@ -973,6 +1292,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = VersionRunner()
                 app = app_module.store.create_app(
                     platform="android",
@@ -1005,6 +1325,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = RunnerShouldNotInstall()
                 app = app_module.store.create_app(
                     platform="android",
@@ -1083,6 +1404,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
             original_latest = app_module.LATEST_APKS_DIR
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
                 app_module.runner = UploadRunner()
                 app_module.UPLOADS_DIR = Path(tmp) / "uploads"
                 app_module.LATEST_APKS_DIR = Path(tmp) / "latest"
@@ -1151,6 +1474,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
             original_latest = app_module.LATEST_APKS_DIR
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = UploadRunner()
                 app_module.UPLOADS_DIR = Path(tmp) / "uploads"
                 app_module.LATEST_APKS_DIR = Path(tmp) / "latest"
@@ -1197,6 +1521,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = OfflineRunner()
 
                 with self.assertRaises(HTTPException) as ctx:
@@ -1239,6 +1564,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-3", adb_serial="emulator-5558", proxy_port=9110, web_port=9111, frida_port=27242, resident=0, idle_release_minutes=10)
                 runner = ReleaseRunner()
                 app_module.runner = runner
                 app = app_module.store.create_app(
@@ -1265,6 +1592,111 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 self.assertEqual(result["release_behavior"], "keep_emulator")
                 self.assertEqual(app_module.store.get_session(session["id"])["status"], "stopped")
                 self.assertEqual(app_module.store.get_device("device-1")["lease_status"], "idle")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_stop_capture_clears_android_proxy(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StopRunner:
+            def __init__(self):
+                self.stopped = False
+                self.cleared_proxy = False
+
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                self.stopped = True
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                self.cleared_proxy = True
+                return CommandResult(0, "proxy cleared", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Chrome",
+                    package_name="com.android.chrome",
+                    activity="com.android.chrome/com.google.android.apps.chrome.Main",
+                    default_mode="system",
+                )
+                session = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="system",
+                    outdir=str(Path(tmp) / "capture"),
+                    status="running",
+                )
+                app_module.store.update_device("device-1", current_session_id=session["id"], lease_status="running")
+                runner = StopRunner()
+                app_module.runner = runner
+
+                result = app_module.api_stop_capture(device_id="device-1")
+
+                self.assertTrue(result["ok"])
+                self.assertTrue(runner.stopped)
+                self.assertTrue(runner.cleared_proxy)
+                self.assertEqual(result["proxy"]["stdout"], "proxy cleared")
+                self.assertEqual(result["session"]["status"], "stopped")
+                self.assertIsNone(app_module.store.active_session(device_id="device-1"))
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_stop_capture_session_clears_android_proxy(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StopRunner:
+            def __init__(self):
+                self.cleared_proxy = False
+
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                self.cleared_proxy = True
+                return CommandResult(0, "proxy cleared", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Chrome",
+                    package_name="com.android.chrome",
+                    activity="com.android.chrome/com.google.android.apps.chrome.Main",
+                    default_mode="system",
+                )
+                session = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="system",
+                    outdir=str(Path(tmp) / "capture"),
+                    status="running",
+                )
+                app_module.store.update_device("device-1", current_session_id=session["id"], lease_status="running")
+                runner = StopRunner()
+                app_module.runner = runner
+
+                result = app_module.api_stop_capture_session(session["id"])
+
+                self.assertTrue(result["ok"])
+                self.assertTrue(runner.cleared_proxy)
+                self.assertEqual(result["proxy"]["stdout"], "proxy cleared")
+                self.assertEqual(result["session"]["status"], "stopped")
+                self.assertIsNone(app_module.store.active_session(device_id="device-1"))
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
@@ -1300,6 +1732,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-3", adb_serial="emulator-5558", proxy_port=9110, web_port=9111, frida_port=27242, resident=0, idle_release_minutes=10)
                 runner = ReleaseRunner()
                 app_module.runner = runner
 
@@ -1341,6 +1775,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 runner = ReleaseRunner()
                 app_module.runner = runner
 
@@ -1367,6 +1802,8 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142, resident=0, idle_release_minutes=10)
                 app_module.runner = SleepRunner()
                 app = app_module.store.create_app(
                     platform="android",
@@ -1428,6 +1865,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
                 app_module.runner = RunnerShouldNotValidate()
                 app = app_module.store.create_app(
                     platform="android",
@@ -1449,6 +1887,86 @@ class CaptureConsoleApiTests(unittest.TestCase):
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
+
+    def test_validate_capture_auto_falls_back_to_flutter_socks(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_scan_capture = app_module.scan_capture
+
+        class AutoValidateRunner:
+            def __init__(self, root):
+                self.root = Path(root)
+                self.health_modes = []
+                self.started_modes = []
+                self.stopped = 0
+                self.cleared = 0
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def enter_capture_network(self):
+                return {"ok": True}
+
+            def health_check(self, *, package_name, mode, activity=""):
+                self.health_modes.append(mode)
+                if mode == "system":
+                    return {"ok": False, "checks": [], "resolved_activity": activity}
+                return {"ok": True, "checks": [], "resolved_activity": activity}
+
+            def launch_app(self, **kwargs):
+                return CommandResult(0, "launched", "")
+
+            def make_outdir(self, app_name):
+                return self.root / app_name
+
+            def start_capture(self, **kwargs):
+                self.started_modes.append(kwargs["mode"])
+                return CommandResult(0, "started", "")
+
+            def stop_capture(self):
+                self.stopped += 1
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                self.cleared += 1
+                return CommandResult(0, "cleared", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = AutoValidateRunner(tmp)
+                app_module.runner = runner
+                app_module.scan_capture = lambda outdir: [
+                    {"has_response_json": True, "has_request_json": False}
+                ]
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Generic",
+                    package_name="com.example.generic",
+                    activity="com.example.generic/.MainActivity",
+                    default_mode="auto",
+                )
+
+                result = app_module.api_validate_capture(app["id"], device_id="device-1")
+
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["validation"]["status"], "passed")
+                self.assertEqual(result["validation"]["session"]["mode"], "flutter-socks")
+                self.assertEqual(result["mode_attempts"][0]["mode"], "system")
+                self.assertEqual(result["mode_attempts"][0]["status"], "failed")
+                self.assertEqual(result["mode_attempts"][1]["mode"], "flutter-socks")
+                self.assertEqual(runner.health_modes, ["system", "flutter-socks"])
+                self.assertEqual(runner.started_modes, ["flutter-socks"])
+                self.assertEqual(runner.cleared, 2)
+                self.assertEqual(app_module.store.get_app(app["id"])["last_success_mode"], "flutter-socks")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.scan_capture = original_scan_capture
 
 
 if __name__ == "__main__":

@@ -56,6 +56,7 @@ PROXY_PORT="${PROXY_PORT:-9090}"
 WEB_PORT="${WEB_PORT:-9091}"
 FRIDA_PORT="${FRIDA_PORT:-27042}"
 FRIDA_HOST="${FRIDA_HOST:-127.0.0.1:$FRIDA_PORT}"
+FRIDA_PID_TIMEOUT="${FRIDA_PID_TIMEOUT:-60}"
 MITMWEB_PASSWORD="${MITMWEB_PASSWORD:-android-capture}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-240}"
 RUN_TS="${RUN_TS:-$(date +%Y%m%d-%H%M%S)}"
@@ -396,6 +397,8 @@ EOF
       --socks5 \
       --no-proxy-env \
       --flutter-verify-success-value 1 \
+      --no-force-stop \
+      --pid-timeout "$FRIDA_PID_TIMEOUT" \
       --duration 0
     printf '>> %q 2>&1\n' "$OUTDIR/frida.log"
   } > "$FRIDA_LAUNCHER_FILE"
@@ -420,6 +423,7 @@ write_env_file() {
 	    printf 'WEB_PORT=%q\n' "$WEB_PORT"
 	    printf 'FRIDA_PORT=%q\n' "$FRIDA_PORT"
 	    printf 'FRIDA_HOST=%q\n' "$FRIDA_HOST"
+	    printf 'FRIDA_PID_TIMEOUT=%q\n' "$FRIDA_PID_TIMEOUT"
 	    printf 'MITMWEB_PASSWORD=%q\n' "$MITMWEB_PASSWORD"
 	    printf 'CAPTURE_MODE=%q\n' "$CAPTURE_MODE"
 	    printf 'APP_PACKAGE=%q\n' "$APP_PACKAGE"

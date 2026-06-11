@@ -6,18 +6,9 @@ VENV_DIR="${CONSOLE_VENV_DIR:-$ROOT_DIR/.venv-console}"
 HOST="${CONSOLE_HOST:-127.0.0.1}"
 PORT="${CONSOLE_PORT:-7001}"
 CONSOLE_PYTHON="${CONSOLE_PYTHON:-}"
+source "$ROOT_DIR/scripts/console_python.sh"
 
-if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-  if [[ -z "$CONSOLE_PYTHON" ]]; then
-    for candidate in /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
-      if command -v "$candidate" >/dev/null 2>&1; then
-        CONSOLE_PYTHON="$(command -v "$candidate")"
-        break
-      fi
-    done
-  fi
-  "${CONSOLE_PYTHON:-python3}" -m venv "$VENV_DIR"
-fi
+ensure_console_venv
 
 if [[ "${CONSOLE_SKIP_INSTALL:-0}" != "1" ]]; then
   "$VENV_DIR/bin/python" -m pip install --upgrade pip >/dev/null
