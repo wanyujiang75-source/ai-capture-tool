@@ -15,8 +15,8 @@ struct CaptureView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
-            if appState.deviceLoadState == .idle || appState.appLoadState == .idle {
-                await appState.refreshDeviceAndApps()
+            if appState.deviceLoadState == .idle || appState.jenkinsLoadState == .idle {
+                await appState.refreshCaptureTargets()
             }
         }
     }
@@ -44,11 +44,11 @@ struct CaptureView: View {
                 }
             }
             Picker("应用", selection: selectedAppBinding) {
-                if appState.apps.isEmpty {
-                    Text("暂无应用").tag(0)
+                if appState.jenkinsPackages.isEmpty {
+                    Text("暂无 Jenkins 包").tag("")
                 } else {
-                    ForEach(appState.apps) { app in
-                        Text("\(app.name ?? "未命名应用") · \(app.packageName ?? "-")").tag(app.id)
+                    ForEach(appState.jenkinsPackages) { package in
+                        Text("\(package.jobName) #\(package.buildNumber) · \(package.artifactFileName)").tag(package.id)
                     }
                 }
             }
@@ -67,7 +67,7 @@ struct CaptureView: View {
         HStack(spacing: 12) {
             Button {
                 Task {
-                    await appState.refreshDeviceAndApps()
+                    await appState.refreshCaptureTargets()
                 }
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
@@ -131,8 +131,10 @@ struct CaptureView: View {
     private var selectedSummary: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("当前设备：\(appState.selectedDevice?.name ?? appState.selectedDeviceID ?? "-")")
-            Text("当前应用：\(appState.selectedApp?.name ?? "-")")
-            Text("默认模式：\(appState.selectedApp?.defaultMode ?? "auto")")
+            Text("Jenkins 包：\(appState.selectedJenkinsPackage?.jobName ?? "-")")
+            Text("构建产物：\(appState.selectedJenkinsPackage?.artifactFileName ?? "-")")
+            Text("安装后应用：\(appState.selectedApp?.name ?? "操作时自动解析")")
+            Text("默认模式：\(appState.selectedApp?.defaultMode ?? "flutter-socks")")
         }
         .font(.callout)
         .foregroundStyle(.secondary)
@@ -146,11 +148,11 @@ struct CaptureView: View {
         }
     }
 
-    private var selectedAppBinding: Binding<Int> {
+    private var selectedAppBinding: Binding<String> {
         Binding {
-            appState.selectedAppID ?? 0
+            appState.selectedJenkinsPackageID ?? ""
         } set: { value in
-            appState.selectedAppID = value == 0 ? nil : value
+            appState.selectedJenkinsPackageID = value.isEmpty ? nil : value
         }
     }
 
