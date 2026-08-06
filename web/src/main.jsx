@@ -7,6 +7,7 @@ import {
   formatActionSuccess,
 } from "./actionMessage.js";
 import { appEnvironmentLabel, groupAppsByEnvironment } from "./appEnvironment.js";
+import { desktopRuntimeLabel, desktopRuntimeTitle } from "./desktopStatus.js";
 import { deviceState, releaseActionHint, releaseActionLabel, residentSummary } from "./deviceUi.js";
 import { applyFlowClearMarker, createFlowClearMarker } from "./flowClear.js";
 import { matchesMethod, methodFilterOptions } from "./flowMethods.js";
@@ -692,6 +693,7 @@ function App() {
           ? selectedGoogleState.user_message || "请先完成 Google 登录后再上传更新包。"
         : "";
   const residentStatus = residentSummary(devices);
+  const desktopLabel = desktopRuntimeLabel(status);
   const consoleAvailable = Boolean(selectedDeviceActiveSession || selectedSession || sessions.length);
   const showSetupWizard = shouldShowSetupWizard(setup, setupForcedOpen, consoleAvailable);
 
@@ -731,6 +733,9 @@ function App() {
             {selectedDeviceReady ? "当前设备在线" : "当前设备未就绪"}
           </span>
           <span className={residentStatus.ready ? "status-chip ok" : "status-chip warn"}>{residentStatus.label}</span>
+          {desktopLabel ? (
+            <span className="status-chip ok" title={desktopRuntimeTitle(status)}>{desktopLabel}</span>
+          ) : null}
           {googleRequired ? (
             <span className={`status-chip ${googleStateClass(selectedGoogleState)}`}>{googleStateLabel(selectedGoogleState)}</span>
           ) : null}

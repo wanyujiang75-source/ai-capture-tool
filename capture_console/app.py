@@ -151,6 +151,14 @@ def list_active_sessions() -> list[Dict[str, Any]]:
     return [active] if active else []
 
 
+def desktop_runtime_metadata() -> Dict[str, Any]:
+    return {
+        "enabled": os.environ.get("TRACEDECK_DESKTOP", "0").lower() in {"1", "true", "yes", "on"},
+        "runtime_dir": str(RUNTIME_DIR),
+        "config_path": os.environ.get("TRACEDECK_CONFIG", ""),
+    }
+
+
 def release_device_runtime(device_id: str, *, force_shutdown: bool = False) -> Dict[str, Any]:
     device = device_or_404(device_id)
     device_runner = runner_for_device_id(device_id)
@@ -836,6 +844,7 @@ def api_status() -> Dict[str, Any]:
             "active_session": None,
             "emulator": {"adb_online": False, "boot_completed": False, "unlocked": False},
             "system": store.get_system_state(),
+            "desktop": desktop_runtime_metadata(),
             "user_message": "未发现在线设备。请连接 Android 设备或启动模拟器后刷新设备。",
         }
     device_id = str(device["device_id"])
@@ -846,6 +855,7 @@ def api_status() -> Dict[str, Any]:
     status["emulator"] = default_runner.emulator_status()
     status["system"] = store.get_system_state()
     status["device_id"] = device_id
+    status["desktop"] = desktop_runtime_metadata()
     return status
 
 
