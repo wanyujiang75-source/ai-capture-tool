@@ -82,6 +82,9 @@ struct FlowViews: View {
                     Button {
                         Task {
                             await appState.loadFlowDetail(flow)
+                            if let detail = appState.selectedFlowDetail {
+                                detailTab = preferredDetailTab(for: detail)
+                            }
                         }
                     } label: {
                         FlowRow(flow: flow)
@@ -168,6 +171,21 @@ struct FlowViews: View {
             return responseText
         }
         return "No response body"
+    }
+
+    private func preferredDetailTab(for detail: FlowDetail) -> String {
+        if !hasRequestBody(detail), hasResponseBody(detail) {
+            return "response"
+        }
+        return "request"
+    }
+
+    private func hasRequestBody(_ detail: FlowDetail) -> Bool {
+        detail.requestJSON != nil || !(detail.requestText ?? "").isEmpty
+    }
+
+    private func hasResponseBody(_ detail: FlowDetail) -> Bool {
+        detail.responseJSON != nil || !(detail.responseText ?? "").isEmpty
     }
 
     private func stateText(_ state: LoadState) -> some View {
