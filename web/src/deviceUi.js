@@ -32,3 +32,29 @@ export function residentSummary(devices) {
     ready: residentDevices.length > 0 && online.length === residentDevices.length,
   };
 }
+
+export function deviceInstallReady(device) {
+  return Boolean(device?.emulator?.adb_online && device?.emulator?.boot_completed && device?.emulator?.unlocked);
+}
+
+export function deviceBootReady(device) {
+  return Boolean(device?.emulator?.adb_online && device?.emulator?.boot_completed);
+}
+
+export function selectPreferredDevice(devices, previousDeviceId = "") {
+  const items = devices || [];
+  if (!items.length) return null;
+
+  const previous = items.find((device) => device.device_id === previousDeviceId);
+  if (previous?.active_session || previous?.capture?.health === "running") return previous;
+  if (deviceInstallReady(previous)) return previous;
+
+  const installReady = items.find(deviceInstallReady);
+  if (installReady) return installReady;
+
+  if (deviceBootReady(previous)) return previous;
+  const bootReady = items.find(deviceBootReady);
+  if (bootReady) return bootReady;
+
+  return previous || items[0];
+}

@@ -9,7 +9,7 @@ import {
 import { appEnvironmentLabel, groupAppsByEnvironment } from "./appEnvironment.js";
 import { autoCaptureButtonLabel, autoCaptureRequirement, deviceUnlocked } from "./autoCapture.js";
 import { desktopRuntimeLabel, desktopRuntimeTitle } from "./desktopStatus.js";
-import { deviceState, releaseActionHint, releaseActionLabel, residentSummary } from "./deviceUi.js";
+import { deviceState, releaseActionHint, releaseActionLabel, residentSummary, selectPreferredDevice } from "./deviceUi.js";
 import { applyFlowClearMarker, createFlowClearMarker } from "./flowClear.js";
 import { matchesMethod, methodFilterOptions } from "./flowMethods.js";
 import { compactTimestamp, flowTimingInfo, flowTimingRows, flowTimingSummary } from "./flowTiming.js";
@@ -262,10 +262,7 @@ function App() {
     const nextDevices = deviceData.devices || [];
     setDevices(nextDevices);
     setSelectedDeviceId((previous) => {
-      if (previous && nextDevices.some((item) => item.device_id === previous)) {
-        return previous;
-      }
-      return nextDevices[0]?.device_id || "";
+      return selectPreferredDevice(nextDevices, previous)?.device_id || "";
     });
     const nextApps = appData.apps || [];
     setApps(nextApps);
@@ -286,7 +283,7 @@ function App() {
   };
 
   const selectedApp = apps.find((item) => String(item.id) === String(selectedAppId));
-  const selectedDevice = devices.find((item) => item.device_id === selectedDeviceId) || devices[0];
+  const selectedDevice = selectPreferredDevice(devices, selectedDeviceId);
   const selectedDeviceCapture = selectedDevice?.capture || status || {};
   const selectedDeviceActiveSession = selectedDevice?.active_session || null;
   const selectedAppCanCapture = Boolean(selectedApp) && (selectedApp?.platform || "android") === "android";
@@ -413,7 +410,7 @@ function App() {
     const data = await api("/api/devices");
     const nextDevices = data.devices || [];
     setDevices(nextDevices);
-    const device = nextDevices.find((item) => item.device_id === preferredDeviceId) || nextDevices[0];
+    const device = selectPreferredDevice(nextDevices, preferredDeviceId);
     if (device?.device_id && device.device_id !== selectedDeviceId) {
       setSelectedDeviceId(device.device_id);
     }

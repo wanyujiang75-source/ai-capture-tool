@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  deviceInstallReady,
   deviceState,
   releaseActionHint,
   releaseActionLabel,
   residentSummary,
+  selectPreferredDevice,
 } from "../src/deviceUi.js";
 
 test("labels resident devices separately from on-demand devices", () => {
@@ -47,4 +49,36 @@ test("summarizes resident readiness for the top bar", () => {
 
   assert.equal(summary.label, "常驻 1/2 在线");
   assert.equal(summary.ready, false);
+});
+
+test("selects an unlocked online device when the previous selection is offline", () => {
+  const devices = [
+    {
+      device_id: "device-1",
+      emulator: { adb_online: false, boot_completed: false, unlocked: false },
+    },
+    {
+      device_id: "device-2",
+      emulator: { adb_online: true, boot_completed: true, unlocked: true },
+    },
+  ];
+
+  assert.equal(deviceInstallReady(devices[1]), true);
+  assert.equal(selectPreferredDevice(devices, "device-1").device_id, "device-2");
+});
+
+test("keeps the selected device when it has an active capture", () => {
+  const devices = [
+    {
+      device_id: "device-1",
+      active_session: { id: 1 },
+      emulator: { adb_online: false, boot_completed: false, unlocked: false },
+    },
+    {
+      device_id: "device-2",
+      emulator: { adb_online: true, boot_completed: true, unlocked: true },
+    },
+  ];
+
+  assert.equal(selectPreferredDevice(devices, "device-1").device_id, "device-1");
 });
