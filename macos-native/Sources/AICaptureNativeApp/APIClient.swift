@@ -31,8 +31,11 @@ struct APIClient {
         return response.packages
     }
 
-    func startDevice(deviceId: String) async throws -> BasicActionResponse {
-        try await post("api/devices/\(deviceId)/start")
+    func startDevice(deviceId: String, visible: Bool = false) async throws -> BasicActionResponse {
+        try await post(
+            "api/devices/\(deviceId)/start",
+            queryItems: [URLQueryItem(name: "visible", value: visible ? "true" : "false")]
+        )
     }
 
     func installJenkinsPackage(

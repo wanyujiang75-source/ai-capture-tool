@@ -359,6 +359,24 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
         self.assertEqual(runner._env()["EMULATOR_LAUNCH_MODE"], "background")
 
+    def test_runner_can_request_visible_terminal_emulator_launch(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class RecordingRunner(ConsoleRunner):
+            def __init__(self):
+                super().__init__("/tmp", adb_serial="emulator-5554", avd_name="Capture_AVD_01", allow_non_retained=True)
+                self.extra_env = None
+
+            def run(self, args, *, timeout=30, env=None):
+                self.extra_env = env
+                return CommandResult(0, "", "")
+
+        runner = RecordingRunner()
+
+        runner.start_emulator(visible=True)
+
+        self.assertEqual(runner.extra_env, {"EMULATOR_LAUNCH_MODE": "terminal"})
+
     def test_start_lab_emulator_supports_background_launch_mode(self):
         script = Path("scripts/start_lab_emulator.sh").read_text(encoding="utf-8")
 

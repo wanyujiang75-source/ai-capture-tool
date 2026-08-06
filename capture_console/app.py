@@ -1008,10 +1008,10 @@ def api_emulator_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 
 
 @app.post("/api/emulator/start")
-def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
+def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False) -> Dict[str, Any]:
     store.set_system_state("waking")
     device_runner = runner_for_device_id(device_id)
-    result = device_runner.start_emulator()
+    result = device_runner.start_emulator(visible=visible)
     store.set_system_state("running")
     store.touch_device(device_id)
     return {
@@ -1023,8 +1023,8 @@ def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 
 
 @app.post("/api/devices/{device_id}/start")
-def api_start_device(device_id: str) -> Dict[str, Any]:
-    return api_start_emulator(device_id=device_id)
+def api_start_device(device_id: str, visible: bool = False) -> Dict[str, Any]:
+    return api_start_emulator(device_id=device_id, visible=visible)
 
 
 @app.get("/api/devices/{device_id}/preview")

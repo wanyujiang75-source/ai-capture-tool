@@ -238,11 +238,12 @@ class ConsoleRunner:
             "devices": devices.stdout.strip(),
         }
 
-    def start_emulator(self) -> CommandResult:
+    def start_emulator(self, *, visible: bool = False) -> CommandResult:
         retained_check = self.retained_target_check()
         if not retained_check["ok"]:
             return CommandResult(1, "", retained_check["fix"])
-        return self.run([str(self.scripts_dir / "start_play_emulator.sh"), self.avd_name], timeout=30)
+        env = {"EMULATOR_LAUNCH_MODE": "terminal"} if visible else None
+        return self.run([str(self.scripts_dir / "start_play_emulator.sh"), self.avd_name], timeout=30, env=env)
 
     def stop_emulator(self) -> CommandResult:
         return self.adb(["emu", "kill"], timeout=20)
