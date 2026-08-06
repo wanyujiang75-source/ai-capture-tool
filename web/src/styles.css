@@ -1051,6 +1051,33 @@ small,
   flex-wrap: wrap;
 }
 
+.auto-capture-button {
+  min-width: 154px;
+  background: linear-gradient(135deg, #0071e3 0%, #0057b8 100%);
+  box-shadow: 0 14px 28px rgba(0, 113, 227, 0.22);
+}
+
+.auto-capture-status {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(0, 113, 227, 0.14);
+  border-radius: 16px;
+  background: #f4f9ff;
+  color: #3b414c;
+}
+
+.auto-capture-status strong {
+  color: #0057b8;
+  font-size: 13px;
+}
+
+.auto-capture-status small {
+  color: #697180;
+  font-size: 12px;
+}
+
 .advanced-panel,
 .drawer {
   margin-top: 14px;

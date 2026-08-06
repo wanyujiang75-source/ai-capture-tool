@@ -7,6 +7,7 @@ import {
   formatActionSuccess,
 } from "./actionMessage.js";
 import { appEnvironmentLabel, groupAppsByEnvironment } from "./appEnvironment.js";
+import { autoCaptureButtonLabel, autoCaptureRequirement, deviceUnlocked } from "./autoCapture.js";
 import { desktopRuntimeLabel, desktopRuntimeTitle } from "./desktopStatus.js";
 import { deviceState, releaseActionHint, releaseActionLabel, residentSummary } from "./deviceUi.js";
 import { applyFlowClearMarker, createFlowClearMarker } from "./flowClear.js";
@@ -245,8 +246,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [setup, setSetup] = useState(null);
   const [setupForcedOpen, setSetupForcedOpen] = useState(false);
+  const [setupDismissed, setSetupDismissed] = useState(false);
   const [diagnostics, setDiagnostics] = useState(null);
   const [installedApps, setInstalledApps] = useState([]);
+  const [autoCaptureStep, setAutoCaptureStep] = useState("");
 
   const loadAll = async () => {
     const [nextStatus, deviceData, appData, captureData] = await Promise.all([
@@ -352,6 +355,10 @@ function App() {
       }
       setMessage(formatActionSuccess(label));
     } catch (error) {
+      await loadAll().catch(() => {});
+      if (selectedAppId) {
+        await loadReadiness(selectedAppId).catch(() => {});
+      }
       setMessage(formatActionError(label, error));
     } finally {
       setLoading(false);
@@ -400,6 +407,114 @@ function App() {
         requested_mode: result.requested_mode,
         mode_attempts: result.mode_attempts || [],
       });
+    });
+
+  const fetchDeviceSnapshot = async (preferredDeviceId = selectedDeviceId) => {
+    const data = await api("/api/devices");
+    const nextDevices = data.devices || [];
+    setDevices(nextDevices);
+    const device = nextDevices.find((item) => item.device_id === preferredDeviceId) || nextDevices[0];
+    if (device?.device_id && device.device_id !== selectedDeviceId) {
+      setSelectedDeviceId(device.device_id);
+    }
+    return device || null;
+  };
+
+  const waitForDevice = async (deviceId, predicate, failureMessage, timeoutMs = 120000) => {
+    const startedAt = Date.now();
+    let lastDevice = null;
+    while (Date.now() - startedAt < timeoutMs) {
+      lastDevice = await fetchDeviceSnapshot(deviceId);
+      if (lastDevice && predicate(lastDevice)) {
+        return lastDevice;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+    const error = new Error(failureMessage);
+    error.payload = { device: lastDevice };
+    throw error;
+  };
+
+  const autoStartCapture = (target) =>
+    runAction("自动检测并启动抓包", async () => {
+      if (!target) {
+        throw new Error("请先选择应用");
+      }
+      if ((target.platform || "android") !== "android") {
+        throw new Error("当前版本只支持 Android 抓包；iOS 仅预留入口，暂未实现。");
+      }
+
+      setAutoCaptureStep("发现并选择可用设备");
+      let device = await fetchDeviceSnapshot(selectedDeviceId);
+      if (!device) {
+        await api("/api/devices/discover");
+        device = await fetchDeviceSnapshot(selectedDeviceId);
+      }
+      if (!device?.device_id) {
+        throw new Error("未发现可用 Android 设备，请确认已配置设备池或连接设备。");
+      }
+      const deviceId = device.device_id;
+      setSelectedDeviceId(deviceId);
+
+      if (!device?.emulator?.adb_online || !device?.emulator?.boot_completed) {
+        setAutoCaptureStep("启动设备并等待 Android 启动完成");
+        const startResult = await api(`/api/devices/${encodeURIComponent(deviceId)}/start`, { method: "POST" });
+        if (startResult.ok === false) {
+          throw new Error(startResult.stderr || startResult.stdout || "启动设备失败");
+        }
+        device = await waitForDevice(
+          deviceId,
+          (item) => item?.emulator?.adb_online && item?.emulator?.boot_completed,
+          "设备启动超时，请打开模拟器画面查看是否卡在启动页。",
+        );
+      }
+
+      if (!deviceUnlocked(device)) {
+        setAutoCaptureStep("等待设备解锁");
+        device = await waitForDevice(
+          deviceId,
+          deviceUnlocked,
+          "设备已启动但未解锁。请先解锁模拟器，然后再次点击一键开始抓包。",
+          45000,
+        );
+      }
+
+      const setupState = await loadSetupState().catch(() => setup);
+      const requiresGoogle = Boolean(setupState?.google_login_required);
+      if (requiresGoogle && !device?.google_state?.ok) {
+        setAutoCaptureStep("打开 Google 登录入口");
+        await api(`/api/devices/${encodeURIComponent(deviceId)}/open-google-login`, { method: "POST" });
+        throw new Error("该环境要求 Google 登录。请在模拟器内完成登录后，再点击一键开始抓包。");
+      }
+
+      setAutoCaptureStep("启动 Frida 准入服务");
+      const fridaResult = await api(`/api/devices/${encodeURIComponent(deviceId)}/prepare-frida`, { method: "POST" });
+      if (!fridaResult.ok) {
+        const error = new Error(fridaResult.frida?.detail || fridaResult.stderr || "Frida 启动失败");
+        error.payload = fridaResult;
+        throw error;
+      }
+
+      setAutoCaptureStep("打开目标应用");
+      await api(`/api/apps/${target.id}/launch?device_id=${encodeURIComponent(deviceId)}`, { method: "POST" });
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+
+      setAutoCaptureStep("启动抓包并进入实时分析");
+      const result = await api("/api/captures/start", {
+        method: "POST",
+        body: JSON.stringify({ app_id: target.id, mode: "auto", device_id: deviceId }),
+      });
+      setSessionView("live");
+      setSelectedSession({
+        ...result.session,
+        requested_mode: result.requested_mode,
+        mode_attempts: result.mode_attempts || [],
+      });
+      scheduleDelayedReadinessRefresh({
+        appId: String(target.id),
+        refresh: (appId) => loadReadiness(appId).catch(() => {}),
+      });
+      setAutoCaptureStep("抓包已启动，接口分析会实时刷新");
     });
 
   const stopCapture = () =>
@@ -527,6 +642,7 @@ function App() {
 
   const checkSetup = () =>
     runAction("环境检查", async () => {
+      setSetupDismissed(false);
       setSetupForcedOpen(true);
       const data = await api("/api/setup/check", { method: "POST" });
       setSetup(data.setup);
@@ -676,6 +792,12 @@ function App() {
     ? selectedDeviceCapture?.mode || "-"
     : selectedApp?.default_mode || "auto";
   const captureRunning = selectedDeviceCapture?.health === "running" || Boolean(selectedDeviceActiveSession);
+  const autoCaptureState = autoCaptureRequirement({
+    app: selectedApp,
+    device: selectedDevice,
+    captureRunning,
+    googleRequired,
+  });
   const selectedSessionIsLive = Boolean(selectedSession?.id && selectedDeviceActiveSession?.id === selectedSession.id && sessionView === "live");
   const recentSessions = sessions.filter((session) => !selectedDeviceId || session.device_id === selectedDeviceId).slice(0, 8);
   const groupedApps = groupAppsByEnvironment(apps);
@@ -695,7 +817,7 @@ function App() {
   const residentStatus = residentSummary(devices);
   const desktopLabel = desktopRuntimeLabel(status);
   const consoleAvailable = Boolean(selectedDeviceActiveSession || selectedSession || sessions.length);
-  const showSetupWizard = shouldShowSetupWizard(setup, setupForcedOpen, consoleAvailable);
+  const showSetupWizard = !setupDismissed && shouldShowSetupWizard(setup, setupForcedOpen, consoleAvailable);
 
   useEffect(() => {
     if (!showSetupWizard) return undefined;
@@ -770,7 +892,10 @@ function App() {
           onInstall={(environment, file) => installPackage(environment, file)}
           onValidate={() => validateSelectedCapture(selectedApp)}
           onComplete={completeSetup}
-          onClose={() => setSetupForcedOpen(false)}
+          onClose={() => {
+            setSetupForcedOpen(false);
+            setSetupDismissed(true);
+          }}
         />
       ) : (
       <section className="workspace">
@@ -861,7 +986,14 @@ function App() {
             <ReadinessPanel readiness={readiness} loading={readinessLoading} />
 
             <div className="actions primary-actions">
-              <button onClick={startEmulator} disabled={loading || !selectedDevice}>启动设备</button>
+              <button
+                className="auto-capture-button"
+                onClick={() => autoStartCapture(selectedApp)}
+                disabled={loading || captureRunning || !autoCaptureState.ok}
+                title={autoCaptureState.label}
+              >
+                {autoCaptureButtonLabel({ loading, captureRunning })}
+              </button>
               <button
                 className="secondary"
                 onClick={openEmulatorPreview}
@@ -869,15 +1001,6 @@ function App() {
                 title="打开 ws-scrcpy 网页预览，不是启动模拟器"
               >
                 新窗口查看画面
-              </button>
-              <button className="secondary" onClick={() => launchSelectedApp(selectedApp)} disabled={loading || !canOperateSelectedApp}>
-                打开应用
-              </button>
-              <button className="secondary" onClick={openGoogleLogin} disabled={loading || selectedGoogleReady || !selectedDeviceReady}>
-                去登录 Google
-              </button>
-              <button onClick={() => startCapture(selectedApp, "auto")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>
-                {captureRunning ? "抓包运行中" : "自动抓包"}
               </button>
               <button className="secondary" onClick={stopCapture} disabled={loading}>停止抓包</button>
               <button
@@ -888,6 +1011,10 @@ function App() {
               >
                 {releaseActionLabel(selectedDevice)}
               </button>
+            </div>
+            <div className="auto-capture-status">
+              <strong>{autoCaptureStep || autoCaptureState.label}</strong>
+              <small>会自动完成设备发现、启动设备、检查解锁、启动 Frida、打开应用和启动抓包。</small>
             </div>
 
             <details className="advanced-panel">
@@ -902,6 +1029,16 @@ function App() {
               <EmulatorView emulator={emulator} />
               <StatusView status={status} />
               <div className="actions">
+                <button className="secondary" onClick={startEmulator} disabled={loading || !selectedDevice}>启动设备</button>
+                <button className="secondary" onClick={() => launchSelectedApp(selectedApp)} disabled={loading || !canOperateSelectedApp}>
+                  打开应用
+                </button>
+                <button className="secondary" onClick={openGoogleLogin} disabled={loading || selectedGoogleReady || !selectedDeviceReady}>
+                  去登录 Google
+                </button>
+                <button className="secondary" onClick={prepareSelectedFrida} disabled={loading || !selectedDevice}>
+                  启动 Frida
+                </button>
                 <button className="secondary" onClick={cleanup} disabled={loading}>一键清理脏状态</button>
                 <button className="secondary" onClick={() => startCapture(selectedApp, "auto")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>auto</button>
                 <button className="secondary" onClick={() => startCapture(selectedApp, "system")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>system</button>
@@ -1116,9 +1253,9 @@ function SetupWizard({
         title="TraceDeck 初始化"
         eyebrow="Setup"
         className="setup-panel"
-        actions={setup?.completed ? (
+        actions={
           <button className="secondary" onClick={onClose}>进入控制台</button>
-        ) : null}
+        }
       >
         <div className="setup-hero">
           <div>
