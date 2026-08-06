@@ -9,7 +9,23 @@ final class AppState: ObservableObject {
     }
 
     @Published var runtimeStatus: RuntimeStatus = .starting
+    @Published var runtimeDirectory: URL?
+    @Published var lastRuntimeCheckAt: Date?
     @Published var selectedSection: SidebarSection = .setup
+
+    private let runtimeManager: RuntimeManager
+
+    init(runtimeManager: RuntimeManager = RuntimeManager()) {
+        self.runtimeManager = runtimeManager
+        self.runtimeDirectory = runtimeManager.runtimeDirectory
+    }
+
+    func refreshRuntimeStatus() async {
+        runtimeStatus = .starting
+        runtimeDirectory = runtimeManager.runtimeDirectory
+        runtimeStatus = await runtimeManager.checkStatus()
+        lastRuntimeCheckAt = Date()
+    }
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {

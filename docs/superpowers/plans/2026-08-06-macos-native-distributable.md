@@ -222,7 +222,7 @@ git commit -m "feat: add native macos desktop skeleton"
 - Modify: `macos-native/Sources/AICaptureNativeApp/AICaptureNativeApp.swift`
 - Modify: `macos-native/Sources/AICaptureNativeApp/ContentView.swift`
 
-- [ ] **Step 1: Add runtime manager**
+- [x] **Step 1: Add runtime manager**
 
 Create `RuntimeManager.swift` with a class that resolves:
 
@@ -232,19 +232,23 @@ Create `RuntimeManager.swift` with a class that resolves:
 
 and initially connects to an already running local backend at `http://127.0.0.1:7001`. If it cannot connect, it reports `failed("未检测到本机抓包后端")`. Process-spawn support is added in a later task so this stage stays testable and safe.
 
-- [ ] **Step 2: Wire startup health check**
+- [x] **Step 2: Wire startup health check**
 
 On app launch, call the runtime manager once. Update `AppState.runtimeStatus` to `.ready(url)` if `/api/status` returns HTTP 200.
 
-- [ ] **Step 3: Verify with current backend**
+- [x] **Step 3: Verify with current backend**
 
 Run the existing desktop or web backend, then run:
 
 ```bash
-cd macos-native && swift run "AI抓包工具"
+cd macos-native
+./scripts/build-app.sh
+open "build/AI抓包工具.app"
 ```
 
 Expected: native window shows internal service ready.
+
+Note: SwiftPM裸可执行文件在当前 macOS 环境下会立即退出，因此先补了最小 `.app` 包装脚本作为真实窗口验收入口。
 
 ## Task 3: API Models and Device/App Lists
 

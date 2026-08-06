@@ -14,7 +14,9 @@ struct AICaptureNativeApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("刷新状态") {
-                    appState.runtimeStatus = .starting
+                    Task {
+                        await appState.refreshRuntimeStatus()
+                    }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
             }

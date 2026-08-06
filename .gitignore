@@ -19,6 +19,7 @@ src-tauri/gen/
 
 # Swift / native desktop
 macos-native/.build/
+macos-native/build/
 
 # Local browser/test artifacts
 .playwright-cli/

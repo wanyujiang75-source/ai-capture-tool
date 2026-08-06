@@ -14,5 +14,8 @@ V1 目标：
 ```bash
 cd macos-native
 swift build
-swift run "AI抓包工具"
+./scripts/build-app.sh
+open "build/AI抓包工具.app"
 ```
+
+说明：SwiftPM 裸可执行文件只用于编译验证，实际桌面窗口通过 `.app` 包运行。
