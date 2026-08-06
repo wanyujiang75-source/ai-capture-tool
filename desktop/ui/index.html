@@ -7,88 +7,449 @@
     <style>
       :root {
         color: #151923;
-        background: #f7f8fb;
+        background: #eef2f7;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
       }
 
-      body {
-        align-items: center;
-        display: flex;
-        justify-content: center;
-        margin: 0;
-        min-height: 100vh;
+      * {
+        box-sizing: border-box;
       }
 
-      main {
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid #e4e7ee;
+      body {
+        background:
+          radial-gradient(circle at 12% 8%, rgba(27, 113, 235, 0.12), transparent 30%),
+          linear-gradient(135deg, #f8fafc 0%, #eef3f9 50%, #e8edf5 100%);
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      .app-shell {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+        padding: 16px;
+      }
+
+      .desktop-bar {
+        align-items: center;
+        backdrop-filter: blur(22px);
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(214, 221, 231, 0.9);
+        border-radius: 24px;
+        box-shadow: 0 18px 60px rgba(22, 31, 51, 0.1);
+        display: flex;
+        gap: 18px;
+        justify-content: space-between;
+        margin-bottom: 14px;
+        padding: 14px 16px 14px 18px;
+      }
+
+      .brand {
+        align-items: center;
+        display: flex;
+        gap: 14px;
+        min-width: 320px;
+      }
+
+      .brand-mark {
+        align-items: center;
+        background: linear-gradient(135deg, #111827, #0b73f6);
+        border-radius: 16px;
+        box-shadow: 0 12px 28px rgba(10, 90, 201, 0.24);
+        color: white;
+        display: inline-flex;
+        font-size: 15px;
+        font-weight: 900;
+        height: 46px;
+        justify-content: center;
+        letter-spacing: 0.05em;
+        width: 46px;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 20px;
+        letter-spacing: -0.02em;
+      }
+
+      .brand small,
+      .status-copy {
+        color: #6b7484;
+        display: block;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .status-area {
+        align-items: center;
+        display: flex;
+        flex: 1;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .status-pill {
+        align-items: center;
+        border: 1px solid #d9e0ea;
+        border-radius: 999px;
+        color: #3f4857;
+        display: inline-flex;
+        font-size: 14px;
+        font-weight: 800;
+        gap: 8px;
+        padding: 10px 14px;
+        white-space: nowrap;
+      }
+
+      .status-pill.ready {
+        background: #ecfdf5;
+        border-color: #bfead9;
+        color: #087a55;
+      }
+
+      .status-pill.starting {
+        background: #eff6ff;
+        border-color: #c9ddff;
+        color: #0b63ce;
+      }
+
+      .status-pill.error {
+        background: #fff1f2;
+        border-color: #fecdd3;
+        color: #b42318;
+      }
+
+      .dot {
+        border-radius: 999px;
+        height: 9px;
+        width: 9px;
+      }
+
+      .ready .dot {
+        background: #10b981;
+      }
+
+      .starting .dot {
+        animation: pulse 1.2s ease-in-out infinite;
+        background: #0b7cff;
+      }
+
+      .error .dot {
+        background: #ef4444;
+      }
+
+      .desktop-actions {
+        align-items: center;
+        display: flex;
+        gap: 10px;
+      }
+
+      button {
+        appearance: none;
+        background: #ffffff;
+        border: 1px solid #dfe5ee;
+        border-radius: 14px;
+        color: #252b36;
+        cursor: pointer;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 800;
+        padding: 11px 14px;
+      }
+
+      button.primary {
+        background: #0b73f6;
+        border-color: #0b73f6;
+        color: white;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .workspace {
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid rgba(214, 221, 231, 0.95);
         border-radius: 28px;
-        box-shadow: 0 24px 80px rgba(19, 26, 44, 0.12);
-        max-width: 620px;
-        padding: 42px;
-        width: calc(100% - 48px);
+        box-shadow: 0 24px 90px rgba(22, 31, 51, 0.13);
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .console-frame {
+        background: white;
+        border: 0;
+        height: 100%;
+        opacity: 0;
+        transition: opacity 180ms ease;
+        width: 100%;
+      }
+
+      body.ready .console-frame {
+        opacity: 1;
+      }
+
+      .launch-cover {
+        align-items: center;
+        background:
+          radial-gradient(circle at top left, rgba(11, 115, 246, 0.09), transparent 32%),
+          linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 252, 0.96));
+        display: flex;
+        inset: 0;
+        justify-content: center;
+        padding: 28px;
+        position: absolute;
+        transition: opacity 180ms ease, visibility 180ms ease;
+        z-index: 2;
+      }
+
+      body.ready .launch-cover {
+        opacity: 0;
+        pointer-events: none;
+        visibility: hidden;
+      }
+
+      .launch-card {
+        background: white;
+        border: 1px solid #e1e7f0;
+        border-radius: 30px;
+        box-shadow: 0 22px 70px rgba(22, 31, 51, 0.12);
+        max-width: 660px;
+        padding: 38px;
+        width: 100%;
       }
 
       .eyebrow {
-        color: #718096;
+        color: #7a8596;
         font-size: 13px;
-        font-weight: 800;
+        font-weight: 900;
         letter-spacing: 0.18em;
         text-transform: uppercase;
       }
 
       h1 {
-        font-size: 34px;
+        font-size: 36px;
+        letter-spacing: -0.04em;
+        line-height: 1.12;
         margin: 14px 0 12px;
       }
 
       p {
         color: #687385;
-        font-size: 17px;
+        font-size: 16px;
         line-height: 1.7;
         margin: 0;
       }
 
-      .status {
-        align-items: center;
-        background: #edf6ff;
-        border-radius: 18px;
-        color: #0b63ce;
-        display: flex;
-        font-weight: 800;
-        gap: 12px;
-        margin-top: 28px;
-        padding: 16px 18px;
+      .progress-box {
+        background: #f5f8fc;
+        border: 1px solid #e4ebf4;
+        border-radius: 20px;
+        margin-top: 26px;
+        padding: 18px;
       }
 
-      .dot {
-        animation: pulse 1.2s ease-in-out infinite;
-        background: #0b7cff;
-        border-radius: 999px;
-        height: 10px;
-        width: 10px;
+      .progress-line {
+        align-items: center;
+        display: flex;
+        gap: 12px;
+        font-weight: 850;
+      }
+
+      .diagnostic {
+        margin-top: 16px;
+      }
+
+      .diagnostic summary {
+        color: #4f5b6d;
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .diagnostic code {
+        background: #101827;
+        border-radius: 14px;
+        color: #dbeafe;
+        display: block;
+        margin-top: 12px;
+        max-height: 180px;
+        overflow: auto;
+        padding: 14px;
+        white-space: pre-wrap;
       }
 
       @keyframes pulse {
-        0%, 100% { opacity: 0.3; transform: scale(0.75); }
-        50% { opacity: 1; transform: scale(1); }
+        0%, 100% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
       }
     </style>
   </head>
-  <body>
-    <main>
-      <div class="eyebrow">Desktop Bootstrap</div>
-      <h1>正在启动 AI抓包工具</h1>
-      <p>桌面端正在启动本机抓包服务。服务就绪后会自动进入控制台。</p>
-      <div class="status">
-        <span class="dot"></span>
-        <span id="statusText">启动 FastAPI 后端中</span>
-      </div>
+  <body class="starting">
+    <main class="app-shell">
+      <header class="desktop-bar">
+        <div class="brand">
+          <span class="brand-mark">AI</span>
+          <div>
+            <strong>AI抓包工具</strong>
+            <small>桌面端工作台 · 本机抓包服务由应用自动管理</small>
+          </div>
+        </div>
+        <div class="status-area">
+          <span id="statePill" class="status-pill starting">
+            <span class="dot"></span>
+            <span id="stateText">内部服务启动中</span>
+          </span>
+          <span id="stateCopy" class="status-copy">正在准备抓包控制台，请稍等。</span>
+        </div>
+        <div class="desktop-actions">
+          <button id="reloadButton" disabled>重新加载界面</button>
+          <button id="restartButton">重启内部服务</button>
+          <button id="logButton">打开日志</button>
+          <button id="runtimeButton">运行目录</button>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <iframe id="consoleFrame" class="console-frame" title="AI抓包工具控制台"></iframe>
+        <div id="launchCover" class="launch-cover">
+          <div class="launch-card">
+            <div class="eyebrow">Desktop Application</div>
+            <h1>正在启动完整桌面工作台</h1>
+            <p>应用会自动启动本机 FastAPI 后端、加载抓包控制台，并在此窗口内完成模拟器、Frida、APK、抓包和接口分析操作。</p>
+            <div class="progress-box">
+              <div class="progress-line">
+                <span class="status-pill starting"><span class="dot"></span><span id="coverStatus">启动内部服务中</span></span>
+              </div>
+              <details class="diagnostic">
+                <summary>内部诊断</summary>
+                <code id="diagnosticText">等待桌面端状态...</code>
+              </details>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+
     <script>
+      const invoke = window.__TAURI__?.core?.invoke;
+      const frame = document.getElementById("consoleFrame");
+      const statePill = document.getElementById("statePill");
+      const stateText = document.getElementById("stateText");
+      const stateCopy = document.getElementById("stateCopy");
+      const coverStatus = document.getElementById("coverStatus");
+      const diagnosticText = document.getElementById("diagnosticText");
+      const reloadButton = document.getElementById("reloadButton");
+      const restartButton = document.getElementById("restartButton");
+      const logButton = document.getElementById("logButton");
+      const runtimeButton = document.getElementById("runtimeButton");
+
+      let currentConsoleUrl = "";
+      let refreshTimer = null;
+
+      function setState(kind, title, copy) {
+        document.body.classList.toggle("ready", kind === "ready");
+        document.body.classList.toggle("starting", kind === "starting");
+        document.body.classList.toggle("error", kind === "error");
+        statePill.className = `status-pill ${kind}`;
+        stateText.textContent = title;
+        stateCopy.textContent = copy;
+        coverStatus.textContent = title;
+      }
+
+      function desktopUrl(url) {
+        const parsed = new URL(url);
+        parsed.searchParams.set("desktop", "1");
+        return parsed.toString();
+      }
+
+      function renderInfo(info) {
+        diagnosticText.textContent = JSON.stringify({
+          running: info.running,
+          ready: info.ready,
+          url: info.url,
+          log_path: info.log_path,
+          runtime_dir: info.runtime_dir,
+          error: info.error,
+        }, null, 2);
+
+        logButton.disabled = !info.log_path;
+        runtimeButton.disabled = !info.runtime_dir;
+
+        if (info.error) {
+          setState("error", "内部服务异常", info.error);
+          reloadButton.disabled = true;
+          return;
+        }
+
+        if (info.running && info.ready && info.url) {
+          const nextUrl = desktopUrl(info.url);
+          if (currentConsoleUrl !== nextUrl) {
+            currentConsoleUrl = nextUrl;
+            frame.src = nextUrl;
+          }
+          setState("ready", "桌面工作台已就绪", "所有操作都在当前桌面窗口内完成。");
+          reloadButton.disabled = false;
+          return;
+        }
+
+        if (info.running) {
+          setState("starting", "内部服务启动中", "后端进程已启动，正在等待 API 就绪。");
+        } else {
+          setState("starting", "准备启动内部服务", "桌面端正在创建本机运行环境。");
+        }
+        reloadButton.disabled = true;
+      }
+
+      async function refreshInfo() {
+        if (!invoke) {
+          setState("error", "Tauri API 不可用", "请从 AI抓包工具.app 启动，不要直接打开 HTML 文件。");
+          return;
+        }
+        try {
+          renderInfo(await invoke("desktop_backend_info"));
+        } catch (error) {
+          setState("error", "读取桌面状态失败", String(error));
+        }
+      }
+
+      async function runDesktopAction(action, pendingText) {
+        if (!invoke) return;
+        setState("starting", pendingText, "操作执行中，请稍等。");
+        try {
+          await invoke(action);
+          await refreshInfo();
+        } catch (error) {
+          setState("error", "桌面操作失败", String(error));
+        }
+      }
+
+      reloadButton.addEventListener("click", () => {
+        if (currentConsoleUrl) {
+          frame.src = currentConsoleUrl;
+        }
+      });
+      restartButton.addEventListener("click", () => runDesktopAction("desktop_restart_backend", "正在重启内部服务"));
+      logButton.addEventListener("click", () => runDesktopAction("desktop_open_backend_log", "正在打开日志"));
+      runtimeButton.addEventListener("click", () => runDesktopAction("desktop_open_runtime_dir", "正在打开运行目录"));
+
       window.__showDesktopError = function showDesktopError(message) {
-        document.getElementById("statusText").textContent = message || "启动失败，请查看桌面端日志。";
+        setState("error", "内部服务启动失败", message || "请打开日志查看原因。");
       };
+
+      refreshInfo();
+      refreshTimer = window.setInterval(refreshInfo, 1500);
+      window.addEventListener("beforeunload", () => {
+        if (refreshTimer) window.clearInterval(refreshTimer);
+      });
     </script>
   </body>
 </html>

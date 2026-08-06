@@ -16,44 +16,93 @@ struct BackendState {
     child: Mutex<Option<Child>>,
     url: Mutex<Option<String>>,
     log_path: Mutex<Option<PathBuf>>,
+    runtime_dir: Mutex<Option<PathBuf>>,
+    ready: Mutex<bool>,
+    last_error: Mutex<Option<String>>,
 }
 
 #[derive(Serialize)]
 struct DesktopBackendInfo {
     url: Option<String>,
     log_path: Option<String>,
+    runtime_dir: Option<String>,
     running: bool,
+    ready: bool,
+    error: Option<String>,
 }
 
 #[tauri::command]
 fn desktop_backend_info(state: tauri::State<BackendState>) -> DesktopBackendInfo {
-    let running = state
-        .child
-        .lock()
-        .ok()
-        .and_then(|guard| guard.as_ref().map(|child| child.id() > 0))
-        .unwrap_or(false);
+    let running = backend_running(&state);
     let url = state.url.lock().ok().and_then(|guard| guard.clone());
     let log_path = state
         .log_path
         .lock()
         .ok()
         .and_then(|guard| guard.as_ref().map(|path| path.display().to_string()));
+    let runtime_dir = state
+        .runtime_dir
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|path| path.display().to_string()));
+    let ready = state.ready.lock().map(|guard| *guard).unwrap_or(false);
+    let error = state.last_error.lock().ok().and_then(|guard| guard.clone());
     DesktopBackendInfo {
         url,
         log_path,
+        runtime_dir,
         running,
+        ready,
+        error,
     }
+}
+
+#[tauri::command]
+fn desktop_restart_backend(app: tauri::AppHandle) -> Result<(), String> {
+    reset_backend_state(&app)?;
+    thread::spawn(move || {
+        if let Err(error) = start_backend(app.clone()) {
+            show_startup_error(&app, &error);
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn desktop_open_backend_log(state: tauri::State<BackendState>) -> Result<(), String> {
+    let path = state
+        .log_path
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())?
+        .clone()
+        .ok_or_else(|| "backend log path is not ready".to_string())?;
+    open_path(&path)
+}
+
+#[tauri::command]
+fn desktop_open_runtime_dir(state: tauri::State<BackendState>) -> Result<(), String> {
+    let path = state
+        .runtime_dir
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())?
+        .clone()
+        .ok_or_else(|| "runtime directory is not ready".to_string())?;
+    open_path(&path)
 }
 
 fn main() {
     tauri::Builder::default()
         .manage(BackendState::default())
-        .invoke_handler(tauri::generate_handler![desktop_backend_info])
+        .invoke_handler(tauri::generate_handler![
+            desktop_backend_info,
+            desktop_open_backend_log,
+            desktop_open_runtime_dir,
+            desktop_restart_backend,
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             thread::spawn(move || {
-                if let Err(error) = start_backend_and_open_console(handle.clone()) {
+                if let Err(error) = start_backend(handle.clone()) {
                     show_startup_error(&handle, &error);
                 }
             });
@@ -68,7 +117,7 @@ fn main() {
         });
 }
 
-fn start_backend_and_open_console(app: tauri::AppHandle) -> Result<(), String> {
+fn start_backend(app: tauri::AppHandle) -> Result<(), String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -76,7 +125,8 @@ fn start_backend_and_open_console(app: tauri::AppHandle) -> Result<(), String> {
     let runtime_dir = app_data_dir.join("runtime");
     let config_dir = app_data_dir.join("config");
     let log_dir = runtime_dir.join("logs");
-    fs::create_dir_all(&log_dir).map_err(|error| format!("failed to create log directory: {error}"))?;
+    fs::create_dir_all(&log_dir)
+        .map_err(|error| format!("failed to create log directory: {error}"))?;
     fs::create_dir_all(&config_dir)
         .map_err(|error| format!("failed to create config directory: {error}"))?;
 
@@ -85,7 +135,10 @@ fn start_backend_and_open_console(app: tauri::AppHandle) -> Result<(), String> {
     let root_dir = bundled_root_dir(&app)?;
     let launcher = root_dir.join("desktop").join("start-backend.sh");
     if !launcher.exists() {
-        return Err(format!("desktop backend launcher is missing: {}", launcher.display()));
+        return Err(format!(
+            "desktop backend launcher is missing: {}",
+            launcher.display()
+        ));
     }
 
     let log_path = log_dir.join("desktop-backend.log");
@@ -95,6 +148,22 @@ fn start_backend_and_open_console(app: tauri::AppHandle) -> Result<(), String> {
         .try_clone()
         .map_err(|error| format!("failed to clone backend log file: {error}"))?;
     let config_path = config_dir.join("local.json");
+
+    {
+        let state = app.state::<BackendState>();
+        *state
+            .runtime_dir
+            .lock()
+            .map_err(|_| "backend state lock poisoned".to_string())? = Some(runtime_dir.clone());
+        *state
+            .ready
+            .lock()
+            .map_err(|_| "backend state lock poisoned".to_string())? = false;
+        *state
+            .last_error
+            .lock()
+            .map_err(|_| "backend state lock poisoned".to_string())? = None;
+    }
 
     let mut command = Command::new("/bin/bash");
     command
@@ -132,12 +201,10 @@ fn start_backend_and_open_console(app: tauri::AppHandle) -> Result<(), String> {
 
     wait_for_backend(&url, Duration::from_secs(180))
         .map_err(|error| format!("{error}; log={}", log_path.display()))?;
-    if let Some(window) = app.get_webview_window("main") {
-        let escaped_url = format!("{url:?}");
-        window
-            .eval(&format!("window.location.replace({escaped_url});"))
-            .map_err(|error| format!("failed to navigate desktop window: {error}"))?;
-    }
+    *app.state::<BackendState>()
+        .ready
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())? = true;
     Ok(())
 }
 
@@ -170,7 +237,10 @@ fn wait_for_backend(url: &str, timeout: Duration) -> Result<(), String> {
     let status_url = format!("{url}api/status");
     let started = Instant::now();
     while started.elapsed() < timeout {
-        match ureq::get(&status_url).timeout(Duration::from_secs(2)).call() {
+        match ureq::get(&status_url)
+            .timeout(Duration::from_secs(2))
+            .call()
+        {
             Ok(response) if response.status() < 500 => return Ok(()),
             Ok(_) | Err(_) => thread::sleep(Duration::from_millis(500)),
         }
@@ -197,6 +267,12 @@ fn desktop_path() -> String {
 }
 
 fn show_startup_error(app: &tauri::AppHandle, message: &str) {
+    if let Ok(mut error) = app.state::<BackendState>().last_error.lock() {
+        *error = Some(message.to_string());
+    }
+    if let Ok(mut ready) = app.state::<BackendState>().ready.lock() {
+        *ready = false;
+    }
     if let Some(window) = app.get_webview_window("main") {
         let escaped_message = format!("{message:?}");
         let _ = window.eval(&format!(
@@ -206,14 +282,73 @@ fn show_startup_error(app: &tauri::AppHandle, message: &str) {
 }
 
 fn stop_backend(app: &tauri::AppHandle) {
-    let child = app
-        .state::<BackendState>()
+    let state = app.state::<BackendState>();
+    let _ = stop_backend_state(&state);
+}
+
+fn backend_running(state: &tauri::State<BackendState>) -> bool {
+    let mut child_guard = match state.child.lock() {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+    let Some(child) = child_guard.as_mut() else {
+        return false;
+    };
+    match child.try_wait() {
+        Ok(Some(_)) => {
+            *child_guard = None;
+            if let Ok(mut ready) = state.ready.lock() {
+                *ready = false;
+            }
+            false
+        }
+        Ok(None) => true,
+        Err(_) => false,
+    }
+}
+
+fn reset_backend_state(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<BackendState>();
+    stop_backend_state(&state)?;
+    *state
+        .url
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())? = None;
+    *state
+        .log_path
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())? = None;
+    *state
+        .ready
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())? = false;
+    *state
+        .last_error
+        .lock()
+        .map_err(|_| "backend state lock poisoned".to_string())? = None;
+    Ok(())
+}
+
+fn stop_backend_state(state: &tauri::State<BackendState>) -> Result<(), String> {
+    let child = state
         .child
         .lock()
-        .ok()
-        .and_then(|mut child_guard| child_guard.take());
+        .map_err(|_| "backend state lock poisoned".to_string())?
+        .take();
     if let Some(mut child) = child {
         let _ = child.kill();
         let _ = child.wait();
     }
+    if let Ok(mut ready) = state.ready.lock() {
+        *ready = false;
+    }
+    Ok(())
+}
+
+fn open_path(path: &Path) -> Result<(), String> {
+    Command::new("open")
+        .arg(path)
+        .spawn()
+        .map_err(|error| format!("failed to open {}: {error}", path.display()))?;
+    Ok(())
 }
