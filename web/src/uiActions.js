@@ -5,6 +5,16 @@ export function consolePrimaryActions({ captureRunning = false, selectedDevice =
   return actions;
 }
 
+export function autoCaptureStatusText({
+  autoCaptureStep = "",
+  captureRunning = false,
+  loading = false,
+  fallbackLabel = "",
+} = {}) {
+  if ((loading || captureRunning) && autoCaptureStep) return autoCaptureStep;
+  return fallbackLabel;
+}
+
 export function setupPrimaryAction({ nextAction = {}, hasApp = false, selectedDevice = null } = {}) {
   switch (nextAction.key) {
     case "done":

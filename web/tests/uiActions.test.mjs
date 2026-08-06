@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  autoCaptureStatusText,
   consolePrimaryActions,
   setupPrimaryAction,
   setupSecondaryActions,
@@ -54,4 +55,27 @@ test("only shows setup secondary actions when they are currently useful", () => 
     googleRequired: true,
     googleOk: true,
   }), ["preview"]);
+});
+
+test("does not keep stale auto-capture progress after capture stops", () => {
+  assert.equal(autoCaptureStatusText({
+    autoCaptureStep: "抓包已启动，接口分析会实时刷新",
+    captureRunning: false,
+    loading: false,
+    fallbackLabel: "可启动抓包",
+  }), "可启动抓包");
+
+  assert.equal(autoCaptureStatusText({
+    autoCaptureStep: "启动 Frida 准入服务",
+    captureRunning: false,
+    loading: true,
+    fallbackLabel: "可启动抓包",
+  }), "启动 Frida 准入服务");
+
+  assert.equal(autoCaptureStatusText({
+    autoCaptureStep: "抓包已启动，接口分析会实时刷新",
+    captureRunning: true,
+    loading: false,
+    fallbackLabel: "抓包已在运行",
+  }), "抓包已启动，接口分析会实时刷新");
 });

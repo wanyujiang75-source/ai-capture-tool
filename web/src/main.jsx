@@ -24,7 +24,7 @@ import {
   shouldShowSetupWizard,
 } from "./setupWizard.js";
 import { buildUploadInstallPath } from "./uploadPackage.js";
-import { consolePrimaryActions, setupPrimaryAction, setupSecondaryActions } from "./uiActions.js";
+import { autoCaptureStatusText, consolePrimaryActions, setupPrimaryAction, setupSecondaryActions } from "./uiActions.js";
 import "./styles.css";
 
 const api = async (path, options = {}) => {
@@ -790,6 +790,12 @@ function App() {
     googleRequired,
   });
   const primaryActionKeys = consolePrimaryActions({ captureRunning, selectedDevice });
+  const autoCaptureStatusLabel = autoCaptureStatusText({
+    autoCaptureStep,
+    captureRunning,
+    loading,
+    fallbackLabel: autoCaptureState.label,
+  });
   const selectedSessionIsLive = Boolean(selectedSession?.id && selectedDeviceActiveSession?.id === selectedSession.id && sessionView === "live");
   const recentSessions = sessions.filter((session) => !selectedDeviceId || session.device_id === selectedDeviceId).slice(0, 8);
   const groupedApps = groupAppsByEnvironment(apps);
@@ -995,7 +1001,7 @@ function App() {
               ) : null}
             </div>
             <div className="auto-capture-status">
-              <strong>{autoCaptureStep || autoCaptureState.label}</strong>
+              <strong>{autoCaptureStatusLabel}</strong>
               <small>会自动完成设备发现、启动设备、检查解锁、启动 Frida、打开应用和启动抓包。</small>
             </div>
 

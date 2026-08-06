@@ -13,10 +13,25 @@ export function createFlowClearMarker(flows) {
   };
 }
 
+function timestampMillis(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) ? time : null;
+}
+
 export function applyFlowClearMarker(flows, marker) {
-  if (!marker?.hiddenIds?.length) {
+  if (!marker) {
     return flows;
   }
-  const hiddenIds = new Set(marker.hiddenIds.map(String));
-  return (flows || []).filter((flow) => !hiddenIds.has(flowIdentity(flow)));
+  const hiddenIds = new Set((marker.hiddenIds || []).map(String));
+  const clearedAtMillis = timestampMillis(marker.clearedAt);
+  return (flows || []).filter((flow) => {
+    if (hiddenIds.has(flowIdentity(flow))) {
+      return false;
+    }
+    const flowMillis = timestampMillis(flow?.time);
+    if (clearedAtMillis !== null && flowMillis !== null && flowMillis <= clearedAtMillis) {
+      return false;
+    }
+    return true;
+  });
 }
