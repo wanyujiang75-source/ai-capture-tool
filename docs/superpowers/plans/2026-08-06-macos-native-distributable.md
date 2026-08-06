@@ -301,15 +301,15 @@ Start capture from the native app, operate the emulator, and confirm a new sessi
 - Modify: `macos-native/Sources/AICaptureNativeApp/Models.swift`
 - Modify: `macos-native/Sources/AICaptureNativeApp/FlowViews.swift`
 
-- [ ] **Step 1: Add flow APIs**
+- [x] **Step 1: Add flow APIs**
 
 Implement list/detail/curl calls for existing capture endpoints.
 
-- [ ] **Step 2: Add polling**
+- [x] **Step 2: Add polling**
 
 Poll active session flows every 2 seconds while capture is running.
 
-- [ ] **Step 3: Add native details**
+- [x] **Step 3: Add native details**
 
 Use native tabs for Request and Response. Show headers, body, timing, files, and cURL in native SwiftUI views.
 

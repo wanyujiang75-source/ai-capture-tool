@@ -51,6 +51,30 @@ struct APIClient {
         )
     }
 
+    func getFlows(sessionID: Int) async throws -> [FlowSummary] {
+        let response: FlowsResponse = try await get("api/captures/\(sessionID)/flows")
+        return response.flows
+    }
+
+    func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail {
+        try await get("api/captures/\(sessionID)/flows/\(flowID)")
+    }
+
+    func getFlowCurl(sessionID: Int, flowID: String) async throws -> String {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/captures/\(sessionID)/flows/\(flowID)/curl"))
+        request.httpMethod = "GET"
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw APIClientError.httpStatus(httpResponse.statusCode, body)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     private func get<Response: Decodable>(_ path: String) async throws -> Response {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = "GET"

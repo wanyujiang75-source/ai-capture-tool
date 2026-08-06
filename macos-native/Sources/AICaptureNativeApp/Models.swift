@@ -202,6 +202,144 @@ struct CaptureSession: Decodable {
     }
 }
 
+struct FlowsResponse: Decodable {
+    let flows: [FlowSummary]
+}
+
+struct FlowSummary: Decodable, Identifiable {
+    let id: String
+    let flowId: String?
+    let time: String?
+    let method: String?
+    let status: String?
+    let host: String?
+    let path: String?
+    let url: String?
+    let score: String?
+    let kind: String?
+    let hasRequestJSON: Bool?
+    let hasResponseJSON: Bool?
+    let totalDurationMs: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case flowId = "flow_id"
+        case time
+        case method
+        case status
+        case host
+        case path
+        case url
+        case score
+        case kind
+        case hasRequestJSON = "has_request_json"
+        case hasResponseJSON = "has_response_json"
+        case totalDurationMs = "total_duration_ms"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeFlexibleString(forKey: .id) ?? UUID().uuidString
+        flowId = container.decodeFlexibleString(forKey: .flowId)
+        time = container.decodeFlexibleString(forKey: .time)
+        method = container.decodeFlexibleString(forKey: .method)
+        status = container.decodeFlexibleString(forKey: .status)
+        host = container.decodeFlexibleString(forKey: .host)
+        path = container.decodeFlexibleString(forKey: .path)
+        url = container.decodeFlexibleString(forKey: .url)
+        score = container.decodeFlexibleString(forKey: .score)
+        kind = container.decodeFlexibleString(forKey: .kind)
+        hasRequestJSON = try container.decodeIfPresent(Bool.self, forKey: .hasRequestJSON)
+        hasResponseJSON = try container.decodeIfPresent(Bool.self, forKey: .hasResponseJSON)
+        totalDurationMs = container.decodeFlexibleString(forKey: .totalDurationMs)
+    }
+}
+
+struct FlowDetail: Decodable, Identifiable {
+    let id: String
+    let method: String?
+    let status: String?
+    let url: String?
+    let requestBodyKind: String?
+    let responseBodyKind: String?
+    let requestJSON: JSONValue?
+    let responseJSON: JSONValue?
+    let requestText: String?
+    let responseText: String?
+    let metaJSON: JSONValue?
+    let files: JSONValue?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case method
+        case status
+        case url
+        case requestBodyKind = "request_body_kind"
+        case responseBodyKind = "response_body_kind"
+        case requestJSON = "request_json"
+        case responseJSON = "response_json"
+        case requestText = "request_text"
+        case responseText = "response_text"
+        case metaJSON = "meta_json"
+        case files
+    }
+}
+
+enum JSONValue: Decodable, CustomStringConvertible {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else {
+            self = .array(try container.decode([JSONValue].self))
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .string(let value):
+            "\"\(value)\""
+        case .number(let value):
+            String(value)
+        case .bool(let value):
+            value ? "true" : "false"
+        case .object(let value):
+            prettyJSONObject(value)
+        case .array(let value):
+            prettyJSONArray(value)
+        case .null:
+            "null"
+        }
+    }
+
+    private func prettyJSONObject(_ object: [String: JSONValue]) -> String {
+        let lines = object.keys.sorted().map { key in
+            "  \"\(key)\": \(object[key]?.description ?? "null")"
+        }
+        return "{\n\(lines.joined(separator: ",\n"))\n}"
+    }
+
+    private func prettyJSONArray(_ array: [JSONValue]) -> String {
+        let lines = array.map { "  \($0.description)" }
+        return "[\n\(lines.joined(separator: ",\n"))\n]"
+    }
+}
+
 extension KeyedDecodingContainer {
     func decodeFlexibleString(forKey key: Key) -> String? {
         if let value = try? decodeIfPresent(String.self, forKey: key) {

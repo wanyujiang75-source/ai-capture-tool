@@ -21,6 +21,12 @@ final class AppState: ObservableObject {
     @Published var captureActionState: LoadState = .idle
     @Published var captureMessage = ""
     @Published var activeSessionID: Int?
+    @Published var flows: [FlowSummary] = []
+    @Published var flowLoadState: LoadState = .idle
+    @Published var selectedFlowID: String?
+    @Published var selectedFlowDetail: FlowDetail?
+    @Published var selectedFlowCurl = ""
+    @Published var flowDetailLoadState: LoadState = .idle
 
     private let runtimeManager: RuntimeManager
     private let apiClient: APIClient
@@ -127,6 +133,10 @@ final class AppState: ObservableObject {
                 mode: nil
             )
             activeSessionID = response.session?.id
+            selectedFlowID = nil
+            selectedFlowDetail = nil
+            selectedFlowCurl = ""
+            flows = []
             let sessionText = response.session?.id.map { "#\($0)" } ?? ""
             let modeText = response.session?.mode ?? selectedApp.defaultMode ?? "auto"
             captureMessage = "抓包已启动 \(sessionText)，模式 \(modeText)。"
@@ -146,6 +156,10 @@ final class AppState: ObservableObject {
         do {
             let response = try await apiClient.stopCapture(deviceId: selectedDeviceID)
             activeSessionID = nil
+            flows = []
+            selectedFlowID = nil
+            selectedFlowDetail = nil
+            selectedFlowCurl = ""
             let okText = response.ok == false ? "停止结果异常" : "抓包已停止"
             captureMessage = okText
             captureActionState = .loaded
@@ -167,6 +181,37 @@ final class AppState: ObservableObject {
     private func setCaptureFailure(_ message: String) {
         captureMessage = message
         captureActionState = .failed(message)
+    }
+
+    func refreshFlows() async {
+        guard let activeSessionID else {
+            flowLoadState = .idle
+            flows = []
+            return
+        }
+        flowLoadState = .loading
+        do {
+            flows = try await apiClient.getFlows(sessionID: activeSessionID)
+            flowLoadState = .loaded
+        } catch {
+            flowLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadFlowDetail(_ flow: FlowSummary) async {
+        guard let activeSessionID else {
+            flowDetailLoadState = .failed("当前没有 active session。")
+            return
+        }
+        selectedFlowID = flow.id
+        flowDetailLoadState = .loading
+        do {
+            selectedFlowDetail = try await apiClient.getFlowDetail(sessionID: activeSessionID, flowID: flow.id)
+            selectedFlowCurl = try await apiClient.getFlowCurl(sessionID: activeSessionID, flowID: flow.id)
+            flowDetailLoadState = .loaded
+        } catch {
+            flowDetailLoadState = .failed(error.localizedDescription)
+        }
     }
 }
 

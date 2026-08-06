@@ -18,7 +18,9 @@ struct ContentView: View {
                 DeviceAppView()
             case .capture:
                 CaptureView()
-            case .flows, .logs:
+            case .flows:
+                FlowViews()
+            case .logs:
                 placeholderView
             }
         }
