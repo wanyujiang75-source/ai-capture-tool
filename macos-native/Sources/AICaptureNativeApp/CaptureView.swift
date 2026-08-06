@@ -34,13 +34,22 @@ struct CaptureView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("目标选择")
                 .font(.title2.bold())
-            Picker("设备", selection: selectedDeviceBinding) {
-                if appState.devices.isEmpty {
-                    Text("暂无设备").tag("")
-                } else {
-                    ForEach(appState.devices) { device in
-                        Text("\(device.id) · \(device.adbSerial ?? "-")").tag(device.id)
+            HStack(spacing: 12) {
+                Picker("设备", selection: selectedDeviceBinding) {
+                    if appState.devices.isEmpty {
+                        Text("暂无设备").tag("")
+                    } else {
+                        ForEach(appState.devices) { device in
+                            Text("\(device.id) · \(device.adbSerial ?? "-")").tag(device.id)
+                        }
                     }
+                }
+                Button {
+                    Task {
+                        await appState.startSelectedDevice()
+                    }
+                } label: {
+                    Label("打开模拟器", systemImage: "iphone.gen3.radiowaves.left.and.right")
                 }
             }
             Picker("应用", selection: selectedAppBinding) {

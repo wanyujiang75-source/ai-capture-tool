@@ -124,6 +124,24 @@ final class AppState: ObservableObject {
         return jenkinsPackages.first { $0.id == selectedJenkinsPackageID }
     }
 
+    func startSelectedDevice() async {
+        guard let selectedDeviceID else {
+            setCaptureFailure("请先选择设备。")
+            return
+        }
+        captureActionState = .loading
+        captureMessage = "正在打开模拟器：\(selectedDeviceID)。"
+        do {
+            let response = try await apiClient.startDevice(deviceId: selectedDeviceID)
+            let resultText = response.ok == false ? "模拟器启动命令已返回异常，请查看日志。" : "模拟器启动命令已发送，正在刷新设备状态。"
+            captureMessage = resultText
+            captureActionState = .loaded
+            await refreshDevices()
+        } catch {
+            setCaptureFailure(error.localizedDescription)
+        }
+    }
+
     func prepareSelectedFrida() async {
         guard let selectedDeviceID else {
             setCaptureFailure("请先选择设备。")

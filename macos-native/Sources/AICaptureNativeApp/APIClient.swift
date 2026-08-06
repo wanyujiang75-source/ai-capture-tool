@@ -31,6 +31,10 @@ struct APIClient {
         return response.packages
     }
 
+    func startDevice(deviceId: String) async throws -> BasicActionResponse {
+        try await post("api/devices/\(deviceId)/start")
+    }
+
     func installJenkinsPackage(
         _ package: JenkinsPackage,
         deviceId: String,
