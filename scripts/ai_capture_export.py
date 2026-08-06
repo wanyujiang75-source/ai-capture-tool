@@ -368,7 +368,10 @@ class MitmWeb:
                 self.cookiejar.load(ignore_discard=True, ignore_expires=True)
             except Exception:
                 pass
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookiejar))
+        self.opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPCookieProcessor(self.cookiejar),
+        )
 
     def request(self, method, path, data=None, headers=None):
         url = self.base_url + path

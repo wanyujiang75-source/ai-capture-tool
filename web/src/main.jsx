@@ -14,6 +14,7 @@ import { compactTimestamp, flowTimingInfo, flowTimingRows, flowTimingSummary } f
 import { networkModeLabel, preflightSummary } from "./networkDiagnostics.js";
 import { scheduleDelayedReadinessRefresh } from "./readinessRefresh.js";
 import {
+  setupCaptureValidationAction,
   setupDeviceSummary,
   setupNextAction,
   setupStageSummary,
@@ -421,7 +422,7 @@ function App() {
 
   const openEmulatorPreview = () => {
     const previewWindow = window.open("about:blank", "_blank");
-    return runAction("打开模拟器画面", async () => {
+    return runAction("新窗口查看模拟器画面", async () => {
       try {
         const result = await api(`/api/devices/${encodeURIComponent(selectedDeviceId)}/preview`);
         if (!result.url) {
@@ -691,7 +692,8 @@ function App() {
           ? selectedGoogleState.user_message || "请先完成 Google 登录后再上传更新包。"
         : "";
   const residentStatus = residentSummary(devices);
-  const showSetupWizard = shouldShowSetupWizard(setup, setupForcedOpen);
+  const consoleAvailable = Boolean(selectedDeviceActiveSession || selectedSession || sessions.length);
+  const showSetupWizard = shouldShowSetupWizard(setup, setupForcedOpen, consoleAvailable);
 
   useEffect(() => {
     if (!showSetupWizard) return undefined;
@@ -752,6 +754,7 @@ function App() {
           selectedDeviceId={selectedDeviceId}
           onSelectDevice={setSelectedDeviceId}
           selectedApp={selectedApp}
+          captureRunning={captureRunning}
           loading={loading}
           onCheck={checkSetup}
           onDiscoverDevices={discoverDevices}
@@ -854,8 +857,13 @@ function App() {
 
             <div className="actions primary-actions">
               <button onClick={startEmulator} disabled={loading || !selectedDevice}>启动设备</button>
-              <button className="secondary" onClick={openEmulatorPreview} disabled={loading || !selectedDevice}>
-                查看模拟器
+              <button
+                className="secondary"
+                onClick={openEmulatorPreview}
+                disabled={loading || !selectedDevice}
+                title="打开 ws-scrcpy 网页预览，不是启动模拟器"
+              >
+                新窗口查看画面
               </button>
               <button className="secondary" onClick={() => launchSelectedApp(selectedApp)} disabled={loading || !canOperateSelectedApp}>
                 打开应用
@@ -1054,6 +1062,7 @@ function SetupWizard({
   selectedDeviceId,
   onSelectDevice,
   selectedApp,
+  captureRunning,
   loading,
   onCheck,
   onDiscoverDevices,
@@ -1075,6 +1084,13 @@ function SetupWizard({
   const envChecks = setup?.env?.checks || [];
   const failedEnvChecks = envChecks.filter((check) => !check.ok);
   const hasApp = apps.length > 0;
+  const validationAction = setupCaptureValidationAction({
+    hasApp,
+    validationPassed: Boolean(setup?.validation_passed),
+    captureRunning,
+    loading,
+    selectedApp,
+  });
   const googleRequired = Boolean(setup?.google_login_required);
   const selectedEmulatorReady = Boolean(
     selectedDevice?.emulator?.adb_online &&
@@ -1165,11 +1181,19 @@ function SetupWizard({
         <div className="actions setup-actions">
           <button onClick={onCheck} disabled={loading}>自动检测</button>
           <button className="secondary" onClick={onDiscoverDevices} disabled={loading}>发现设备</button>
-          {!selectedDevice?.emulator?.adb_online ? (
-            <button className="secondary" onClick={onStartDevice} disabled={loading || !selectedDevice}>启动设备</button>
-          ) : (
-            <button className="secondary" onClick={onOpenPreview} disabled={loading || !selectedDevice}>查看模拟器</button>
-          )}
+          <button className="secondary" onClick={onStartDevice} disabled={loading || !selectedDevice}>
+            {selectedDevice?.emulator?.adb_online ? "设备已在线" : "启动设备"}
+          </button>
+          {selectedDevice?.emulator?.adb_online ? (
+            <button
+              className="secondary"
+              onClick={onOpenPreview}
+              disabled={loading || !selectedDevice}
+              title="打开 ws-scrcpy 网页预览，不是启动模拟器"
+            >
+              新窗口查看画面
+            </button>
+          ) : null}
           {googleRequired && !selectedDevice?.google_state?.ok ? (
             <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading}>去登录 Google</button>
           ) : null}
@@ -1177,8 +1201,15 @@ function SetupWizard({
             <button className="secondary" onClick={onPrepareFrida} disabled={loading}>启动 Frida</button>
           ) : null}
           {!hasApp ? <UploadButtons loading={loading} onInstall={onInstall} /> : null}
-          {hasApp && !setup?.validation_passed ? (
-            <button className="secondary" onClick={onValidate} disabled={loading || !selectedApp}>启动抓包测试</button>
+          {validationAction.visible ? (
+            <button
+              className="secondary"
+              onClick={onValidate}
+              disabled={validationAction.disabled}
+              title={validationAction.title}
+            >
+              {validationAction.label}
+            </button>
           ) : null}
           <button onClick={onComplete} disabled={loading || !setup?.ready_to_complete}>完成初始化</button>
         </div>
@@ -1207,11 +1238,25 @@ function SetupWizard({
               <div className="actions setup-actions compact-actions">
                 <button className="secondary" onClick={onDiscoverDevices} disabled={loading}>发现设备</button>
                 <button className="secondary" onClick={onStartDevice} disabled={loading || !selectedDevice}>启动设备</button>
-                <button className="secondary" onClick={onOpenPreview} disabled={loading || !selectedDevice}>查看模拟器</button>
+                <button
+                  className="secondary"
+                  onClick={onOpenPreview}
+                  disabled={loading || !selectedDevice}
+                  title="打开 ws-scrcpy 网页预览，不是启动模拟器"
+                >
+                  新窗口查看画面
+                </button>
                 <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading || selectedDevice?.google_state?.ok}>去登录 Google</button>
                 <button className="secondary" onClick={onPrepareFrida} disabled={loading || !selectedDevice?.emulator?.adb_online}>启动 Frida</button>
                 <UploadButtons loading={loading} onInstall={onInstall} />
-                <button className="secondary" onClick={onValidate} disabled={loading || !selectedApp}>启动抓包测试</button>
+                <button
+                  className="secondary"
+                  onClick={onValidate}
+                  disabled={validationAction.disabled}
+                  title={validationAction.title}
+                >
+                  {validationAction.label}
+                </button>
               </div>
             </section>
           </div>
