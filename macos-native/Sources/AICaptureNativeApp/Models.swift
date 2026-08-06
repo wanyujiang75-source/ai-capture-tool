@@ -149,6 +149,59 @@ struct CaptureApp: Decodable, Identifiable {
     }
 }
 
+struct BasicActionResponse: Decodable {
+    let ok: Bool?
+    let stdout: String?
+    let stderr: String?
+}
+
+struct CaptureStartPayload: Encodable {
+    let appId: Int
+    let deviceId: String
+    let mode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case appId = "app_id"
+        case deviceId = "device_id"
+        case mode
+    }
+}
+
+struct CaptureStartResponse: Decodable {
+    let session: CaptureSession?
+    let output: String?
+    let requestedMode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case session
+        case output
+        case requestedMode = "requested_mode"
+    }
+}
+
+struct CaptureStopResponse: Decodable {
+    let ok: Bool?
+    let session: CaptureSession?
+    let stdout: String?
+    let stderr: String?
+}
+
+struct CaptureSession: Decodable {
+    let id: Int?
+    let status: String?
+    let mode: String?
+    let outdir: String?
+    let deviceId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case mode
+        case outdir
+        case deviceId = "device_id"
+    }
+}
+
 extension KeyedDecodingContainer {
     func decodeFlexibleString(forKey key: Key) -> String? {
         if let value = try? decodeIfPresent(String.self, forKey: key) {

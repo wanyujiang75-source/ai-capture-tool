@@ -243,6 +243,12 @@
   - 新增 `APIClient.swift`，统一禁用代理、设置超时并封装设备/应用读取。
   - 新增 `DeviceAppView.swift`，原生展示设备池、应用库和测试包/生产包分组。
   - 默认入口调整为“设备与应用”，减少用户打开后还要手动找设备列表的步骤。
+- 第四阶段开始接入原生抓包控制：
+  - `APIClient` 新增 `prepareFrida`、`launchApp`、`startCapture`、`stopCapture`。
+  - `AppState` 新增选中设备、选中应用、抓包动作状态和当前 session 记录。
+  - 新增 `CaptureView.swift`，提供“启动 Frida / 打开应用 / 一键开始抓包 / 停止抓包”原生按钮。
+  - 当前已完成代码接入和页面展示，真实抓包启动/停止验收尚未完成。
+- 修复本机启动脚本代理问题：`scripts/start_web_services.sh` 的健康检查改用 `curl --noproxy '*'`，避免用户本机设置 `http_proxy/ALL_PROXY` 时误判后端不可用。
 
 ## 验证
 
@@ -255,6 +261,8 @@
   - `/api/apps` 返回 2 个应用，原生页面显示测试包应用卡片。
   - `/api/devices` 当前约 17 秒返回，原生页面异步加载后显示 3 台设备。
   - 实际打开 `.app` 后截图确认“设备池 3 台 / 应用库 2 个”已显示。
+- 原生抓包页编译与展示通过：实际打开 `.app` 可看到“启动 Frida / 打开应用 / 一键开始抓包 / 停止抓包”按钮。
+- `OPEN_WEB=0 CONSOLE_SKIP_INSTALL=1 ./start.sh` 通过，确认健康检查在代理环境下不再超时。
 - 通用 App 抓包复测：
   - 临时添加 `Chrome reinstall QA`，包名 `com.android.chrome`，Activity `com.android.chrome/com.google.android.apps.chrome.Main`，模式 `system`。
   - readiness 显示模拟器在线、App 已安装、Activity 可启动、Chrome 在前台。

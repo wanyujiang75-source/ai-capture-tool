@@ -282,11 +282,11 @@ With backend running, the native app must show at least the same selected device
 - Modify: `macos-native/Sources/AICaptureNativeApp/CaptureView.swift`
 - Modify: `macos-native/Sources/AICaptureNativeApp/AppState.swift`
 
-- [ ] **Step 1: Add capture APIs**
+- [x] **Step 1: Add capture APIs**
 
 Implement `startCapture(appId:deviceId:)`, `stopCapture(deviceId:)`, `launchApp(appId:deviceId:)`, and `prepareFrida(deviceId:)`.
 
-- [ ] **Step 2: Add one-click capture UI**
+- [x] **Step 2: Add one-click capture UI**
 
 Native UI should expose one primary button: `一键开始抓包`, plus `停止抓包` while running.
 

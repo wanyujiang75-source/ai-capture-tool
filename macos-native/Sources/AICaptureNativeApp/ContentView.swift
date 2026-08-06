@@ -16,7 +16,9 @@ struct ContentView: View {
                 runtimeOverview
             case .devices:
                 DeviceAppView()
-            case .capture, .flows, .logs:
+            case .capture:
+                CaptureView()
+            case .flows, .logs:
                 placeholderView
             }
         }

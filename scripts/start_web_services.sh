@@ -116,7 +116,7 @@ wait_for_url() {
   local timeout="${2:-20}"
   local deadline=$((SECONDS + timeout))
   while (( SECONDS < deadline )); do
-    if curl -fsS "$url" >/dev/null 2>&1; then
+    if curl --noproxy '*' -fsS "$url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
