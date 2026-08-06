@@ -218,6 +218,25 @@
   - `/api/setup/state` 返回环境检查通过、`app_count=0`。
   - 浏览器实际打开 `http://127.0.0.1:7001`，页面标题为 `TraceDeck`，无 token 登录入口。
 - 启动本机 `Capture_AVD_02 / emulator-5554` 后，页面点击“发现设备”可显示 `device-1 · Android Emulator emulator-5554`。
+
+## 2026-08-06
+
+- 用户明确最终目标是“完整桌面端”，并补充要求：其他用户下载到自己 Mac 后也能本机安装和使用。
+- 确认 Tauri/WebView 方案不作为最终桌面端方向；保留现有 Web/Tauri 能力作为过渡和调试入口。
+- 新增原生 SwiftUI 可分发版设计文档：`docs/superpowers/specs/2026-08-06-macos-native-distributable-design.md`。
+- 新增原生 SwiftUI 可分发版实施计划：`docs/superpowers/plans/2026-08-06-macos-native-distributable.md`。
+- 创建 `macos-native/` SwiftUI 原生桌面端骨架：
+  - `Package.swift`
+  - `AICaptureNativeApp.swift`
+  - `AppState.swift`
+  - `ContentView.swift`
+  - `README.md`
+- 第一阶段只实现原生窗口、原生侧边栏和运行时状态占位，不接抓包业务逻辑。
+
+## 验证
+
+- 本机环境确认：Xcode 26.2，Swift 6.2.3。
+- `cd macos-native && swift build` 通过，生成原生可执行目标 `AI抓包工具`。
 - 通用 App 抓包复测：
   - 临时添加 `Chrome reinstall QA`，包名 `com.android.chrome`，Activity `com.android.chrome/com.google.android.apps.chrome.Main`，模式 `system`。
   - readiness 显示模拟器在线、App 已安装、Activity 可启动、Chrome 在前台。
