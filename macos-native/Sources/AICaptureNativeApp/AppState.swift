@@ -52,6 +52,9 @@ final class AppState: ObservableObject {
         runtimeDirectory = runtimeManager.runtimeDirectory
         runtimeStatus = await runtimeManager.checkStatus()
         lastRuntimeCheckAt = Date()
+        if case .ready = runtimeStatus {
+            await refreshWorkspaceData()
+        }
     }
 
     func refreshDeviceAndApps() async {
