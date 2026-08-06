@@ -35,7 +35,8 @@
       "../web/dist": "web/dist",
       "../desktop/start-backend.sh": "desktop/start-backend.sh",
       "../config/local.example.json": "config/local.example.json",
-      "../config/devices.macmini.json.example": "config/devices.macmini.json.example"
+      "../config/devices.macmini.json.example": "config/devices.macmini.json.example",
+      "../tools/httptoolkit-frida": "tools/httptoolkit-frida"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"
