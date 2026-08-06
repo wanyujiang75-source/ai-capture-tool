@@ -132,7 +132,11 @@ struct DeviceAppView: View {
                     } else {
                         LazyVStack(spacing: 10) {
                             ForEach(appState.jenkinsPackages) { package in
-                                JenkinsPackageRow(package: package, installing: appState.jenkinsInstallState == .loading) {
+                                JenkinsPackageRow(
+                                    package: package,
+                                    installing: appState.installingJenkinsPackageID == package.id,
+                                    disabled: appState.jenkinsInstallState == .loading
+                                ) {
                                     Task {
                                         await appState.installJenkinsPackage(package)
                                     }
@@ -313,6 +317,7 @@ private struct DeviceCard: View {
 private struct JenkinsPackageRow: View {
     let package: JenkinsPackage
     let installing: Bool
+    let disabled: Bool
     let install: () -> Void
 
     var body: some View {
@@ -336,10 +341,10 @@ private struct JenkinsPackageRow: View {
             Button {
                 install()
             } label: {
-                Label("安装", systemImage: "square.and.arrow.down")
+                Label(installing ? "安装中" : "安装", systemImage: installing ? "hourglass" : "square.and.arrow.down")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(installing)
+            .disabled(disabled)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

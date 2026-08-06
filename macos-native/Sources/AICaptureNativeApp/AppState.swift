@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var jenkinsPackages: [JenkinsPackage] = []
     @Published var jenkinsLoadState: LoadState = .idle
     @Published var jenkinsInstallState: LoadState = .idle
+    @Published var installingJenkinsPackageID: String?
     @Published var jenkinsMessage = ""
     @Published var selectedDeviceID: String?
     @Published var selectedAppID: Int?
@@ -190,15 +191,20 @@ final class AppState: ObservableObject {
 
     func installJenkinsPackage(_ package: JenkinsPackage) async {
         jenkinsInstallState = .loading
+        installingJenkinsPackageID = package.id
+        jenkinsMessage = "正在校验安装环境：准备将 \(package.artifactFileName) 安装到 \(selectedDeviceID ?? "目标模拟器")。"
         await refreshDevices()
         if let readinessMessage = selectedDeviceInstallReadinessMessage() {
             jenkinsMessage = readinessMessage
             jenkinsInstallState = .failed(readinessMessage)
+            installingJenkinsPackageID = nil
             return
         }
         guard let selectedDeviceID else {
+            installingJenkinsPackageID = nil
             return
         }
+        jenkinsMessage = "正在安装 \(package.artifactFileName)：正在从 Jenkins 下载构建产物并执行 Android 包安装，请保持模拟器在线且不要关闭窗口。"
         do {
             let response = try await apiClient.installJenkinsPackage(
                 package,
@@ -218,6 +224,7 @@ final class AppState: ObservableObject {
             jenkinsMessage = message
             jenkinsInstallState = .failed(message)
         }
+        installingJenkinsPackageID = nil
     }
 
     private func selectedDeviceInstallReadinessMessage() -> String? {
