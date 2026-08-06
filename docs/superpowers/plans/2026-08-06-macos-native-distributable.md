@@ -259,19 +259,19 @@ Note: SwiftPM裸可执行文件在当前 macOS 环境下会立即退出，因此
 - Modify: `macos-native/Sources/AICaptureNativeApp/DeviceAppView.swift`
 - Modify: `macos-native/Sources/AICaptureNativeApp/ContentView.swift`
 
-- [ ] **Step 1: Add Codable models**
+- [x] **Step 1: Add Codable models**
 
 Define minimal Codable models for `/api/devices` and `/api/apps` using optional fields for backward-compatible decoding.
 
-- [ ] **Step 2: Add API client**
+- [x] **Step 2: Add API client**
 
 Implement `getDevices()` and `getApps()` using `URLSession`.
 
-- [ ] **Step 3: Add native device/app list**
+- [x] **Step 3: Add native device/app list**
 
 Show device cards and grouped app list in SwiftUI, without WebView.
 
-- [ ] **Step 4: Verify live data**
+- [x] **Step 4: Verify live data**
 
 With backend running, the native app must show at least the same selected device/app data that `/api/devices` and `/api/apps` return.
 

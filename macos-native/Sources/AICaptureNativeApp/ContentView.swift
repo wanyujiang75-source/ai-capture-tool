@@ -11,30 +11,54 @@ struct ContentView: View {
             }
             .navigationTitle("AI抓包工具")
         } detail: {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(appState.selectedSection.rawValue)
-                    .font(.largeTitle.bold())
-                Text("原生 macOS 桌面端正在接入本机抓包运行时。当前阶段检测现有 FastAPI 后端，后续会继续接入设备池、应用库和接口分析。")
-                    .foregroundStyle(.secondary)
-                runtimeBadge
-                runtimeDetails
-                Button {
-                    Task {
-                        await appState.refreshRuntimeStatus()
-                    }
-                } label: {
-                    Label("重新检测后端", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-                Spacer()
+            switch appState.selectedSection {
+            case .setup:
+                runtimeOverview
+            case .devices:
+                DeviceAppView()
+            case .capture, .flows, .logs:
+                placeholderView
             }
-            .padding(28)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: .windowBackgroundColor))
         }
         .task {
             await appState.refreshRuntimeStatus()
         }
+    }
+
+    private var runtimeOverview: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(appState.selectedSection.rawValue)
+                .font(.largeTitle.bold())
+            Text("原生 macOS 桌面端正在接入本机抓包运行时。当前阶段检测现有 FastAPI 后端，后续会继续接入设备池、应用库和接口分析。")
+                .foregroundStyle(.secondary)
+            runtimeBadge
+            runtimeDetails
+            Button {
+                Task {
+                    await appState.refreshRuntimeStatus()
+                }
+            } label: {
+                Label("重新检测后端", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var placeholderView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(appState.selectedSection.rawValue)
+                .font(.largeTitle.bold())
+            Text("该原生模块将在后续任务接入。当前已完成运行时检测、设备池和应用库读取。")
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var runtimeBadge: some View {

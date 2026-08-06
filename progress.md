@@ -238,6 +238,11 @@
   - 原生 App 启动和点击“重新检测后端”时会自动刷新后端状态。
   - 后端检测使用禁用代理的 `URLSessionConfiguration.ephemeral`，避免本机 `http_proxy/ALL_PROXY` 把 `127.0.0.1:7001` 错误转发到代理。
   - 新增 `macos-native/scripts/build-app.sh` 生成最小 `.app`，解决 SwiftPM 裸可执行文件无法稳定打开 SwiftUI 窗口的问题。
+- 第三阶段接入原生设备与应用列表：
+  - 新增 `Models.swift`，兼容解析 `/api/devices` 和 `/api/apps` 的现有 JSON。
+  - 新增 `APIClient.swift`，统一禁用代理、设置超时并封装设备/应用读取。
+  - 新增 `DeviceAppView.swift`，原生展示设备池、应用库和测试包/生产包分组。
+  - 默认入口调整为“设备与应用”，减少用户打开后还要手动找设备列表的步骤。
 
 ## 验证
 
@@ -246,6 +251,10 @@
 - `cd macos-native && ./scripts/build-app.sh` 通过，生成 `macos-native/build/AI抓包工具.app`。
 - 实际打开 `.app` 通过：进程保持运行，原生窗口显示“内部服务已就绪：http://127.0.0.1:7001”。
 - 发现并规避本机代理干扰：普通 `curl` 因 `ALL_PROXY/http_proxy=http://127.0.0.1:7897` 返回 502；`curl --noproxy '*' http://127.0.0.1:7001/api/status` 返回 200，原生检测已按直连处理。
+- 原生设备/应用页验收通过：
+  - `/api/apps` 返回 2 个应用，原生页面显示测试包应用卡片。
+  - `/api/devices` 当前约 17 秒返回，原生页面异步加载后显示 3 台设备。
+  - 实际打开 `.app` 后截图确认“设备池 3 台 / 应用库 2 个”已显示。
 - 通用 App 抓包复测：
   - 临时添加 `Chrome reinstall QA`，包名 `com.android.chrome`，Activity `com.android.chrome/com.google.android.apps.chrome.Main`，模式 `system`。
   - readiness 显示模拟器在线、App 已安装、Activity 可启动、Chrome 在前台。

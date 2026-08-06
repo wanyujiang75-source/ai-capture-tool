@@ -11,12 +11,21 @@ final class AppState: ObservableObject {
     @Published var runtimeStatus: RuntimeStatus = .starting
     @Published var runtimeDirectory: URL?
     @Published var lastRuntimeCheckAt: Date?
-    @Published var selectedSection: SidebarSection = .setup
+    @Published var selectedSection: SidebarSection = .devices
+    @Published var devices: [CaptureDevice] = []
+    @Published var apps: [CaptureApp] = []
+    @Published var deviceLoadState: LoadState = .idle
+    @Published var appLoadState: LoadState = .idle
 
     private let runtimeManager: RuntimeManager
+    private let apiClient: APIClient
 
-    init(runtimeManager: RuntimeManager = RuntimeManager()) {
+    init(
+        runtimeManager: RuntimeManager = RuntimeManager(),
+        apiClient: APIClient = APIClient()
+    ) {
         self.runtimeManager = runtimeManager
+        self.apiClient = apiClient
         self.runtimeDirectory = runtimeManager.runtimeDirectory
     }
 
@@ -26,6 +35,38 @@ final class AppState: ObservableObject {
         runtimeStatus = await runtimeManager.checkStatus()
         lastRuntimeCheckAt = Date()
     }
+
+    func refreshDeviceAndApps() async {
+        await refreshApps()
+        await refreshDevices()
+    }
+
+    func refreshApps() async {
+        appLoadState = .loading
+        do {
+            apps = try await apiClient.getApps()
+            appLoadState = .loaded
+        } catch {
+            appLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func refreshDevices() async {
+        deviceLoadState = .loading
+        do {
+            devices = try await apiClient.getDevices()
+            deviceLoadState = .loaded
+        } catch {
+            deviceLoadState = .failed(error.localizedDescription)
+        }
+    }
+}
+
+enum LoadState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {
