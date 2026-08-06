@@ -13,6 +13,10 @@ web/node_modules/
 web/dist/
 node_modules/
 
+# Tauri / desktop
+src-tauri/target/
+src-tauri/gen/
+
 # Local browser/test artifacts
 .playwright-cli/
 .superpowers/

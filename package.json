@@ -1,0 +1,14 @@
+{
+  "name": "ai-capture-tool-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "desktop:dev": "npm --prefix web run build && tauri dev",
+    "desktop:build": "npm --prefix web run build && tauri build --bundles app",
+    "desktop:smoke-backend": "desktop/smoke-backend.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1"
+  }
+}

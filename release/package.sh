@@ -26,6 +26,9 @@ fi
     --exclude=.venv-console \
     --exclude=.venv-console312 \
     --exclude=web/node_modules \
+    --exclude=node_modules \
+    --exclude=src-tauri/target \
+    --exclude=src-tauri/gen \
     --exclude=config/local.json \
     --exclude='release/*.tar.gz' \
     --exclude='release/*.zip' \
@@ -34,9 +37,13 @@ fi
     setup.sh \
     start.sh \
     start_capture.sh \
+    package.json \
+    package-lock.json \
     requirements-console.txt \
     capture_console \
+    desktop \
     scripts \
+    src-tauri \
     tools \
     web \
     config/local.example.json \

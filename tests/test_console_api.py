@@ -1,7 +1,9 @@
 import asyncio
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi import HTTPException
 
@@ -78,6 +80,42 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 self.assertIsNone(result["active_session"])
                 self.assertIn("未发现在线设备", result["user_message"])
             finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_status_api_exposes_desktop_runtime_metadata(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_runtime_dir = app_module.RUNTIME_DIR
+
+        class RunnerShouldNotBeCalled:
+            def for_device(self, device):
+                raise AssertionError("empty device list must not build device runners")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                runtime_dir = Path(tmp) / "Application Support" / "AI抓包工具" / "runtime"
+                app_module.RUNTIME_DIR = runtime_dir
+                app_module.store = CaptureStore(runtime_dir / "console.db")
+                app_module.runner = RunnerShouldNotBeCalled()
+
+                with mock.patch.dict(
+                    os.environ,
+                    {
+                        "TRACEDECK_DESKTOP": "1",
+                        "TRACEDECK_CONFIG": str(runtime_dir.parent / "config" / "local.json"),
+                    },
+                ):
+                    result = app_module.api_status()
+
+                self.assertTrue(result["desktop"]["enabled"])
+                self.assertEqual(result["desktop"]["runtime_dir"], str(runtime_dir))
+                self.assertEqual(
+                    result["desktop"]["config_path"],
+                    str(runtime_dir.parent / "config" / "local.json"),
+                )
+            finally:
+                app_module.RUNTIME_DIR = original_runtime_dir
                 app_module.store = original_store
                 app_module.runner = original_runner
 
