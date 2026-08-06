@@ -189,12 +189,16 @@ final class AppState: ObservableObject {
     }
 
     func installJenkinsPackage(_ package: JenkinsPackage) async {
-        guard let selectedDeviceID else {
-            jenkinsMessage = "请先选择安装设备。"
-            jenkinsInstallState = .failed(jenkinsMessage)
+        jenkinsInstallState = .loading
+        await refreshDevices()
+        if let readinessMessage = selectedDeviceInstallReadinessMessage() {
+            jenkinsMessage = readinessMessage
+            jenkinsInstallState = .failed(readinessMessage)
             return
         }
-        jenkinsInstallState = .loading
+        guard let selectedDeviceID else {
+            return
+        }
         do {
             let response = try await apiClient.installJenkinsPackage(
                 package,
@@ -210,9 +214,46 @@ final class AppState: ObservableObject {
             jenkinsInstallState = .loaded
             await refreshDeviceAndApps()
         } catch {
-            jenkinsMessage = error.localizedDescription
-            jenkinsInstallState = .failed(error.localizedDescription)
+            let message = friendlyJenkinsInstallError(error)
+            jenkinsMessage = message
+            jenkinsInstallState = .failed(message)
         }
+    }
+
+    private func selectedDeviceInstallReadinessMessage() -> String? {
+        guard selectedDeviceID != nil else {
+            return "未选择安装目标：请先选择一台已启动的 Android 模拟器后再安装。"
+        }
+        guard let selectedDevice else {
+            return "未发现安装目标：请先启动模拟器，待设备在线后再安装。"
+        }
+        guard selectedDevice.emulator?.adbOnline == true else {
+            return "模拟器未在线：请先启动 Android 模拟器，待设备进入在线状态后再安装。"
+        }
+        guard selectedDevice.emulator?.bootCompleted == true else {
+            return "模拟器启动中：请等待 Android 系统启动完成后再安装。"
+        }
+        guard selectedDevice.emulator?.unlocked == true else {
+            return "模拟器已锁定：请先解锁模拟器后再安装。"
+        }
+        return nil
+    }
+
+    private func friendlyJenkinsInstallError(_ error: Error) -> String {
+        let message = error.localizedDescription
+        if message.contains("emulator is not ready for package install") {
+            return "模拟器未就绪：请先启动 Android 模拟器，待系统启动完成后再安装。"
+        }
+        if message.contains("emulator is locked") {
+            return "模拟器已锁定：请先解锁模拟器后再安装。"
+        }
+        if message.contains("another capture session is active") {
+            return "当前设备正在抓包：请先停止抓包任务后再安装。"
+        }
+        if message.contains("dirty capture process state") {
+            return "当前设备存在未清理的抓包进程：请先停止或清理抓包后再安装。"
+        }
+        return message
     }
 
     private func reconcileSelections() {
