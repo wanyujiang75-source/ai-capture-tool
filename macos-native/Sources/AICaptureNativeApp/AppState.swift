@@ -57,7 +57,7 @@ final class AppState: ObservableObject {
     }
 
     func refreshWorkspaceData() async {
-        await refreshDeviceAndApps()
+        await refreshDevices()
         await refreshJenkinsPackages()
     }
 

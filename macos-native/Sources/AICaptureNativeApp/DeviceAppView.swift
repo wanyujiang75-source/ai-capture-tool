@@ -14,7 +14,6 @@ struct DeviceAppView: View {
                 loadSummary
                 deviceSection
                 jenkinsSection
-                appSection
             }
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -32,7 +31,7 @@ struct DeviceAppView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("设备与应用")
                     .font(.largeTitle.bold())
-                Text("选择设备，直接从 Jenkins 企业级构建任务安装最新测试包，再进入抓包流程。")
+                Text("选择设备，直接从 Jenkins 企业级构建任务安装最新测试包；生产包可通过用户自主添加流程进入抓包。")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -50,7 +49,6 @@ struct DeviceAppView: View {
     private var loadSummary: some View {
         HStack(spacing: 10) {
             LoadStateBadge(title: "设备", count: appState.devices.count, state: appState.deviceLoadState)
-            LoadStateBadge(title: "应用", count: appState.apps.count, state: appState.appLoadState)
             LoadStateBadge(title: "Jenkins", count: appState.jenkinsPackages.count, state: appState.jenkinsLoadState)
         }
     }
@@ -144,61 +142,6 @@ struct DeviceAppView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var appSection: some View {
-        SectionPanel(title: "应用库", subtitle: "\(appState.apps.count) 个") {
-            switch appState.appLoadState {
-            case .idle:
-                EmptyStateView(text: "尚未加载应用。")
-            case .loading:
-                ProgressView("正在读取应用库...")
-                    .padding(.vertical, 12)
-            case .failed(let message):
-                EmptyStateView(text: "应用读取失败：\(message)")
-            case .loaded:
-                if appState.apps.isEmpty {
-                    EmptyStateView(text: "暂无应用。")
-                } else {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(groupedApps, id: \.environment) { group in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(group.environment)
-                                    .font(.headline)
-                                    .foregroundStyle(.secondary)
-                                LazyVGrid(columns: columns, spacing: 14) {
-                                    ForEach(group.apps) { app in
-                                        AppCard(app: app)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var groupedApps: [(environment: String, apps: [CaptureApp])] {
-        let groups = Dictionary(grouping: appState.apps) { app in
-            environmentTitle(app.environment)
-        }
-        return groups
-            .map { (environment: $0.key, apps: $0.value.sorted { ($0.name ?? "") < ($1.name ?? "") }) }
-            .sorted { $0.environment < $1.environment }
-    }
-
-    private func environmentTitle(_ environment: String?) -> String {
-        switch environment {
-        case "prod", "production":
-            "生产包"
-        case "test":
-            "测试包"
-        case let value? where !value.isEmpty:
-            value
-        default:
-            "未分类"
         }
     }
 
@@ -402,57 +345,6 @@ private struct JenkinsPackageRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-private struct AppCard: View {
-    let app: CaptureApp
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(app.name ?? "未命名应用")
-                        .font(.headline)
-                    Text(app.packageName ?? "-")
-                        .font(.callout.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                StatusPill(text: app.defaultMode ?? "auto", color: .blue)
-            }
-            if let activity = app.activity, !activity.isEmpty {
-                Text(activity)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            HStack {
-                InfoChip(text: "版本 \(versionText)")
-                InfoChip(text: app.platform ?? "android")
-                InfoChip(text: validationText)
-            }
-            if let message = app.lastValidationMessage, !message.isEmpty {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var versionText: String {
-        let name = app.versionName?.isEmpty == false ? app.versionName! : "-"
-        let code = app.versionCode?.isEmpty == false ? app.versionCode! : "-"
-        return "\(name) (\(code))"
-    }
-
-    private var validationText: String {
-        app.lastValidationStatus?.isEmpty == false ? app.lastValidationStatus! : "未校验"
     }
 }
 
