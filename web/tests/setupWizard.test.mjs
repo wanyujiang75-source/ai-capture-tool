@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  shouldAutoCompleteSetup,
   setupCaptureValidationAction,
   setupCurrentStep,
   setupDeviceSummary,
@@ -65,7 +66,7 @@ test("summarizes setup steps into four compact stages", () => {
 test("returns focused next action for automatic setup guidance", () => {
   assert.equal(
     setupNextAction({ current_step: "emulator" }, { emulator: { adb_online: false } }, []).primary,
-    "发现设备",
+    "启动设备",
   );
   assert.equal(
     setupNextAction({ current_step: "emulator" }, { emulator: { adb_online: true } }, []).primary,
@@ -93,4 +94,10 @@ test("disables setup capture validation while a capture is already running", () 
       title: "当前已有抓包任务运行中；如需重新校验，请先停止抓包。",
     },
   );
+});
+
+test("auto completes setup when all admission checks have passed", () => {
+  assert.equal(shouldAutoCompleteSetup({ completed: false, ready_to_complete: true }), true);
+  assert.equal(shouldAutoCompleteSetup({ completed: true, ready_to_complete: true }), false);
+  assert.equal(shouldAutoCompleteSetup({ completed: false, ready_to_complete: false }), false);
 });

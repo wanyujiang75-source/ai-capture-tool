@@ -20,9 +20,11 @@ import {
   setupDeviceSummary,
   setupNextAction,
   setupStageSummary,
+  shouldAutoCompleteSetup,
   shouldShowSetupWizard,
 } from "./setupWizard.js";
 import { buildUploadInstallPath } from "./uploadPackage.js";
+import { consolePrimaryActions, setupPrimaryAction, setupSecondaryActions } from "./uiActions.js";
 import "./styles.css";
 
 const api = async (path, options = {}) => {
@@ -587,14 +589,6 @@ function App() {
       });
     });
 
-  const syncSelectedVersion = (target) =>
-    runAction("同步版本", async () => {
-      if (!target) {
-        throw new Error("请先选择应用");
-      }
-      await api(`/api/apps/${target.id}/sync-version?device_id=${encodeURIComponent(selectedDeviceId)}`, { method: "POST" });
-    });
-
   const validateSelectedCapture = (target) =>
     runAction("抓包校验", async () => {
       if (!target) {
@@ -795,6 +789,7 @@ function App() {
     captureRunning,
     googleRequired,
   });
+  const primaryActionKeys = consolePrimaryActions({ captureRunning, selectedDevice });
   const selectedSessionIsLive = Boolean(selectedSession?.id && selectedDeviceActiveSession?.id === selectedSession.id && sessionView === "live");
   const recentSessions = sessions.filter((session) => !selectedDeviceId || session.device_id === selectedDeviceId).slice(0, 8);
   const groupedApps = groupAppsByEnvironment(apps);
@@ -837,13 +832,18 @@ function App() {
     };
   }, [showSetupWizard, selectedDeviceId]);
 
+  useEffect(() => {
+    if (!showSetupWizard || loading || !shouldAutoCompleteSetup(setup)) return;
+    completeSetup().catch((error) => setMessage(formatActionError("完成初始化", error)));
+  }, [showSetupWizard, loading, setup?.ready_to_complete, setup?.completed]);
+
   return (
     <main className="console-shell">
       <header className="topbar">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">TD</span>
           <div>
-            <strong className="brand-name">TraceDeck</strong>
+            <strong className="brand-name">AI抓包工具</strong>
             <p className="eyebrow">Local Android Packet Capture</p>
           </div>
         </div>
@@ -858,16 +858,6 @@ function App() {
           {googleRequired ? (
             <span className={`status-chip ${googleStateClass(selectedGoogleState)}`}>{googleStateLabel(selectedGoogleState)}</span>
           ) : null}
-          <button className="ghost-button" onClick={checkSetup} disabled={loading}>环境检查</button>
-          <button className="ghost-button" onClick={discoverDevices} disabled={loading}>发现设备</button>
-          <button className="ghost-button" onClick={() => runAction("刷新状态", loadAll)} disabled={loading}>刷新</button>
-          {mitmWebUrl ? (
-            <a className="ghost-button" href={mitmWebUrl} target="_blank" rel="noreferrer">
-              mitmweb
-            </a>
-          ) : (
-            <button className="ghost-button" disabled>mitmweb</button>
-          )}
         </div>
       </header>
 
@@ -972,42 +962,37 @@ function App() {
             <AppVersionPanel
               app={selectedApp}
               loading={loading}
-              canCapture={canOperateSelectedApp}
               canInstall={canInstallPackage}
               installDisabledReason={installDisabledReason}
-              onSync={() => syncSelectedVersion(selectedApp)}
-              onValidate={() => validateSelectedCapture(selectedApp)}
               onInstall={(environment, file) => installPackage(environment, file)}
             />
 
             <ReadinessPanel readiness={readiness} loading={readinessLoading} />
 
             <div className="actions primary-actions">
-              <button
-                className="auto-capture-button"
-                onClick={() => autoStartCapture(selectedApp)}
-                disabled={loading || captureRunning || !autoCaptureState.ok}
-                title={autoCaptureState.label}
-              >
-                {autoCaptureButtonLabel({ loading, captureRunning })}
-              </button>
-              <button
-                className="secondary"
-                onClick={openEmulatorPreview}
-                disabled={loading || !selectedDevice}
-                title="打开 ws-scrcpy 网页预览，不是启动模拟器"
-              >
-                新窗口查看画面
-              </button>
-              <button className="secondary" onClick={stopCapture} disabled={loading}>停止抓包</button>
-              <button
-                className="secondary danger-lite"
-                onClick={() => releaseSelectedDevice(false)}
-                disabled={loading || !selectedDevice}
-                title={releaseActionHint(selectedDevice)}
-              >
-                {releaseActionLabel(selectedDevice)}
-              </button>
+              {primaryActionKeys.includes("auto_capture") ? (
+                <button
+                  className="auto-capture-button"
+                  onClick={() => autoStartCapture(selectedApp)}
+                  disabled={loading || captureRunning || !autoCaptureState.ok}
+                  title={autoCaptureState.label}
+                >
+                  {autoCaptureButtonLabel({ loading, captureRunning })}
+                </button>
+              ) : null}
+              {primaryActionKeys.includes("preview") ? (
+                <button
+                  className="secondary"
+                  onClick={openEmulatorPreview}
+                  disabled={loading || !selectedDevice}
+                  title="打开 ws-scrcpy 网页预览，不是启动模拟器"
+                >
+                  查看画面
+                </button>
+              ) : null}
+              {primaryActionKeys.includes("stop_capture") ? (
+                <button className="secondary" onClick={stopCapture} disabled={loading}>停止抓包</button>
+              ) : null}
             </div>
             <div className="auto-capture-status">
               <strong>{autoCaptureStep || autoCaptureState.label}</strong>
@@ -1026,6 +1011,14 @@ function App() {
               <EmulatorView emulator={emulator} />
               <StatusView status={status} />
               <div className="actions">
+                <button className="secondary" onClick={checkSetup} disabled={loading}>环境检查</button>
+                <button className="secondary" onClick={discoverDevices} disabled={loading}>发现设备</button>
+                <button className="secondary" onClick={() => runAction("刷新状态", loadAll)} disabled={loading}>刷新状态</button>
+                {mitmWebUrl ? (
+                  <a className="ghost-button" href={mitmWebUrl} target="_blank" rel="noreferrer">
+                    mitmweb
+                  </a>
+                ) : null}
                 <button className="secondary" onClick={startEmulator} disabled={loading || !selectedDevice}>启动设备</button>
                 <button className="secondary" onClick={() => launchSelectedApp(selectedApp)} disabled={loading || !canOperateSelectedApp}>
                   打开应用
@@ -1040,6 +1033,14 @@ function App() {
                 <button className="secondary" onClick={() => startCapture(selectedApp, "auto")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>auto</button>
                 <button className="secondary" onClick={() => startCapture(selectedApp, "system")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>system</button>
                 <button className="secondary" onClick={() => startCapture(selectedApp, "flutter-socks")} disabled={loading || !canOperateSelectedApp || !selectedDevice || captureRunning}>flutter-socks</button>
+                <button
+                  className="secondary danger-lite"
+                  onClick={() => releaseSelectedDevice(false)}
+                  disabled={loading || !selectedDevice}
+                  title={releaseActionHint(selectedDevice)}
+                >
+                  {releaseActionLabel(selectedDevice)}
+                </button>
                 <button className="secondary danger-lite" onClick={() => releaseSelectedDevice(true)} disabled={loading || !selectedDevice}>
                   强制关闭设备
                 </button>
@@ -1116,7 +1117,6 @@ function App() {
                 ) : null}
               </select>
             </label>
-            <AppGroupList groupedApps={groupedApps} selectedAppId={selectedAppId} onSelect={setSelectedAppId} />
             {apps.length === 0 && <p className="muted compact-hint">还没有应用条目。</p>}
 
             <details className="drawer">
@@ -1231,6 +1231,10 @@ function SetupWizard({
     selectedApp,
   });
   const googleRequired = Boolean(setup?.google_login_required);
+  const googleOk = Boolean(selectedDevice?.google_state?.ok) || !googleRequired;
+  const primarySetupAction = setupPrimaryAction({ nextAction, hasApp, selectedDevice });
+  const secondarySetupActionKeys = setupSecondaryActions({ selectedDevice, googleRequired, googleOk })
+    .filter((key) => key !== primarySetupAction.key);
   const selectedEmulatorReady = Boolean(
     selectedDevice?.emulator?.adb_online &&
     selectedDevice?.emulator?.boot_completed &&
@@ -1243,16 +1247,36 @@ function SetupWizard({
       : !selectedDevice?.emulator?.unlocked
         ? "需要手动解锁"
         : "设备在线并已解锁";
+  const runSetupAction = (key) => {
+    if (key === "check") return onCheck();
+    if (key === "start_device") return onStartDevice();
+    if (key === "preview") return onOpenPreview();
+    if (key === "google_login") return onOpenGoogleLogin();
+    if (key === "prepare_frida") return onPrepareFrida();
+    if (key === "validate_capture") return onValidate();
+    if (key === "complete_setup") return onComplete();
+    if (key === "close_setup") return onClose();
+    return onCheck();
+  };
+  const setupActionDisabled = (key) => {
+    if (loading) return true;
+    if (key === "start_device" || key === "preview") return !selectedDevice;
+    if (key === "google_login") return !selectedDevice?.emulator?.adb_online || googleOk;
+    if (key === "prepare_frida") return !selectedDevice?.emulator?.adb_online;
+    if (key === "validate_capture") return validationAction.disabled;
+    if (key === "complete_setup") return !setup?.ready_to_complete;
+    return false;
+  };
 
   return (
     <section className="setup-shell">
       <Panel
-        title="TraceDeck 初始化"
+        title="AI抓包工具初始化"
         eyebrow="Setup"
         className="setup-panel"
-        actions={
+        actions={setup?.completed ? (
           <button className="secondary" onClick={onClose}>进入控制台</button>
-        }
+        ) : null}
       >
         <div className="setup-hero">
           <div>
@@ -1312,45 +1336,32 @@ function SetupWizard({
                 <StatusLine ok={setup?.validation_passed} label="冒烟" text={setup?.validation_passed ? "已有抓包校验通过" : "需要完成一次抓包校验"} />
               </div>
             ) : (
-              <p className="muted">未发现在线设备。请连接 Android 设备或启动模拟器后点击“发现设备”。</p>
+              <p className="muted">未发现在线设备。请连接 Android 设备或使用主按钮自动处理。</p>
             )}
           </section>
         </div>
 
         <div className="actions setup-actions">
-          <button onClick={onCheck} disabled={loading}>自动检测</button>
-          <button className="secondary" onClick={onDiscoverDevices} disabled={loading}>发现设备</button>
-          <button className="secondary" onClick={onStartDevice} disabled={loading || !selectedDevice}>
-            {selectedDevice?.emulator?.adb_online ? "设备已在线" : "启动设备"}
-          </button>
-          {selectedDevice?.emulator?.adb_online ? (
+          {primarySetupAction.key === "upload" ? (
+            <UploadButtons loading={loading} onInstall={onInstall} />
+          ) : (
+            <button onClick={() => runSetupAction(primarySetupAction.key)} disabled={setupActionDisabled(primarySetupAction.key)}>
+              {primarySetupAction.label}
+            </button>
+          )}
+          {secondarySetupActionKeys.includes("preview") ? (
             <button
               className="secondary"
               onClick={onOpenPreview}
-              disabled={loading || !selectedDevice}
+              disabled={setupActionDisabled("preview")}
               title="打开 ws-scrcpy 网页预览，不是启动模拟器"
             >
-              新窗口查看画面
+              查看画面
             </button>
           ) : null}
-          {googleRequired && !selectedDevice?.google_state?.ok ? (
-            <button className="secondary" onClick={onOpenGoogleLogin} disabled={loading}>去登录 Google</button>
+          {secondarySetupActionKeys.includes("google_login") ? (
+            <button className="secondary" onClick={onOpenGoogleLogin} disabled={setupActionDisabled("google_login")}>去登录 Google</button>
           ) : null}
-          {selectedDevice?.emulator?.adb_online && !selectedDevice?.frida_state?.ok ? (
-            <button className="secondary" onClick={onPrepareFrida} disabled={loading}>启动 Frida</button>
-          ) : null}
-          {!hasApp ? <UploadButtons loading={loading} onInstall={onInstall} /> : null}
-          {validationAction.visible ? (
-            <button
-              className="secondary"
-              onClick={onValidate}
-              disabled={validationAction.disabled}
-              title={validationAction.title}
-            >
-              {validationAction.label}
-            </button>
-          ) : null}
-          <button onClick={onComplete} disabled={loading || !setup?.ready_to_complete}>完成初始化</button>
         </div>
 
         <details className="setup-more">
@@ -1375,6 +1386,7 @@ function SetupWizard({
             <section>
               <strong>全部操作</strong>
               <div className="actions setup-actions compact-actions">
+                <button className="secondary" onClick={onCheck} disabled={loading}>自动检测</button>
                 <button className="secondary" onClick={onDiscoverDevices} disabled={loading}>发现设备</button>
                 <button className="secondary" onClick={onStartDevice} disabled={loading || !selectedDevice}>启动设备</button>
                 <button
@@ -1450,7 +1462,7 @@ function StatusLine({ ok, label, text }) {
 
 function DevicePool({ devices, selectedDeviceId, onSelect }) {
   if (!devices.length) {
-    return <p className="muted">未发现在线设备。请连接设备或启动模拟器后点击“发现设备”。</p>;
+    return <p className="muted">未发现在线设备。请连接设备后使用一键开始抓包，或在高级/排错中手动发现设备。</p>;
   }
 
   return (
@@ -1486,9 +1498,9 @@ function GoogleStatePanel({ state, loading, onOpenLogin }) {
         <small>{state?.user_message || "连接设备后会检查 Google Play 和 Google 账号状态。"}</small>
         {state?.fix ? <small>{state.fix}</small> : null}
       </div>
-      <button className="secondary" onClick={onOpenLogin} disabled={loading || state?.ok}>
+      {!state?.ok ? <button className="secondary" onClick={onOpenLogin} disabled={loading}>
         去登录 Google
-      </button>
+      </button> : null}
     </section>
   );
 }
@@ -1501,7 +1513,7 @@ function readinessTitle(state) {
   }[state] || "未校验";
 }
 
-function AppVersionPanel({ app, loading, canCapture, canInstall, installDisabledReason, onSync, onValidate, onInstall }) {
+function AppVersionPanel({ app, loading, canInstall, installDisabledReason, onInstall }) {
   const [uploadEnvironment, setUploadEnvironment] = useState(app?.environment || "production");
 
   useEffect(() => {
@@ -1565,8 +1577,6 @@ function AppVersionPanel({ app, loading, canCapture, canInstall, installDisabled
             }}
           />
         </label>
-        <button className="secondary" onClick={onSync} disabled={loading || !canCapture}>同步版本</button>
-        <button className="secondary" onClick={onValidate} disabled={loading || !canCapture}>重新校验</button>
       </div>
     </section>
   );
@@ -1677,43 +1687,6 @@ function Panel({ title, children, className = "", eyebrow, actions = null }) {
       </div>
       {children}
     </section>
-  );
-}
-
-function AppGroupList({ groupedApps, selectedAppId, onSelect }) {
-  const groups = [
-    ["production", "生产包", groupedApps.production],
-    ["test", "测试包", groupedApps.test],
-  ];
-
-  return (
-    <div className="app-groups">
-      {groups.map(([key, label, items]) => (
-        <details className="app-group" key={key} open={items.some((item) => String(item.id) === String(selectedAppId))}>
-          <summary className="app-group-head">
-            <span>{label}</span>
-            <small>{items.length}</small>
-          </summary>
-          {items.length ? (
-            <div className="app-button-list">
-              {items.map((item) => (
-                <button
-                  type="button"
-                  className={String(item.id) === String(selectedAppId) ? "app-list-button selected" : "app-list-button"}
-                  key={item.id}
-                  onClick={() => onSelect(String(item.id))}
-                >
-                  <strong>{item.name}</strong>
-                  <code>{item.package_name}</code>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="muted compact-hint">暂无{label}，可通过“添加应用”保存。</p>
-          )}
-        </details>
-      ))}
-    </div>
   );
 }
 

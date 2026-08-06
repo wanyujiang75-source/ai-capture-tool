@@ -22,6 +22,10 @@ export function shouldShowSetupWizard(setup, forcedOpen = false, consoleAvailabl
   return !setup?.completed;
 }
 
+export function shouldAutoCompleteSetup(setup) {
+  return Boolean(setup?.ready_to_complete && !setup?.completed);
+}
+
 export function setupCurrentStep(setup) {
   const key = setup?.current_step || "env";
   const [label, description] = SETUP_STEP_COPY[key] || SETUP_STEP_COPY.env;
@@ -85,7 +89,7 @@ export function setupNextAction(setup, selectedDevice, apps = []) {
     const description = emulator.adb_online
       ? "设备已在线，请在画面中完成解锁，页面会自动识别。"
       : "连接 Android 真机或启动本机模拟器后，等待系统完成启动并解锁。";
-    return { key: "emulator", title, description, primary: emulator.adb_online ? "查看设备" : "发现设备" };
+    return { key: "emulator", title, description, primary: emulator.adb_online ? "查看设备" : "启动设备" };
   }
 
   if (current.key === "google" && !googleOk) {
