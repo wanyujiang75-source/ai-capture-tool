@@ -50,6 +50,7 @@ struct CaptureDevice: Decodable, Identifiable {
     let emulator: EmulatorState?
     let capture: CaptureState?
     let googleState: GoogleState?
+    let activeSession: CaptureSession?
 
     private enum CodingKeys: String, CodingKey {
         case id = "device_id"
@@ -65,6 +66,7 @@ struct CaptureDevice: Decodable, Identifiable {
         case emulator
         case capture
         case googleState = "google_state"
+        case activeSession = "active_session"
     }
 
     init(from decoder: Decoder) throws {
@@ -82,6 +84,7 @@ struct CaptureDevice: Decodable, Identifiable {
         emulator = try container.decodeIfPresent(EmulatorState.self, forKey: .emulator)
         capture = try container.decodeIfPresent(CaptureState.self, forKey: .capture)
         googleState = try container.decodeIfPresent(GoogleState.self, forKey: .googleState)
+        activeSession = try container.decodeIfPresent(CaptureSession.self, forKey: .activeSession)
     }
 }
 

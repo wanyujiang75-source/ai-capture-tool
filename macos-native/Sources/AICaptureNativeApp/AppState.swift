@@ -86,6 +86,7 @@ final class AppState: ObservableObject {
         do {
             devices = try await apiClient.getDevices()
             reconcileSelections()
+            syncActiveSessionFromSelectedDevice()
             deviceLoadState = .loaded
         } catch {
             deviceLoadState = .failed(error.localizedDescription)
@@ -199,6 +200,9 @@ final class AppState: ObservableObject {
             captureActionState = .loaded
             await refreshDevices()
         } catch {
+            if await recoverExistingCaptureIfNeeded(error) {
+                return
+            }
             setCaptureFailure(error.localizedDescription)
         }
     }
@@ -344,6 +348,50 @@ final class AppState: ObservableObject {
         if selectedJenkinsPackageID == nil || !jenkinsPackages.contains(where: { $0.id == selectedJenkinsPackageID }) {
             selectedJenkinsPackageID = jenkinsPackages.first?.id
         }
+    }
+
+    @discardableResult
+    private func syncActiveSessionFromSelectedDevice() -> Int? {
+        guard let selectedDevice else {
+            return nil
+        }
+        if let sessionID = selectedDevice.activeSession?.id {
+            if activeSessionID != sessionID {
+                activeSessionID = sessionID
+                flows = []
+                selectedFlowID = nil
+                selectedFlowDetail = nil
+                selectedFlowCurl = ""
+                flowDetailLoadState = .idle
+            }
+            return sessionID
+        }
+        if selectedDevice.capture?.health != "running" {
+            activeSessionID = nil
+            flows = []
+            selectedFlowID = nil
+            selectedFlowDetail = nil
+            selectedFlowCurl = ""
+            flowDetailLoadState = .idle
+        }
+        return nil
+    }
+
+    private func recoverExistingCaptureIfNeeded(_ error: Error) async -> Bool {
+        let message = error.localizedDescription
+        guard message.contains("another capture session is active") || message.contains("已有抓包任务") else {
+            return false
+        }
+        await refreshDevices()
+        guard let sessionID = syncActiveSessionFromSelectedDevice() else {
+            setCaptureFailure("当前设备已有抓包任务运行中，但未能读取 Session；请先停止抓包后再重新开始。")
+            return true
+        }
+        captureMessage = "当前设备已有抓包任务 #\(sessionID)，已自动接入现有 Session；接口页会继续实时刷新。"
+        captureActionState = .loaded
+        selectedSection = .flows
+        await refreshFlows()
+        return true
     }
 
     private func setCaptureFailure(_ message: String) {

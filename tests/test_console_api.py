@@ -197,6 +197,49 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_device_status_backfills_missing_avd_name_from_running_emulator(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StatusRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {
+                    "adb_online": True,
+                    "current_avd": "Capture_AVD_02",
+                    "foreground": "",
+                }
+
+            def capture_status(self):
+                return {"health": "idle"}
+
+            def google_state(self, device_ok=False):
+                return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.store.upsert_device(
+                    device_id="device-1",
+                    name="Discovered Device",
+                    avd_name="",
+                    adb_serial="emulator-5554",
+                    proxy_port=9100,
+                    web_port=9101,
+                    frida_port=27142,
+                )
+                app_module.runner = StatusRunner()
+
+                result = app_module.build_device_status(app_module.store.get_device("device-1"))
+
+                self.assertEqual(result["avd_name"], "Capture_AVD_02")
+                self.assertEqual(app_module.store.get_device("device-1")["avd_name"], "Capture_AVD_02")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_apps_installed_api_uses_selected_discovered_device(self):
         original_store = app_module.store
         original_runner = app_module.runner

@@ -916,6 +916,9 @@ def build_device_status(device: Dict[str, Any]) -> Dict[str, Any]:
     reconcile_active_session(device_id=device["device_id"])
     device_runner = runner_for_device_id(device["device_id"])
     emulator = device_runner.emulator_status()
+    current_avd = str(emulator.get("current_avd") or "").strip()
+    if current_avd and not str(device.get("avd_name") or "").strip():
+        device = store.update_device(str(device["device_id"]), avd_name=current_avd)
     return {
         **device,
         **device_runtime_policy(device),
