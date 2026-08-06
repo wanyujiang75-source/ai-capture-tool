@@ -34,7 +34,8 @@
       "../requirements-console.txt": "requirements-console.txt",
       "../web/dist": "web/dist",
       "../desktop/start-backend.sh": "desktop/start-backend.sh",
-      "../config/local.example.json": "config/local.example.json"
+      "../config/local.example.json": "config/local.example.json",
+      "../config/devices.macmini.json.example": "config/devices.macmini.json.example"
     },
     "macOS": {
       "minimumSystemVersion": "11.0"

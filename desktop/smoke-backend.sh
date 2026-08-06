@@ -44,7 +44,8 @@ echo "$!" >"$PID_FILE"
 timeout_seconds="${DESKTOP_SMOKE_TIMEOUT_SECONDS:-180}"
 deadline=$((SECONDS + timeout_seconds))
 while (( SECONDS < deadline )); do
-  if curl --noproxy "*" -fsS "http://$HOST:$PORT/api/status" >/dev/null 2>&1; then
+  if curl --noproxy "*" -fsS "http://$HOST:$PORT/api/status" >/dev/null 2>&1 \
+    && curl --noproxy "*" -fsS "http://$HOST:$PORT/api/devices" | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("devices") else 1)' >/dev/null 2>&1; then
     echo "desktop backend smoke ok: http://$HOST:$PORT"
     exit 0
   fi

@@ -8,11 +8,16 @@ VENV_DIR="${CONSOLE_VENV_DIR:-$RUNTIME_DIR/desktop-venv}"
 HOST="${CONSOLE_HOST:-127.0.0.1}"
 PORT="${CONSOLE_PORT:-7001}"
 CONFIG_PATH="${TRACEDECK_CONFIG:-$RUNTIME_DIR/config/local.json}"
+DEVICES_CONFIG_PATH="${CAPTURE_DEVICES_CONFIG:-$RUNTIME_DIR/config/devices.json}"
 CONSOLE_PYTHON="${CONSOLE_PYTHON:-}"
 
 source "$ROOT_DIR/scripts/console_python.sh"
 
 mkdir -p "$RUNTIME_DIR" "$RUNTIME_DIR/config" "$RUNTIME_DIR/logs"
+
+if [[ -z "${CAPTURE_DEVICES_CONFIG:-}" && ! -f "$DEVICES_CONFIG_PATH" && -f "$ROOT_DIR/config/devices.macmini.json.example" ]]; then
+  cp "$ROOT_DIR/config/devices.macmini.json.example" "$DEVICES_CONFIG_PATH"
+fi
 
 ensure_console_venv
 
@@ -42,6 +47,7 @@ cd "$ROOT_DIR"
 export PYTHONPATH="$ROOT_DIR"
 export CAPTURE_RUNTIME_DIR="$RUNTIME_DIR"
 export TRACEDECK_CONFIG="$CONFIG_PATH"
+export CAPTURE_DEVICES_CONFIG="$DEVICES_CONFIG_PATH"
 export TRACEDECK_DESKTOP=1
 export CONSOLE_HOST="$HOST"
 export CONSOLE_PORT="$PORT"
