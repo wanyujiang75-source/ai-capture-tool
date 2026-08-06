@@ -1,14 +1,41 @@
-# TraceDeck
+# AI抓包工具
 
-TraceDeck 是 macOS 优先的本机 Android 抓包工作台。下载源码或 release 包后，在自己的 Mac 上运行 `./setup.sh` 和 `./start.sh`，打开 `http://127.0.0.1:7001`，即可通过页面完成环境检查、设备发现、App 添加、抓包启动、接口查看和 cURL 导出。
+AI抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端使用 Tauri 承载现有控制台，自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、App 添加、抓包启动、接口查看和 cURL 导出。
 
 项目默认是空状态：不预置 App、不预置设备池、不包含历史抓包结果，也不绑定 MelodyCraft、Jenkins、服务器或固定 AVD。
 
-## 快速开始
+## 桌面端快速开始
+
+生成 macOS App：
 
 ```bash
-git clone <your-tracedeck-repo-url>
-cd TraceDeck
+git clone <your-ai-capture-tool-repo-url>
+cd <project>
+./setup.sh
+./desktop/package-desktop.sh
+```
+
+生成后打开：
+
+```text
+src-tauri/target/release/bundle/macos/AI抓包工具.app
+```
+
+桌面端会自动启动本机后端并进入控制台，不需要手动运行 `./start.sh`。如果是未签名的本地构建，macOS Gatekeeper 可能会阻止首次打开；内部使用时可以在系统设置的安全性页面允许打开，正式分发时需要进行签名和 notarization。
+
+桌面端运行数据保存在：
+
+```text
+~/Library/Application Support/com.local.ai-capture-tool/runtime/
+```
+
+包括 SQLite 数据库、抓包结果、上传 APK、日志和临时进程文件。升级 App 不应删除该目录。
+
+## 浏览器模式
+
+```bash
+git clone <your-ai-capture-tool-repo-url>
+cd <project>
 ./setup.sh
 ./start.sh
 ```
@@ -34,6 +61,7 @@ macOS 首版需要：
 
 - Python 3.12+
 - Node.js 和 npm
+- Rust 和 Cargo，用于构建 Tauri 桌面端
 - Android Studio 或 Android SDK
 - `adb`、`emulator`、`sdkmanager`、`avdmanager`
 - `mitmproxy`，提供 `mitmweb`
@@ -42,7 +70,7 @@ macOS 首版需要：
 常见安装方式：
 
 ```bash
-brew install node mitmproxy
+brew install node rust mitmproxy
 python3 -m pip install frida-tools
 ```
 
@@ -97,13 +125,16 @@ Android SDK 默认从 `$ANDROID_SDK_ROOT` 或 `$HOME/Library/Android/sdk` 读取
 ./release/package.sh
 ```
 
-发布包包含后端代码、抓包脚本、`web/dist`、配置模板、README、`setup.sh`、`start.sh` 和 `requirements-console.txt`。
+发布包包含后端代码、抓包脚本、`web/dist`、Tauri 桌面端源码、桌面打包脚本、配置模板、README、`setup.sh`、`start.sh`、`package.json` 和 `requirements-console.txt`。
 
 发布包排除：
 
 - `runtime/`
 - `.venv*`
 - `web/node_modules`
+- `node_modules`
+- `src-tauri/target`
+- `src-tauri/gen`
 - `config/local.json`
 - 抓包结果、上传 APK、本机数据库、cookie、token 和账号状态
 
