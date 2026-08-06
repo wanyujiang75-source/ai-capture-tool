@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  setupCaptureValidationAction,
   setupCurrentStep,
   setupDeviceSummary,
   setupNextAction,
@@ -13,13 +14,15 @@ test("shows setup wizard until initialization is complete", () => {
   assert.equal(shouldShowSetupWizard({ completed: false }, false), true);
   assert.equal(shouldShowSetupWizard({ completed: true }, false), false);
   assert.equal(shouldShowSetupWizard({ completed: true }, true), true);
+  assert.equal(shouldShowSetupWizard({ completed: false }, false, true), false);
+  assert.equal(shouldShowSetupWizard({ completed: false }, true, true), true);
 });
 
 test("returns readable current setup step copy", () => {
   assert.deepEqual(setupCurrentStep({ current_step: "google" }), {
     key: "google",
-    label: "Google 登录",
-    description: "在模拟器内登录 Google 账号。",
+    label: "Google 状态",
+    description: "按目标 App 需要确认 Google Play 或账号状态。",
   });
 });
 
@@ -62,14 +65,32 @@ test("summarizes setup steps into four compact stages", () => {
 test("returns focused next action for automatic setup guidance", () => {
   assert.equal(
     setupNextAction({ current_step: "emulator" }, { emulator: { adb_online: false } }, []).primary,
-    "启动模拟器",
+    "发现设备",
   );
   assert.equal(
     setupNextAction({ current_step: "emulator" }, { emulator: { adb_online: true } }, []).primary,
-    "查看模拟器",
+    "查看设备",
   );
   assert.equal(
     setupNextAction({ current_step: "smoke" }, { emulator: { adb_online: true } }, [{ id: 1 }]).primary,
     "启动抓包测试",
+  );
+});
+
+test("disables setup capture validation while a capture is already running", () => {
+  assert.deepEqual(
+    setupCaptureValidationAction({
+      hasApp: true,
+      validationPassed: false,
+      captureRunning: true,
+      loading: false,
+      selectedApp: { id: 1 },
+    }),
+    {
+      visible: true,
+      disabled: true,
+      label: "抓包运行中",
+      title: "当前已有抓包任务运行中；如需重新校验，请先停止抓包。",
+    },
   );
 });

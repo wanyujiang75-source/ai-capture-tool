@@ -58,6 +58,15 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             )["state"],
             "owned_by_project",
         )
+        self.assertEqual(
+            classify_port(
+                27142,
+                [{"pid": 103, "command": "adb -L tcp:5038 fork-server server --reply-fd 4"}],
+                project_root=project,
+                runtime_dir=project / "runtime",
+            )["state"],
+            "owned_by_project",
+        )
         occupied = classify_port(
             9090,
             [{"pid": 202, "command": "/Applications/Other.app/Contents/MacOS/service --port 9090"}],

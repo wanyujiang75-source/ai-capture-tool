@@ -1,5 +1,7 @@
 import importlib.util
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -12,6 +14,25 @@ def load_exporter():
 
 
 class CaptureExporterTimingTests(unittest.TestCase):
+    def test_mitmweb_client_bypasses_system_proxy_for_localhost(self):
+        exporter = load_exporter()
+        captured_handlers = []
+        original_build_opener = exporter.urllib.request.build_opener
+
+        def capture_build_opener(*handlers):
+            captured_handlers.extend(handlers)
+            return original_build_opener(*handlers)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(exporter.urllib.request, "build_opener", capture_build_opener):
+            exporter.MitmWeb(9101, "android-capture", str(Path(tmp) / "cookies.txt"))
+
+        self.assertTrue(
+            any(
+                handler.__class__.__name__ == "ProxyHandler" and getattr(handler, "proxies", None) == {}
+                for handler in captured_handlers
+            )
+        )
+
     def test_flow_summary_calculates_request_response_timing_from_mitm_timestamps(self):
         exporter = load_exporter()
 

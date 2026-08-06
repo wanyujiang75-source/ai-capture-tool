@@ -51,14 +51,21 @@ else
 fi
 
 PORT_ARGS=()
-if [[ -n "$EMULATOR_PORT" && " ${EXTRA_ARGS[*]} " != *" -port "* && " ${EXTRA_ARGS[*]} " != *" -ports "* ]]; then
+EXTRA_ARGS_TEXT="${EXTRA_ARGS[*]-}"
+if [[ -n "$EMULATOR_PORT" && " ${EXTRA_ARGS_TEXT} " != *" -port "* && " ${EXTRA_ARGS_TEXT} " != *" -ports "* ]]; then
   PORT_ARGS=(-port "$EMULATOR_PORT")
 fi
 
 {
   printf '#!/usr/bin/env bash\n'
   printf 'exec '
-  printf '%q ' "$EMULATOR_BIN" -avd "$AVD_NAME" "${PORT_ARGS[@]}" "${EXTRA_ARGS[@]}"
+  printf '%q ' "$EMULATOR_BIN" -avd "$AVD_NAME"
+  if (( ${#PORT_ARGS[@]} > 0 )); then
+    printf '%q ' "${PORT_ARGS[@]}"
+  fi
+  if (( ${#EXTRA_ARGS[@]} > 0 )); then
+    printf '%q ' "${EXTRA_ARGS[@]}"
+  fi
   printf '>>"%s" 2>&1\n' "$LOG_FILE"
 } >"$LAUNCHER_FILE"
 
@@ -72,7 +79,11 @@ else
   echo "started emulator $AVD_NAME in background"
 fi
 
-echo "args: ${EXTRA_ARGS[*]}"
+if (( ${#EXTRA_ARGS[@]} > 0 )); then
+echo "args: ${EXTRA_ARGS_TEXT}"
+else
+  echo "args: none"
+fi
 if [[ -n "$EMULATOR_PORT" ]]; then
   echo "emulator port: $EMULATOR_PORT"
 fi

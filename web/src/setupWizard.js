@@ -16,8 +16,9 @@ export const SETUP_STAGE_DEFS = [
   { key: "capture", label: "抓包", stepKeys: ["app", "smoke", "complete"] },
 ];
 
-export function shouldShowSetupWizard(setup, forcedOpen = false) {
+export function shouldShowSetupWizard(setup, forcedOpen = false, consoleAvailable = false) {
   if (forcedOpen) return true;
+  if (consoleAvailable) return false;
   return !setup?.completed;
 }
 
@@ -128,5 +129,38 @@ export function setupNextAction(setup, selectedDevice, apps = []) {
     title: "完成初始化",
     description: "至少一台设备已通过准入，并且已有一次抓包校验记录。",
     primary: "完成初始化",
+  };
+}
+
+export function setupCaptureValidationAction({
+  hasApp,
+  validationPassed,
+  captureRunning,
+  loading,
+  selectedApp,
+}) {
+  if (!hasApp || validationPassed) {
+    return {
+      visible: false,
+      disabled: true,
+      label: "启动抓包测试",
+      title: "",
+    };
+  }
+
+  if (captureRunning) {
+    return {
+      visible: true,
+      disabled: true,
+      label: "抓包运行中",
+      title: "当前已有抓包任务运行中；如需重新校验，请先停止抓包。",
+    };
+  }
+
+  return {
+    visible: true,
+    disabled: Boolean(loading || !selectedApp),
+    label: "启动抓包测试",
+    title: "",
   };
 }
