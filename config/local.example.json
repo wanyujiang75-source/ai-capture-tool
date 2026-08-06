@@ -11,5 +11,12 @@
     "web_port_start": 9091,
     "frida_port_start": 27042,
     "mitmweb_token": "android-capture"
+  },
+  "jenkins": {
+    "base_url": "http://192.168.77.150:8080",
+    "username": "",
+    "password": "",
+    "job_exclude_keywords": ["api-test"],
+    "artifact_limit": 10
   }
 }

@@ -9,6 +9,23 @@ struct AppsResponse: Decodable {
     let apps: [CaptureApp]
 }
 
+struct JenkinsPackagesResponse: Decodable {
+    let source: JenkinsSourceSummary?
+    let packages: [JenkinsPackage]
+}
+
+struct JenkinsSourceSummary: Decodable {
+    let type: String?
+    let baseURL: String?
+    let count: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case baseURL = "base_url"
+        case count
+    }
+}
+
 struct SystemState: Decodable {
     let state: String?
     let updatedAt: String?
@@ -146,6 +163,74 @@ struct CaptureApp: Decodable, Identifiable {
         lastValidationStatus = container.decodeFlexibleString(forKey: .lastValidationStatus)
         lastValidationMessage = container.decodeFlexibleString(forKey: .lastValidationMessage)
         lastSuccessMode = container.decodeFlexibleString(forKey: .lastSuccessMode)
+    }
+}
+
+struct JenkinsPackage: Decodable, Identifiable {
+    let id: String
+    let jobName: String
+    let buildNumber: Int
+    let result: String?
+    let timestamp: String?
+    let buildTime: String?
+    let artifactFileName: String
+    let artifactRelativePath: String
+    let artifactURL: String?
+    let environment: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case jobName = "job_name"
+        case buildNumber = "build_number"
+        case result
+        case timestamp
+        case buildTime = "build_time"
+        case artifactFileName = "artifact_file_name"
+        case artifactRelativePath = "artifact_relative_path"
+        case artifactURL = "artifact_url"
+        case environment
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobName = container.decodeFlexibleString(forKey: .jobName) ?? ""
+        buildNumber = (try? container.decode(Int.self, forKey: .buildNumber)) ?? Int(container.decodeFlexibleString(forKey: .buildNumber) ?? "") ?? 0
+        artifactFileName = container.decodeFlexibleString(forKey: .artifactFileName) ?? ""
+        artifactRelativePath = container.decodeFlexibleString(forKey: .artifactRelativePath) ?? ""
+        id = container.decodeFlexibleString(forKey: .id) ?? "\(jobName)-\(buildNumber)-\(artifactRelativePath)"
+        result = container.decodeFlexibleString(forKey: .result)
+        timestamp = container.decodeFlexibleString(forKey: .timestamp)
+        buildTime = container.decodeFlexibleString(forKey: .buildTime)
+        artifactURL = container.decodeFlexibleString(forKey: .artifactURL)
+        environment = container.decodeFlexibleString(forKey: .environment)
+    }
+}
+
+struct JenkinsInstallPayload: Encodable {
+    let deviceId: String
+    let jobName: String
+    let buildNumber: Int
+    let artifactRelativePath: String
+    let environment: String
+
+    private enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case jobName = "job_name"
+        case buildNumber = "build_number"
+        case artifactRelativePath = "artifact_relative_path"
+        case environment
+    }
+}
+
+struct JenkinsInstallResponse: Decodable {
+    let ok: Bool?
+    let app: CaptureApp?
+    let archivePath: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case app
+        case archivePath = "archive_path"
     }
 }
 

@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .device_discovery import build_discovered_devices
+from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
 from .local_config import load_local_config
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
 from .platforms import capture_supported, unsupported_platform_detail
@@ -52,6 +53,7 @@ runner = ConsoleRunner(
     frida_port=int(LOCAL_CONFIG["capture"]["frida_port_start"]),
     mitm_password=str(LOCAL_CONFIG["capture"]["mitmweb_token"]),
 )
+jenkins_source = JenkinsPackageSource(JenkinsConfig.from_mapping(LOCAL_CONFIG.get("jenkins", {})))
 app = FastAPI(title="TraceDeck API", version="1.0.0")
 
 
@@ -69,6 +71,14 @@ class CaptureStartPayload(BaseModel):
     app_id: int
     device_id: str = DEFAULT_DEVICE_ID
     mode: Optional[str] = None
+
+
+class JenkinsInstallPayload(BaseModel):
+    device_id: str = DEFAULT_DEVICE_ID
+    job_name: str
+    build_number: int
+    artifact_relative_path: str
+    environment: str = "test"
 
 
 def normalize_requested_capture_mode(target_app: Dict[str, Any], mode: Optional[str]) -> str:
@@ -1205,6 +1215,64 @@ def api_update_app(app_id: int, payload: AppPayload) -> Dict[str, Any]:
 def api_delete_app(app_id: int) -> Dict[str, Any]:
     store.delete_app(app_id)
     return {"ok": True}
+
+
+@app.get("/api/package-sources/jenkins/packages")
+def api_jenkins_packages() -> Dict[str, Any]:
+    try:
+        packages = jenkins_source.list_latest_packages()
+    except JenkinsSourceError as exc:
+        raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+    return {
+        "source": {
+            "type": "jenkins",
+            "base_url": jenkins_source.config.base_url,
+            "count": len(packages),
+            "errors": jenkins_source.last_errors[:20],
+        },
+        "packages": packages,
+    }
+
+
+@app.post("/api/package-sources/jenkins/install")
+def api_install_jenkins_package(payload: JenkinsInstallPayload) -> Dict[str, Any]:
+    device_runner = runner_for_device_id(payload.device_id)
+    ensure_no_active_capture_for_update(device_id=payload.device_id)
+    ensure_emulator_ready_for_install(device_id=payload.device_id)
+    target_environment = validate_app_environment(payload.environment)
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="jenkins-install-", dir=str(UPLOADS_DIR)) as tmp:
+        work_dir = Path(tmp)
+        try:
+            upload_name, upload_path = jenkins_source.download_package(
+                job_name=payload.job_name,
+                build_number=payload.build_number,
+                artifact_relative_path=payload.artifact_relative_path,
+                destination_dir=work_dir,
+            )
+        except JenkinsSourceError as exc:
+            raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
+
+        apk_paths = collect_uploaded_apks(upload_path, work_dir)
+        base_apk = select_base_apk(apk_paths)
+        apk_info = device_runner.inspect_apk(base_apk)
+        result = install_uploaded_package_for_app(
+            device_id=payload.device_id,
+            device_runner=device_runner,
+            target_app=None,
+            environment=target_environment,
+            upload_name=upload_name,
+            apk_paths=apk_paths,
+            apk_info=apk_info,
+        )
+        result["source"] = {
+            "type": "jenkins",
+            "job_name": payload.job_name,
+            "build_number": payload.build_number,
+            "artifact_relative_path": payload.artifact_relative_path,
+        }
+        return result
 
 
 @app.post("/api/apps/{app_id}/launch")

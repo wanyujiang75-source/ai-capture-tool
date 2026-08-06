@@ -16,6 +16,10 @@ final class AppState: ObservableObject {
     @Published var apps: [CaptureApp] = []
     @Published var deviceLoadState: LoadState = .idle
     @Published var appLoadState: LoadState = .idle
+    @Published var jenkinsPackages: [JenkinsPackage] = []
+    @Published var jenkinsLoadState: LoadState = .idle
+    @Published var jenkinsInstallState: LoadState = .idle
+    @Published var jenkinsMessage = ""
     @Published var selectedDeviceID: String?
     @Published var selectedAppID: Int?
     @Published var captureActionState: LoadState = .idle
@@ -52,6 +56,11 @@ final class AppState: ObservableObject {
         await refreshDevices()
     }
 
+    func refreshWorkspaceData() async {
+        await refreshDeviceAndApps()
+        await refreshJenkinsPackages()
+    }
+
     func refreshApps() async {
         appLoadState = .loading
         do {
@@ -71,6 +80,16 @@ final class AppState: ObservableObject {
             deviceLoadState = .loaded
         } catch {
             deviceLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func refreshJenkinsPackages() async {
+        jenkinsLoadState = .loading
+        do {
+            jenkinsPackages = try await apiClient.getJenkinsPackages()
+            jenkinsLoadState = .loaded
+        } catch {
+            jenkinsLoadState = .failed(error.localizedDescription)
         }
     }
 
@@ -166,6 +185,33 @@ final class AppState: ObservableObject {
             await refreshDevices()
         } catch {
             setCaptureFailure(error.localizedDescription)
+        }
+    }
+
+    func installJenkinsPackage(_ package: JenkinsPackage) async {
+        guard let selectedDeviceID else {
+            jenkinsMessage = "请先选择安装设备。"
+            jenkinsInstallState = .failed(jenkinsMessage)
+            return
+        }
+        jenkinsInstallState = .loading
+        do {
+            let response = try await apiClient.installJenkinsPackage(
+                package,
+                deviceId: selectedDeviceID,
+                environment: package.environment ?? "test"
+            )
+            if let installedApp = response.app {
+                selectedAppID = installedApp.id
+                jenkinsMessage = "已安装 \(installedApp.name ?? package.artifactFileName)。"
+            } else {
+                jenkinsMessage = "已安装 \(package.artifactFileName)。"
+            }
+            jenkinsInstallState = .loaded
+            await refreshDeviceAndApps()
+        } catch {
+            jenkinsMessage = error.localizedDescription
+            jenkinsInstallState = .failed(error.localizedDescription)
         }
     }
 

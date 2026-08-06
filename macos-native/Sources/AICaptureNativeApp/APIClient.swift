@@ -11,8 +11,8 @@ struct APIClient {
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]
-        configuration.timeoutIntervalForRequest = 25
-        configuration.timeoutIntervalForResource = 30
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 600
         self.session = URLSession(configuration: configuration)
     }
 
@@ -24,6 +24,28 @@ struct APIClient {
     func getApps() async throws -> [CaptureApp] {
         let response: AppsResponse = try await get("api/apps")
         return response.apps
+    }
+
+    func getJenkinsPackages() async throws -> [JenkinsPackage] {
+        let response: JenkinsPackagesResponse = try await get("api/package-sources/jenkins/packages")
+        return response.packages
+    }
+
+    func installJenkinsPackage(
+        _ package: JenkinsPackage,
+        deviceId: String,
+        environment: String
+    ) async throws -> JenkinsInstallResponse {
+        try await post(
+            "api/package-sources/jenkins/install",
+            body: JenkinsInstallPayload(
+                deviceId: deviceId,
+                jobName: package.jobName,
+                buildNumber: package.buildNumber,
+                artifactRelativePath: package.artifactRelativePath,
+                environment: environment
+            )
+        )
     }
 
     func prepareFrida(deviceId: String) async throws -> BasicActionResponse {

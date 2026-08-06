@@ -21,6 +21,13 @@ DEFAULT_LOCAL_CONFIG: dict[str, Any] = {
         "frida_port_start": 27042,
         "mitmweb_token": "android-capture",
     },
+    "jenkins": {
+        "base_url": "http://192.168.77.150:8080",
+        "username": "",
+        "password": "",
+        "job_exclude_keywords": ["api-test"],
+        "artifact_limit": 10,
+    },
 }
 
 
@@ -81,5 +88,21 @@ def load_local_config(
     token = source_env.get("CAPTURE_MITMWEB_TOKEN") or source_env.get("MITMWEB_PASSWORD")
     if token:
         config["capture"]["mitmweb_token"] = token
+
+    if source_env.get("JENKINS_BASE_URL"):
+        config["jenkins"]["base_url"] = source_env["JENKINS_BASE_URL"]
+    if source_env.get("JENKINS_USERNAME"):
+        config["jenkins"]["username"] = source_env["JENKINS_USERNAME"]
+    if source_env.get("JENKINS_PASSWORD"):
+        config["jenkins"]["password"] = source_env["JENKINS_PASSWORD"]
+    if source_env.get("JENKINS_JOB_EXCLUDE_KEYWORDS"):
+        config["jenkins"]["job_exclude_keywords"] = [
+            item.strip()
+            for item in source_env["JENKINS_JOB_EXCLUDE_KEYWORDS"].split(",")
+            if item.strip()
+        ]
+    artifact_limit = _int_env(source_env, "JENKINS_ARTIFACT_LIMIT")
+    if artifact_limit is not None:
+        config["jenkins"]["artifact_limit"] = artifact_limit
 
     return config

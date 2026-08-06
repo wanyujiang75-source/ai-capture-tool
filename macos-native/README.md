@@ -7,6 +7,7 @@ V1 目标：
 - 原生 macOS 窗口。
 - 管理本机 FastAPI 抓包运行时。
 - 调用现有后端 API 完成设备、应用、抓包和接口分析。
+- 从 Jenkins REST API 读取最新企业构建 APK，并安装到当前模拟器。
 - 后续打包成 `.app/.dmg` 供其他 Mac 用户本机安装使用。
 
 开发验证：
@@ -19,3 +20,13 @@ open "build/AI抓包工具.app"
 ```
 
 说明：SwiftPM 裸可执行文件只用于编译验证，实际桌面窗口通过 `.app` 包运行。
+
+Jenkins 包源：
+
+```bash
+export JENKINS_BASE_URL="http://192.168.77.150:8080"
+export JENKINS_USERNAME="jenkins"
+export JENKINS_PASSWORD="..."
+```
+
+如果 Jenkins 当前允许内网匿名读取，用户名密码可以不配置。不要把真实密码写入仓库；需要持久化时放到已被 `.gitignore` 忽略的 `config/local.json`。
