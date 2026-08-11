@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from .device_discovery import parse_adb_devices
 from .network import build_device_network_state
@@ -21,8 +23,15 @@ DESTRUCTIVE_COMMAND_PATTERNS = (
     ("adb", "uninstall"),
 )
 GOOGLE_LOGIN_REQUIRED = os.environ.get("REQUIRE_GOOGLE_LOGIN", "0").lower() in {"1", "true", "yes", "on"}
+GOOGLE_PLAY_IMAGE_TAG = "google_apis_playstore"
+GBOARD_IME = "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"
 RETAINED_ADB_SERIAL = "emulator-5554"
 RETAINED_AVD_NAME = "Medium_Phone_API_36.1"
+DEVICE_PING_ATTEMPTS = 3
+DEVICE_PING_RETRY_SECONDS = 0.5
+FRIDA_BOOT_WAIT_SECONDS = 180
+FRIDA_BOOT_POLL_SECONDS = 2
+FRIDA_SHUTDOWN_WAIT_SECONDS = 60
 
 
 def health_check_item(name: str, ok: bool, detail: str, user_message: str, fix: str = "") -> Dict[str, Any]:
@@ -76,8 +85,9 @@ class ConsoleRunner:
         self.mitm_password = mitm_password
         self.capture_instance = capture_instance
         self.allow_non_retained = allow_non_retained
-        sdk_root = Path(os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
-        self.adb_bin = sdk_root / "platform-tools" / "adb"
+        self.sdk_root = Path(os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
+        self.avd_home = Path(os.environ.get("ANDROID_AVD_HOME") or Path.home() / ".android/avd").expanduser().resolve()
+        self.adb_bin = self.sdk_root / "platform-tools" / "adb"
         if not self.adb_bin.exists():
             self.adb_bin = Path("adb")
 
@@ -101,6 +111,8 @@ class ConsoleRunner:
 
     def _env(self, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         env = os.environ.copy()
+        runtime_bin = (extra or {}).get("TRACEDECK_RUNTIME_BIN") or env.get("TRACEDECK_RUNTIME_BIN", "")
+        path_prefix = f"{runtime_bin}:" if runtime_bin else ""
         env.update(
             {
                 "ADB_SERIAL": self.adb_serial,
@@ -116,7 +128,8 @@ class ConsoleRunner:
                 "RUNTIME_DIR": str(self.runtime_dir),
                 "MITMWEB_PASSWORD": self.mitm_password,
                 "PATH": (
-                    f"{self.root_dir}/.venv-console/bin:"
+                    path_prefix
+                    + f"{self.root_dir}/.venv-console/bin:"
                     f"{Path.home()}/.local/bin:"
                     f"{Path.home()}/Library/Python/3.12/bin:"
                     f"{Path.home()}/Library/Python/3.11/bin:"
@@ -134,7 +147,14 @@ class ConsoleRunner:
             env.update(extra)
         return env
 
-    def run(self, args: List[str], *, timeout: int = 30, env: Optional[Dict[str, str]] = None) -> CommandResult:
+    def run(
+        self,
+        args: List[str],
+        *,
+        timeout: int = 30,
+        env: Optional[Dict[str, str]] = None,
+        input_text: str | None = None,
+    ) -> CommandResult:
         self.reject_destructive_command(args)
         proc = subprocess.run(
             args,
@@ -142,6 +162,7 @@ class ConsoleRunner:
             env=self._env(env),
             text=True,
             capture_output=True,
+            input=input_text,
             timeout=timeout,
         )
         return CommandResult(proc.returncode, proc.stdout, proc.stderr)
@@ -178,6 +199,12 @@ class ConsoleRunner:
 
     def adb(self, args: List[str], *, timeout: int = 20) -> CommandResult:
         return self.run([str(self.adb_bin), "-s", self.adb_serial, *args], timeout=timeout)
+
+    def adb_command_prefix(self) -> List[str]:
+        return [str(self.adb_bin), "-s", self.adb_serial]
+
+    def process_environment(self) -> Dict[str, str]:
+        return self._env()
 
     def discover_adb_devices(self) -> List[Dict[str, str]]:
         result = self.run([str(self.adb_bin), "devices", "-l"], timeout=10)
@@ -245,6 +272,246 @@ class ConsoleRunner:
         env = {"EMULATOR_LAUNCH_MODE": "terminal"} if visible else None
         return self.run([str(self.scripts_dir / "start_play_emulator.sh"), self.avd_name], timeout=30, env=env)
 
+    def avd_status(self) -> Dict[str, Any]:
+        result = self.run(["emulator", "-list-avds"], timeout=15)
+        avds = [line.strip() for line in result.stdout.replace("\r", "").splitlines() if line.strip()]
+        exists = self.avd_name in avds
+        return {
+            "ok": result.ok and exists,
+            "avd_name": self.avd_name,
+            "available_avds": avds,
+            "detail": result.text[-1000:],
+            "user_message": f"已找到默认 AVD：{self.avd_name}。" if exists else f"未找到默认 AVD：{self.avd_name}。",
+            "fix": ""
+            if exists
+            else (
+                "请在 Android Studio Device Manager 创建同名模拟器，"
+                f"或用 avdmanager 创建 {self.avd_name} 后重试。"
+            ),
+        }
+
+    def available_system_images(self) -> List[Dict[str, Any]]:
+        system_images_dir = self.sdk_root / "system-images"
+        if not system_images_dir.exists():
+            return []
+
+        host_arch = platform.machine().lower()
+        preferred_abis = ["arm64-v8a", "x86_64"] if "arm" in host_arch or "aarch64" in host_arch else ["x86_64", "arm64-v8a"]
+        tag_priority = {GOOGLE_PLAY_IMAGE_TAG: 0, "google_apis": 10, "default": 20}
+
+        images: List[Dict[str, Any]] = []
+        for api_dir in system_images_dir.glob("android-*"):
+            if not api_dir.is_dir():
+                continue
+            api_match = re.search(r"android-(\d+)(?:\.\d+)?$", api_dir.name)
+            api_level = int(api_match.group(1)) if api_match else 0
+            for tag_dir in api_dir.iterdir():
+                if not tag_dir.is_dir():
+                    continue
+                for abi_dir in tag_dir.iterdir():
+                    if not abi_dir.is_dir() or abi_dir.name not in preferred_abis:
+                        continue
+                    abi_score = preferred_abis.index(abi_dir.name)
+                    tag_score = tag_priority.get(tag_dir.name, 10)
+                    images.append(
+                        {
+                            "package": f"system-images;{api_dir.name};{tag_dir.name};{abi_dir.name}",
+                            "path": str(abi_dir),
+                            "api_level": api_level,
+                            "tag": tag_dir.name,
+                            "abi": abi_dir.name,
+                            "score": (api_level * 100) - (tag_score * 10) - abi_score,
+                        }
+                    )
+        return sorted(images, key=lambda image: int(image["score"]), reverse=True)
+
+    def available_google_play_system_images(self) -> List[Dict[str, Any]]:
+        return [image for image in self.available_system_images() if image.get("tag") == GOOGLE_PLAY_IMAGE_TAG]
+
+    def recommended_google_play_system_image_package(self) -> str:
+        host_arch = platform.machine().lower()
+        abi = "arm64-v8a" if "arm" in host_arch or "aarch64" in host_arch else "x86_64"
+        return f"system-images;android-36.1;{GOOGLE_PLAY_IMAGE_TAG};{abi}"
+
+    def google_play_image_status(self) -> Dict[str, Any]:
+        play_images = self.available_google_play_system_images()
+        all_images = self.available_system_images()
+        selected = play_images[0] if play_images else None
+        return {
+            "ok": bool(selected),
+            "selected": selected,
+            "google_play_images": play_images,
+            "available_images": all_images,
+            "recommended_package": self.recommended_google_play_system_image_package(),
+            "user_message": "已找到 Google Play system image。" if selected else "缺少可用于 Google 登录的 Google Play system image。",
+            "fix": ""
+            if selected
+            else (
+                "请在 Android Studio SDK Manager 安装 Google Play system image，"
+                f"或执行 sdkmanager \"{self.recommended_google_play_system_image_package()}\"。"
+            ),
+        }
+
+    def install_google_play_system_image(self) -> Dict[str, Any]:
+        before = self.google_play_image_status()
+        if before.get("ok"):
+            return {
+                "ok": True,
+                "installed": False,
+                "package": before.get("selected", {}).get("package"),
+                "status": before,
+                "user_message": "Google Play system image 已安装。",
+                "fix": "",
+            }
+
+        package = self.recommended_google_play_system_image_package()
+        result = self.run(["sdkmanager", package], timeout=600, input_text=("y\n" * 20))
+        after = self.google_play_image_status()
+        ok = result.ok and bool(after.get("ok"))
+        return {
+            "ok": ok,
+            "installed": ok,
+            "package": package,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "status": after,
+            "user_message": "Google Play system image 安装完成。" if ok else "Google Play system image 安装失败或需要用户手动接受 SDK license。",
+            "fix": "" if ok else f"请打开 Android Studio SDK Manager 安装 {package}，或在终端执行 sdkmanager --licenses 后重试。",
+        }
+
+    @staticmethod
+    def _rewrite_ini(path: Path, updates: Dict[str, str], removed_keys: set[str]) -> None:
+        existing = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        written: set[str] = set()
+        output: List[str] = []
+        for line in existing:
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            if key in removed_keys:
+                continue
+            if key in updates:
+                if key not in written:
+                    output.append(f"{key}={updates[key]}")
+                    written.add(key)
+                continue
+            output.append(line)
+        for key, value in updates.items():
+            if key not in written:
+                output.append(f"{key}={value}")
+        path.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+    def normalize_google_play_avd(self, image: Dict[str, Any]) -> Dict[str, Any]:
+        avd_dir = self.avd_home / f"{self.avd_name}.avd"
+        config_path = avd_dir / "config.ini"
+        metadata_path = self.avd_home / f"{self.avd_name}.ini"
+        if not config_path.exists() or not metadata_path.exists():
+            return {
+                "ok": False,
+                "user_message": "AVD 已创建，但配置文件不完整。",
+                "fix": "请检查 ANDROID_AVD_HOME 权限和 avdmanager 输出后重试。",
+            }
+
+        package_parts = str(image.get("package") or "").split(";")
+        target = package_parts[1] if len(package_parts) > 1 else f"android-{image.get('api_level', '')}"
+        self._rewrite_ini(
+            config_path,
+            {
+                "AvdId": self.avd_name,
+                "PlayStore.enabled": "true",
+                "avd.ini.displayname": self.avd_name,
+                "avd.ini.encoding": "UTF-8",
+                "disk.dataPartition.size": "6G",
+                "hw.cpu.ncore": "4",
+                "hw.gpu.enabled": "yes",
+                "hw.gpu.mode": "auto",
+                "hw.keyboard": "yes",
+                "hw.ramSize": "2048",
+                "skin.dynamic": "yes",
+                "skin.name": "1080x2400",
+                "skin.path": "1080x2400",
+                "target": target,
+                "vm.heapSize": "336",
+            },
+            {
+                "avd.id",
+                "avd.name",
+                "disk.dataPartition.path",
+                "disk.systemPartition.size",
+                "disk.vendorPartition.size",
+                "firstboot.bootFromDownloadableSnapshot",
+                "firstboot.bootFromLocalSnapshot",
+                "firstboot.saveToLocalSnapshot",
+            },
+        )
+        self._rewrite_ini(
+            metadata_path,
+            {"avd.ini.encoding": "UTF-8", "path": str(avd_dir), "path.rel": f"avd/{avd_dir.name}", "target": target},
+            set(),
+        )
+        return {
+            "ok": True,
+            "target": target,
+            "config_path": str(config_path),
+            "metadata_path": str(metadata_path),
+            "user_message": "Google Play AVD 配置已规范化。",
+            "fix": "",
+        }
+
+    def create_avd_if_possible(self) -> Dict[str, Any]:
+        current = self.avd_status()
+        if current.get("ok"):
+            return {
+                "ok": True,
+                "created": False,
+                "avd": current,
+                "user_message": f"默认 AVD 已存在：{self.avd_name}。",
+                "fix": "",
+            }
+
+        image_status = self.google_play_image_status()
+        images = image_status["google_play_images"]
+        if not images:
+            return {
+                "ok": False,
+                "created": False,
+                "avd": current,
+                "system_images": image_status["available_images"],
+                "google_play_image": image_status,
+                "user_message": "没有找到可用于 Google 登录的 Google Play system image。",
+                "fix": image_status["fix"],
+            }
+
+        image = images[0]
+        result = self.run(
+            [
+                "avdmanager",
+                "create",
+                "avd",
+                "--force",
+                "--name",
+                self.avd_name,
+                "--package",
+                str(image["package"]),
+                "--device",
+                "medium_phone",
+            ],
+            timeout=120,
+            input_text="no\n",
+        )
+        normalized = self.normalize_google_play_avd(image) if result.ok else {"ok": False}
+        refreshed = self.avd_status()
+        ok = result.ok and bool(normalized.get("ok")) and bool(refreshed.get("ok"))
+        return {
+            "ok": ok,
+            "created": ok,
+            "avd": refreshed,
+            "system_image": image,
+            "normalized": normalized,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "user_message": f"已创建默认 AVD：{self.avd_name}。" if ok else f"创建默认 AVD 失败：{self.avd_name}。",
+            "fix": "" if ok else "请打开 Android Studio Device Manager 手动创建模拟器，或检查 avdmanager/system image 是否完整。",
+        }
+
     def stop_emulator(self) -> CommandResult:
         return self.adb(["emu", "kill"], timeout=20)
 
@@ -270,6 +537,57 @@ class ConsoleRunner:
     def network_state(self) -> Dict[str, Any]:
         return build_device_network_state(self.emulator_status())
 
+    def _device_ping_check(self, name: str, target: str, *, required: bool) -> Dict[str, Any]:
+        # Passing a shell expression through `adb shell sh -c` is ambiguous because
+        # adb rebuilds the remote command line. Run ping directly and trust its exit code.
+        result = CommandResult(1, "", "ping not attempted")
+        attempts = 0
+        for attempts in range(1, DEVICE_PING_ATTEMPTS + 1):
+            result = self.adb(["shell", "ping", "-c", "1", "-W", "3", target], timeout=8)
+            if result.ok:
+                break
+            if attempts < DEVICE_PING_ATTEMPTS:
+                time.sleep(DEVICE_PING_RETRY_SECONDS)
+        ok = result.ok
+        return {
+            "name": name,
+            "target": target,
+            "ok": ok,
+            "required": required,
+            "detail": f"attempts={attempts}; {result.text[-500:]}",
+            "user_message": f"模拟器可访问 {target}。" if ok else f"模拟器无法访问 {target}。",
+            "fix": "" if ok else "请检查宿主机网络、模拟器 DNS、Android 全局代理或公司网络访问策略。",
+        }
+
+    def device_network_check(self) -> Dict[str, Any]:
+        emulator = self.emulator_status()
+        state = build_device_network_state(emulator)
+        checks: List[Dict[str, Any]] = [
+            {
+                "name": "adb_boot",
+                "target": self.adb_serial,
+                "ok": state["ok"],
+                "required": True,
+                "detail": f"adb_online={state['adb_online']} boot_completed={state['boot_completed']}",
+                "user_message": state["user_message"],
+                "fix": "" if state["ok"] else "请先启动模拟器并等待 Android 系统启动完成。",
+            }
+        ]
+        if state["ok"]:
+            checks.append(self._device_ping_check("emulator_ip", "8.8.8.8", required=True))
+            checks.append(self._device_ping_check("emulator_dns", "www.google.com", required=True))
+            checks.append(self._device_ping_check("emulator_host_gateway", "10.0.2.2", required=False))
+            jenkins_url = os.environ.get("JENKINS_BASE_URL", "")
+            jenkins_host = urlparse(jenkins_url).hostname if jenkins_url else ""
+            if jenkins_host:
+                checks.append(self._device_ping_check("emulator_jenkins", jenkins_host, required=False))
+        required_checks = [check for check in checks if check.get("required")]
+        return {
+            **state,
+            "ok": bool(required_checks) and all(check["ok"] for check in required_checks),
+            "checks": checks,
+        }
+
     def enter_capture_network(self) -> Dict[str, Any]:
         result = self.clear_android_proxy()
         return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr, "network": self.network_state()}
@@ -280,6 +598,7 @@ class ConsoleRunner:
 
     def env_check(self) -> Dict[str, Any]:
         env = self._env()
+        desktop_mode = env.get("TRACEDECK_DESKTOP", "0").lower() in {"1", "true", "yes", "on"}
 
         def command_item(name: str, command: str, fix: str) -> Dict[str, Any]:
             path = shutil.which(command, path=env.get("PATH"))
@@ -293,19 +612,38 @@ class ConsoleRunner:
 
         sdk_root = Path(env.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
         checks = [
-            command_item("python3", "python3", "brew install python@3.12"),
-            command_item("node", "node", "brew install node"),
-            command_item("npm", "npm", "brew install node"),
+            command_item(
+                "python3",
+                "python3",
+                "请重新安装桌面应用以恢复内嵌 Python。" if desktop_mode else "brew install python@3.12",
+            ),
             command_item("adb", "adb", "安装 Android SDK platform-tools，并确认 adb 在 PATH 中。"),
             command_item("emulator", "emulator", "安装 Android SDK emulator，并确认 emulator 在 PATH 中。"),
             command_item("sdkmanager", "sdkmanager", "安装 Android command line tools。"),
             command_item("avdmanager", "avdmanager", "安装 Android command line tools。"),
-            command_item("mitmweb", "mitmweb", "brew install mitmproxy"),
-            command_item("frida", "frida", "python3 -m pip install frida-tools"),
-            command_item("frida-ps", "frida-ps", "python3 -m pip install frida-tools"),
+            command_item(
+                "mitmweb",
+                "mitmweb",
+                "请重新安装桌面应用以恢复内嵌 mitmproxy。" if desktop_mode else "brew install mitmproxy",
+            ),
+            command_item(
+                "frida",
+                "frida",
+                "请重新安装桌面应用以恢复内嵌 Frida。" if desktop_mode else "python3 -m pip install frida-tools",
+            ),
+            command_item(
+                "frida-ps",
+                "frida-ps",
+                "请重新安装桌面应用以恢复内嵌 Frida。" if desktop_mode else "python3 -m pip install frida-tools",
+            ),
             command_item("screen", "screen", "brew install screen"),
-            command_item("xz", "xz", "brew install xz"),
         ]
+        if not desktop_mode:
+            checks[1:1] = [
+                command_item("node", "node", "brew install node"),
+                command_item("npm", "npm", "brew install node"),
+                command_item("xz", "xz", "brew install xz"),
+            ]
         checks.append(
             health_check_item(
                 "android_sdk",
@@ -326,16 +664,90 @@ class ConsoleRunner:
                 "stderr": "adb unavailable",
                 "frida": {"ok": False, "detail": "adb unavailable"},
             }
-        result = self.run(
-            [str(self.scripts_dir / "start_frida_server.sh")],
-            timeout=120,
+
+        existing = self.adb(["shell", "pidof", "frida-server"], timeout=10)
+        if existing.ok and existing.stdout.strip():
+            forward = self.adb(["forward", f"tcp:{self.frida_port}", "tcp:27042"], timeout=20)
+            if forward.ok:
+                frida_ok, frida_detail = self.frida_server_status(device_ok=True)
+                if frida_ok:
+                    return {
+                        "ok": True,
+                        "reused": True,
+                        "stdout": f"reused running frida-server pid={existing.stdout.strip()}",
+                        "stderr": "",
+                        "frida": {"ok": True, "detail": frida_detail},
+                    }
+
+        start_result = CommandResult(1, "", "running Frida server is not usable")
+        if not (existing.ok and existing.stdout.strip()):
+            start_result = self.run(
+                [str(self.scripts_dir / "start_frida_server.sh")],
+                timeout=120,
+                env={"FORWARD_PORT": str(self.frida_port), "CAPTURE_INSTANCE": self.capture_instance},
+            )
+            frida_ok, frida_detail = self.frida_server_status(device_ok=True)
+            if start_result.ok and frida_ok:
+                return {
+                    "ok": True,
+                    "reused": False,
+                    "bootstrapped": False,
+                    "stdout": start_result.stdout,
+                    "stderr": start_result.stderr,
+                    "frida": {"ok": True, "detail": frida_detail},
+                }
+
+        bootstrap = self.run(
+            [str(self.scripts_dir / "prepare_frida_avd.sh")],
+            timeout=900,
             env={"FORWARD_PORT": str(self.frida_port), "CAPTURE_INSTANCE": self.capture_instance},
         )
-        frida_ok, frida_detail = self.frida_server_status(device_ok=True)
+        if not bootstrap.ok:
+            frida_ok, frida_detail = self.frida_server_status(device_ok=True)
+            return {
+                "ok": False,
+                "reused": False,
+                "bootstrapped": False,
+                "stdout": "\n".join(part for part in [start_result.stdout, bootstrap.stdout] if part),
+                "stderr": "\n".join(part for part in [start_result.stderr, bootstrap.stderr] if part),
+                "frida": {"ok": frida_ok, "detail": frida_detail},
+            }
+
+        self.stop_emulator()
+        shutdown_deadline = time.monotonic() + FRIDA_SHUTDOWN_WAIT_SECONDS
+        while time.monotonic() < shutdown_deadline:
+            stopped = self.emulator_status()
+            if not stopped.get("process_running") and not stopped.get("adb_online"):
+                break
+            time.sleep(FRIDA_BOOT_POLL_SECONDS)
+
+        restart = self.start_emulator(visible=False)
+        ready = self.emulator_status()
+        ready_deadline = time.monotonic() + FRIDA_BOOT_WAIT_SECONDS
+        while restart.ok and time.monotonic() < ready_deadline:
+            if ready.get("adb_online") and ready.get("boot_completed") and ready.get("unlocked"):
+                break
+            time.sleep(FRIDA_BOOT_POLL_SECONDS)
+            ready = self.emulator_status()
+
+        post_boot_start = CommandResult(1, "", "emulator did not become ready after Frida bootstrap")
+        if ready.get("adb_online") and ready.get("boot_completed") and ready.get("unlocked"):
+            post_boot_start = self.run(
+                [str(self.scripts_dir / "start_frida_server.sh")],
+                timeout=120,
+                env={"FORWARD_PORT": str(self.frida_port), "CAPTURE_INSTANCE": self.capture_instance},
+            )
+        frida_ok, frida_detail = self.frida_server_status(device_ok=bool(ready.get("adb_online")))
         return {
-            "ok": result.ok and frida_ok,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "ok": bool(restart.ok and ready.get("boot_completed") and ready.get("unlocked") and frida_ok),
+            "reused": False,
+            "bootstrapped": True,
+            "stdout": "\n".join(
+                part for part in [bootstrap.stdout, restart.stdout, post_boot_start.stdout] if part
+            ),
+            "stderr": "\n".join(
+                part for part in [bootstrap.stderr, restart.stderr, post_boot_start.stderr] if part
+            ),
             "frida": {"ok": frida_ok, "detail": frida_detail},
         }
 
@@ -554,15 +966,38 @@ class ConsoleRunner:
             "fix": "",
         }
 
+    def prepare_soft_keyboard(self) -> Dict[str, Any]:
+        commands = [
+            ["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1"],
+            ["shell", "ime", "enable", GBOARD_IME],
+            ["shell", "ime", "set", GBOARD_IME],
+            ["shell", "am", "force-stop", "com.google.android.inputmethod.latin"],
+        ]
+        results = [self.adb(command, timeout=20) for command in commands]
+        return {
+            "ok": all(result.ok for result in results),
+            "input_method": GBOARD_IME,
+            "show_with_hardware_keyboard": True,
+            "details": [
+                {
+                    "command": " ".join(command),
+                    "ok": result.ok,
+                    "output": result.text[-500:],
+                }
+                for command, result in zip(commands, results)
+            ],
+        }
+
     def open_google_login(self) -> Dict[str, Any]:
         state = self.google_state()
+        keyboard = self.prepare_soft_keyboard()
         if state.get("play_store_installed"):
             result = self.adb(["shell", "monkey", "-p", "com.android.vending", "-c", "android.intent.category.LAUNCHER", "1"], timeout=30)
             if result.ok:
-                return {"ok": True, "stdout": result.stdout, "stderr": result.stderr, "google_state": state}
+                return {"ok": True, "stdout": result.stdout, "stderr": result.stderr, "google_state": state, "keyboard": keyboard}
 
         result = self.adb(["shell", "am", "start", "-a", "android.settings.ADD_ACCOUNT_SETTINGS"], timeout=30)
-        return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr, "google_state": state}
+        return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr, "google_state": state, "keyboard": keyboard}
 
     def scan_installed_apps(self, query: str = "", limit: int = 200) -> List[Dict[str, str]]:
         result = self.adb(["shell", "pm", "list", "packages", "-3"], timeout=30)
@@ -665,7 +1100,7 @@ class ConsoleRunner:
         )
 
         google = self.google_state(device_ok=device_ok)
-        google_ok = bool(google.get("ok")) or not GOOGLE_LOGIN_REQUIRED
+        google_ok = bool(google.get("ok")) if GOOGLE_LOGIN_REQUIRED else bool(google.get("play_store_installed"))
         checks.append(
             health_check_item(
                 "google_login",

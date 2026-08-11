@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "AICaptureNativeApp",
             path: "Sources/AICaptureNativeApp"
+        ),
+        .testTarget(
+            name: "AICaptureNativeAppTests",
+            dependencies: ["AICaptureNativeApp"],
+            path: "Tests/AICaptureNativeAppTests"
         )
     ]
 )

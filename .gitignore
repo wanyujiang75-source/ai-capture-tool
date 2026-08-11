@@ -26,6 +26,7 @@ macos-native/build/
 .superpowers/
 .worktrees/
 output/
+/tmp/
 *.pid
 
 # Runtime state: contains captures, logs, DBs, pids, uploaded APKs, tokens/cookies.

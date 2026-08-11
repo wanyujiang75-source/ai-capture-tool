@@ -24,10 +24,32 @@ FRIDA_LD_LIBRARY_PATH="${FRIDA_LD_LIBRARY_PATH:-/apex/com.android.os.statsd/lib6
 
 require_command "$ADB_BIN"
 require_command curl
-require_command xz
 require_command frida
 require_command frida-ps
 require_command screen
+
+decompress_frida_archive() {
+  local archive_path="$1"
+  local output_path="$2"
+  if command -v xz >/dev/null 2>&1; then
+    xz -dc "$archive_path" >"$output_path"
+    return 0
+  fi
+
+  local python_bin="${FRIDA_PYTHON_BIN:-$(command -v python3 || true)}"
+  if [[ -z "$python_bin" || ! -x "$python_bin" ]]; then
+    echo "unable to decompress Frida server: neither xz nor embedded Python is available" >&2
+    return 1
+  fi
+  "$python_bin" - "$archive_path" "$output_path" <<'PY'
+import lzma
+import shutil
+import sys
+
+with lzma.open(sys.argv[1], "rb") as source, open(sys.argv[2], "wb") as target:
+    shutil.copyfileobj(source, target)
+PY
+}
 
 mkdir -p "$TOOLS_DIR"
 mkdir -p "$RUNTIME_DIR"
@@ -38,24 +60,41 @@ if [[ ! -f "$FRIDA_XZ" ]]; then
 fi
 
 if [[ ! -x "$FRIDA_BIN" ]]; then
-  xz -dc "$FRIDA_XZ" >"$FRIDA_BIN"
-  chmod +x "$FRIDA_BIN"
+  FRIDA_TEMP_BIN="${FRIDA_BIN}.tmp.$$"
+  trap 'rm -f "$FRIDA_TEMP_BIN"' EXIT
+  decompress_frida_archive "$FRIDA_XZ" "$FRIDA_TEMP_BIN"
+  chmod +x "$FRIDA_TEMP_BIN"
+  mv "$FRIDA_TEMP_BIN" "$FRIDA_BIN"
+  trap - EXIT
 fi
 
-adb_root_wait
+adb_wait_for_device
+USE_SU=0
+ROOT_AVAILABLE=0
+ROOT_SHELL_PREFIX=""
+if adb_cmd shell "id" 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
+  ROOT_AVAILABLE=1
+  USE_SU=0
+elif adb_cmd shell "su -c id" 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
+  ROOT_AVAILABLE=1
+  USE_SU=1
+  ROOT_SHELL_PREFIX="su"
+elif adb_cmd shell "/debug_ramdisk/magisk su -c id" 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
+  ROOT_AVAILABLE=1
+  USE_SU=1
+  ROOT_SHELL_PREFIX="/debug_ramdisk/magisk su"
+fi
+if [[ "$ROOT_AVAILABLE" != "1" ]]; then
+  echo "no root-capable Frida launch path; the AVD ramdisk bootstrap is required" >&2
+  exit 2
+fi
+
 adb_cmd push "$FRIDA_BIN" "$DEVICE_BIN" >/dev/null
 adb_cmd shell "chmod 755 '$DEVICE_BIN'"
 REMOTE_CMD="env LD_LIBRARY_PATH=$FRIDA_LD_LIBRARY_PATH $DEVICE_BIN"
 
-USE_SU=0
-if adb_cmd shell "id" 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
-  USE_SU=0
-elif adb_cmd shell "su -c id" 2>/dev/null | tr -d '\r' | grep -q 'uid=0'; then
-  USE_SU=1
-fi
-
 if [[ "$USE_SU" == "1" ]]; then
-  adb_cmd shell "su -c \"pkill -f '/data/local/tmp/[f]rida-server' >/dev/null 2>&1 || true; pidof frida-server >/dev/null 2>&1 && kill \$(pidof frida-server) >/dev/null 2>&1 || true\""
+  adb_cmd shell "$ROOT_SHELL_PREFIX -c \"pkill -f '/data/local/tmp/[f]rida-server' >/dev/null 2>&1 || true; pidof frida-server >/dev/null 2>&1 && kill \$(pidof frida-server) >/dev/null 2>&1 || true\""
 else
   adb_cmd shell "pkill -f '/data/local/tmp/[f]rida-server' >/dev/null 2>&1 || true; pidof frida-server >/dev/null 2>&1 && kill \$(pidof frida-server) >/dev/null 2>&1 || true"
 fi
@@ -67,13 +106,13 @@ adb_cmd forward --remove "tcp:${FORWARD_PORT}" >/dev/null 2>&1 || true
   printf 'exec '
   if [[ -n "${ADB_SERIAL:-}" ]]; then
     if [[ "$USE_SU" == "1" ]]; then
-      printf '%q ' "$ADB_BIN" -s "$ADB_SERIAL" shell su -c "$REMOTE_CMD"
+      printf '%q ' "$ADB_BIN" -s "$ADB_SERIAL" shell "$ROOT_SHELL_PREFIX -c \"$REMOTE_CMD\""
     else
       printf '%q ' "$ADB_BIN" -s "$ADB_SERIAL" shell "$REMOTE_CMD"
     fi
   else
     if [[ "$USE_SU" == "1" ]]; then
-      printf '%q ' "$ADB_BIN" shell su -c "$REMOTE_CMD"
+      printf '%q ' "$ADB_BIN" shell "$ROOT_SHELL_PREFIX -c \"$REMOTE_CMD\""
     else
       printf '%q ' "$ADB_BIN" shell "$REMOTE_CMD"
     fi

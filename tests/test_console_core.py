@@ -3,9 +3,15 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 
 class CaptureConsoleCoreTests(unittest.TestCase):
+    def make_system_image(self, sdk_root: Path, *, api: str, tag: str, abi: str) -> Path:
+        path = sdk_root / "system-images" / api / tag / abi
+        path.mkdir(parents=True)
+        return path
+
     def add_test_device(
         self,
         store,
@@ -231,7 +237,149 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertIn("--exclude=runtime", script)
         self.assertIn("--exclude=config/local.json", script)
         self.assertIn("--exclude=web/node_modules", script)
+        self.assertIn("--exclude='.venv-*'", script)
+        self.assertIn("--exclude='release/*.zip'", script)
+        self.assertIn("--exclude=macos-native/build", script)
+        self.assertIn("release/package.sh", script)
+        self.assertIn("release/notarize-app.sh", script)
         self.assertIn("web/dist", script)
+
+    def test_distribution_release_requires_apple_notarization_gates(self):
+        package_script = Path("release/package.sh").read_text(encoding="utf-8")
+        notarize_script = Path("release/notarize-app.sh").read_text(encoding="utf-8")
+
+        self.assertIn("Developer ID Application", package_script)
+        self.assertIn("MACOS_NOTARY_PROFILE", package_script)
+        self.assertIn("release/notarize-app.sh", package_script)
+        self.assertIn("xcrun notarytool submit", notarize_script)
+        self.assertIn("xcrun stapler staple", notarize_script)
+        self.assertIn("xcrun stapler validate", notarize_script)
+        self.assertIn("spctl --assess --type execute", notarize_script)
+
+    def test_embedded_console_mode_skips_venv_pip_and_npm(self):
+        script = Path("scripts/start_console.sh").read_text(encoding="utf-8")
+        runtime_manager = Path(
+            "macos-native/Sources/AICaptureNativeApp/RuntimeManager.swift"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("CONSOLE_USE_EMBEDDED_RUNTIME", script)
+        self.assertIn('SERVER_PYTHON="$CONSOLE_PYTHON"', script)
+        self.assertIn('exec "$SERVER_PYTHON" -m uvicorn', script)
+        self.assertIn('TRACEDECK_DESKTOP', script)
+        self.assertIn('environment["CONSOLE_SKIP_INSTALL"] = "1"', runtime_manager)
+        self.assertIn('environment["CONSOLE_USE_EMBEDDED_RUNTIME"] = "1"', runtime_manager)
+        self.assertIn('environment["TRACEDECK_RUNTIME_BIN"]', runtime_manager)
+        self.assertIn('environment["FRIDA_PYTHON_BIN"]', runtime_manager)
+        self.assertIn('environment["MITMWEB_BIN"]', runtime_manager)
+
+    def test_desktop_environment_check_requires_embedded_tools_not_node_or_xz(self):
+        from capture_console.runner import ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bin_dir = root / "runtime" / "bin"
+            sdk_root = root / "android-sdk"
+            bin_dir.mkdir(parents=True)
+            sdk_root.mkdir()
+            required_commands = {
+                "python3",
+                "adb",
+                "emulator",
+                "sdkmanager",
+                "avdmanager",
+                "mitmweb",
+                "frida",
+                "frida-ps",
+                "screen",
+            }
+            for command in required_commands:
+                executable = bin_dir / command
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            environment = {
+                "PATH": str(bin_dir),
+                "TRACEDECK_DESKTOP": "1",
+                "TRACEDECK_RUNTIME_BIN": str(bin_dir),
+                "ANDROID_SDK_ROOT": str(sdk_root),
+            }
+            runner = ConsoleRunner(root, allow_non_retained=True)
+
+            with patch.object(runner, "_env", return_value=environment):
+                report = runner.env_check()
+
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertTrue(report["ok"])
+            self.assertTrue(required_commands.issubset(checks))
+            self.assertNotIn("node", checks)
+            self.assertNotIn("npm", checks)
+            self.assertNotIn("xz", checks)
+
+    def test_runner_prioritizes_embedded_runtime_bin(self):
+        from capture_console.runner import ConsoleRunner
+
+        runner = ConsoleRunner(Path.cwd(), allow_non_retained=True)
+        environment = runner._env({"TRACEDECK_RUNTIME_BIN": "/App/Contents/Resources/runtime/bin"})
+
+        self.assertTrue(environment["PATH"].startswith("/App/Contents/Resources/runtime/bin:"))
+
+    def test_frida_server_can_decompress_with_embedded_python(self):
+        script = Path("scripts/start_frida_server.sh").read_text(encoding="utf-8")
+
+        self.assertNotIn("require_command xz", script)
+        self.assertIn("FRIDA_PYTHON_BIN", script)
+        self.assertIn("import lzma", script)
+
+    def test_frida_start_script_does_not_require_adb_root_before_magisk_detection(self):
+        script = Path("scripts/start_frida_server.sh").read_text(encoding="utf-8")
+
+        self.assertIn("adb_wait_for_device", script)
+        self.assertNotIn("adb_root_wait", script)
+        self.assertIn("no root-capable Frida launch path", script)
+
+    def test_frida_bootstrap_grants_shell_root_without_starting_frida_from_init(self):
+        service = Path("tools/rootAVD/frida.rc").read_text(encoding="utf-8")
+        grant_path = Path("tools/rootAVD/sbin/ai-capture-root-grant.sh")
+        prepare_script = Path("scripts/prepare_frida_avd.sh").read_text(encoding="utf-8")
+        start_script = Path("scripts/start_frida_server.sh").read_text(encoding="utf-8")
+
+        self.assertTrue(grant_path.exists())
+        grant = grant_path.read_text(encoding="utf-8")
+        self.assertIn("/system/bin/sh /debug_ramdisk/ai-capture-root-grant.sh", service)
+        self.assertNotIn("service frida_server", service)
+        self.assertIn("REPLACE INTO policies", grant)
+        self.assertIn("VALUES(2000, 2, 0, 1, 0)", grant)
+        self.assertIn("root_access", grant)
+        self.assertIn("/data/local/tmp/ai-capture-root-grant.log", grant)
+        self.assertIn('cp "$ROOTAVD_SOURCE/sbin/ai-capture-root-grant.sh"', prepare_script)
+        self.assertIn("ROOT_GRANT_SHA256", prepare_script)
+        self.assertIn("/debug_ramdisk/magisk su", start_script)
+
+    def test_console_runtime_pins_android_16_compatible_frida(self):
+        requirements = Path("requirements-console.txt").read_text(encoding="utf-8")
+        version_text = next(
+            line.removeprefix("frida==")
+            for line in requirements.splitlines()
+            if line.startswith("frida==")
+        )
+        version = tuple(int(part) for part in version_text.split("."))
+
+        self.assertGreaterEqual(version, (17, 17, 0))
+
+    def test_frida_bootstrap_uses_project_owned_system_image_overlay(self):
+        script_path = Path("scripts/prepare_frida_avd.sh")
+        self.assertTrue(script_path.exists())
+        script = script_path.read_text(encoding="utf-8")
+
+        self.assertIn(".ai-capture/system-images", script)
+        self.assertIn("ADB_SERIAL", script)
+        self.assertIn("image.sysdir.1", script)
+        self.assertIn("AddRCscripts", script)
+        self.assertNotIn("-wipe-data", script)
+
+    def test_native_build_bundles_frida_bootstrap_assets(self):
+        script = Path("macos-native/scripts/build-app.sh").read_text(encoding="utf-8")
+
+        self.assertIn('cp -R "$PROJECT_ROOT/tools/rootAVD" "$BACKEND_DIR/tools/rootAVD"', script)
 
     def test_store_defaults_to_production_and_persists_test_environment(self):
         from capture_console.store import CaptureStore
@@ -376,6 +524,162 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         runner.start_emulator(visible=True)
 
         self.assertEqual(runner.extra_env, {"EMULATOR_LAUNCH_MODE": "terminal"})
+
+    def test_device_ping_check_uses_direct_adb_command_exit_code(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class RecordingRunner(ConsoleRunner):
+            def __init__(self):
+                super().__init__("/tmp", allow_non_retained=True)
+                self.adb_args = []
+
+            def adb(self, args, *, timeout=20):
+                self.adb_args.append(args)
+                return CommandResult(0, "64 bytes from 8.8.8.8", "")
+
+        runner = RecordingRunner()
+
+        check = runner._device_ping_check("emulator_ip", "8.8.8.8", required=True)
+
+        self.assertTrue(check["ok"])
+        self.assertEqual(runner.adb_args, [["shell", "ping", "-c", "1", "-W", "3", "8.8.8.8"]])
+
+    def test_device_ping_check_retries_transient_cold_boot_failure(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class ColdBootRunner(ConsoleRunner):
+            def __init__(self):
+                super().__init__("/tmp", allow_non_retained=True)
+                self.attempts = 0
+
+            def adb(self, args, *, timeout=20):
+                self.attempts += 1
+                if self.attempts == 1:
+                    return CommandResult(1, "", "network is unreachable")
+                return CommandResult(0, "64 bytes from 8.8.8.8", "")
+
+        runner = ColdBootRunner()
+
+        with patch("capture_console.runner.time.sleep"):
+            check = runner._device_ping_check("emulator_ip", "8.8.8.8", required=True)
+
+        self.assertTrue(check["ok"])
+        self.assertEqual(runner.attempts, 2)
+
+    def test_prepare_frida_reuses_running_root_server_and_repairs_forward(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class ExistingFridaRunner(ConsoleRunner):
+            def __init__(self):
+                super().__init__(
+                    "/tmp",
+                    adb_serial="emulator-5564",
+                    avd_name="AI_Capture_Clean_QA3_20260810",
+                    frida_port=27242,
+                    allow_non_retained=True,
+                )
+                self.adb_calls = []
+                self.start_script_called = False
+                self.forward_ready = False
+
+            def emulator_status(self):
+                return {"adb_online": True}
+
+            def adb(self, args, *, timeout=20):
+                self.adb_calls.append(args)
+                if args[:3] == ["shell", "pidof", "frida-server"]:
+                    return CommandResult(0, "9622\n", "")
+                if args[:3] == ["shell", "ps", "-A"]:
+                    return CommandResult(0, "root 9622 1 frida-server\n", "")
+                if args == ["forward", "tcp:27242", "tcp:27042"]:
+                    self.forward_ready = True
+                    return CommandResult(0, "", "")
+                return CommandResult(0, "", "")
+
+            def run(self, args, *, timeout=30, env=None, input_text=None):
+                if args and str(args[0]).endswith("start_frida_server.sh"):
+                    self.start_script_called = True
+                    return CommandResult(1, "", "adb root is unavailable")
+                if args[-2:] == ["forward", "--list"]:
+                    line = "emulator-5564 tcp:27242 tcp:27042\n" if self.forward_ready else ""
+                    return CommandResult(0, line, "")
+                if args[:2] == ["frida-ps", "-H"]:
+                    return CommandResult(0, " PID  Name\n----  ----\n9622  frida-server\n", "")
+                return CommandResult(0, "", "")
+
+        runner = ExistingFridaRunner()
+
+        result = runner.prepare_frida_server()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["reused"])
+        self.assertFalse(runner.start_script_called)
+        self.assertIn(["forward", "tcp:27242", "tcp:27042"], runner.adb_calls)
+
+    def test_prepare_frida_bootstraps_isolated_ramdisk_and_restarts_target_avd(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class BootstrapRunner(ConsoleRunner):
+            def __init__(self):
+                super().__init__(
+                    "/tmp",
+                    adb_serial="emulator-5564",
+                    avd_name="AI_Capture_Clean_QA3_20260810",
+                    frida_port=27542,
+                    allow_non_retained=True,
+                )
+                self.bootstrap_called = False
+                self.stopped = False
+                self.started = False
+                self.post_boot_start_called = False
+
+            def emulator_status(self):
+                return {
+                    "adb_online": not self.stopped or self.started,
+                    "process_running": not self.stopped or self.started,
+                    "boot_completed": self.started,
+                    "unlocked": self.started,
+                }
+
+            def adb(self, args, *, timeout=20):
+                if args[:3] == ["shell", "pidof", "frida-server"]:
+                    return CommandResult(0, "1850\n", "")
+                return CommandResult(0, "", "")
+
+            def frida_server_status(self, *, device_ok):
+                if self.post_boot_start_called:
+                    return True, "frida-ps reachable after isolated ramdisk restart"
+                return False, "unable to load libart.so: libstatspull.so not found"
+
+            def run(self, args, *, timeout=30, env=None, input_text=None):
+                if args and str(args[0]).endswith("prepare_frida_avd.sh"):
+                    self.bootstrap_called = True
+                    return CommandResult(0, "prepared isolated ramdisk", "")
+                if args and str(args[0]).endswith("start_frida_server.sh"):
+                    self.post_boot_start_called = self.started
+                    return CommandResult(0, "started Frida through Magisk root shell", "")
+                return CommandResult(0, "", "")
+
+            def stop_emulator(self):
+                self.stopped = True
+                return CommandResult(0, "stopped", "")
+
+            def start_emulator(self, *, visible=False):
+                self.started = True
+                return CommandResult(0, "started", "")
+
+        runner = BootstrapRunner()
+
+        with patch("capture_console.runner.time.sleep"):
+            result = runner.prepare_frida_server()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["bootstrapped"])
+        self.assertTrue(runner.bootstrap_called)
+        self.assertTrue(runner.stopped)
+        self.assertTrue(runner.started)
+        self.assertTrue(runner.post_boot_start_called)
+        self.assertIn("started Frida through Magisk root shell", result["stdout"])
 
     def test_start_lab_emulator_supports_background_launch_mode(self):
         script = Path("scripts/start_lab_emulator.sh").read_text(encoding="utf-8")
@@ -607,6 +911,146 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertEqual(state["state"], "missing_play_store")
         self.assertIn("Google Play AVD", state["fix"])
 
+    def test_open_google_login_prepares_gboard_for_credential_input(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class GoogleLoginRunner(ConsoleRunner):
+            def __init__(self, root_dir):
+                super().__init__(root_dir)
+                self.commands = []
+
+            def google_state(self, *, device_ok=True):
+                return {
+                    "ok": False,
+                    "state": "not_logged_in",
+                    "play_store_installed": False,
+                    "google_account_present": False,
+                }
+
+            def adb(self, args, *, timeout=20):
+                self.commands.append(args)
+                return CommandResult(0, "ok", "")
+
+        runner = GoogleLoginRunner("/tmp")
+
+        result = runner.open_google_login()
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["keyboard"]["ok"])
+        self.assertEqual(
+            runner.commands,
+            [
+                ["shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1"],
+                ["shell", "ime", "enable", "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"],
+                ["shell", "ime", "set", "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME"],
+                ["shell", "am", "force-stop", "com.google.android.inputmethod.latin"],
+                ["shell", "am", "start", "-a", "android.settings.ADD_ACCOUNT_SETTINGS"],
+            ],
+        )
+
+    def test_runner_prefers_google_play_system_image_for_default_avd_creation(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk_root = Path(tmp)
+            self.make_system_image(sdk_root, api="android-36", tag="google_apis", abi="arm64-v8a")
+            self.make_system_image(sdk_root, api="android-35", tag="google_apis_playstore", abi="arm64-v8a")
+
+            class CreateAvdRunner(ConsoleRunner):
+                def __init__(self, root_dir):
+                    super().__init__(root_dir, avd_name="AI_Capture_AVD_01")
+                    self.sdk_root = sdk_root
+                    self.avd_home = sdk_root / "avd"
+                    self.created = False
+                    self.created_package = ""
+                    self.created_device = ""
+
+                def avd_status(self):
+                    return {"ok": self.created, "avd_name": self.avd_name, "available_avds": [self.avd_name] if self.created else []}
+
+                def run(self, args, *, timeout=30, env=None, input_text=None):
+                    if args[:3] == ["avdmanager", "create", "avd"]:
+                        self.created_package = args[args.index("--package") + 1]
+                        self.created_device = args[args.index("--device") + 1]
+                        avd_dir = self.avd_home / f"{self.avd_name}.avd"
+                        avd_dir.mkdir(parents=True)
+                        (avd_dir / "config.ini").write_text(
+                            "PlayStore.enabled = no\n"
+                            "avd.id = <build>\n"
+                            "avd.name = <build>\n"
+                            "disk.dataPartition.path = <temp>\n"
+                            "hw.device.name = medium_phone\n"
+                            "image.sysdir.1 = system-images/android-35/google_apis_playstore/arm64-v8a/\n",
+                            encoding="utf-8",
+                        )
+                        (self.avd_home / f"{self.avd_name}.ini").write_text(
+                            f"path={avd_dir}\ntarget=android-0\n",
+                            encoding="utf-8",
+                        )
+                        self.created = True
+                        return CommandResult(0, "created", "")
+                    return CommandResult(0, "", "")
+
+            runner = CreateAvdRunner("/tmp")
+            result = runner.create_avd_if_possible()
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(runner.created_package, "system-images;android-35;google_apis_playstore;arm64-v8a")
+            self.assertEqual(runner.created_device, "medium_phone")
+            config = (runner.avd_home / "AI_Capture_AVD_01.avd" / "config.ini").read_text(encoding="utf-8")
+            metadata = (runner.avd_home / "AI_Capture_AVD_01.ini").read_text(encoding="utf-8")
+            self.assertIn("PlayStore.enabled=true", config)
+            self.assertIn("AvdId=AI_Capture_AVD_01", config)
+            self.assertIn("target=android-35", config)
+            self.assertNotIn("disk.dataPartition.path", config)
+            self.assertIn("target=android-35", metadata)
+
+    def test_runner_refuses_default_avd_creation_without_google_play_system_image(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk_root = Path(tmp)
+            self.make_system_image(sdk_root, api="android-36", tag="google_apis", abi="arm64-v8a")
+
+            class CreateAvdRunner(ConsoleRunner):
+                def __init__(self, root_dir):
+                    super().__init__(root_dir, avd_name="AI_Capture_AVD_01")
+                    self.sdk_root = sdk_root
+                    self.create_attempted = False
+
+                def avd_status(self):
+                    return {"ok": False, "avd_name": self.avd_name, "available_avds": []}
+
+                def run(self, args, *, timeout=30, env=None, input_text=None):
+                    if args[:3] == ["avdmanager", "create", "avd"]:
+                        self.create_attempted = True
+                    return CommandResult(0, "", "")
+
+            runner = CreateAvdRunner("/tmp")
+            result = runner.create_avd_if_possible()
+
+            self.assertFalse(result["ok"])
+            self.assertFalse(runner.create_attempted)
+            self.assertIn("Google Play", result["user_message"])
+            self.assertIn("google_apis_playstore", result["fix"])
+
+    def test_runner_sorts_google_play_android_minor_versions_by_major_api_level(self):
+        from capture_console.runner import ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk_root = Path(tmp)
+            self.make_system_image(sdk_root, api="android-35", tag="google_apis_playstore", abi="arm64-v8a")
+            self.make_system_image(sdk_root, api="android-36.1", tag="google_apis_playstore", abi="arm64-v8a")
+
+            runner = ConsoleRunner("/tmp", avd_name="AI_Capture_AVD_01")
+            runner.sdk_root = sdk_root
+
+            status = runner.google_play_image_status()
+
+            self.assertTrue(status["ok"])
+            self.assertEqual(status["selected"]["package"], "system-images;android-36.1;google_apis_playstore;arm64-v8a")
+            self.assertEqual(status["selected"]["api_level"], 36)
+
     def test_runner_detects_google_account_before_long_dumpsys_tail_and_redacts_detail(self):
         from capture_console.runner import CommandResult, ConsoleRunner
 
@@ -654,6 +1098,81 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         try:
             runner_module.GOOGLE_LOGIN_REQUIRED = True
             health = MissingGoogleRunner("/tmp").health_check(
+                package_name="com.example.app",
+                mode="system",
+                activity="com.example.app/.MainActivity",
+            )
+        finally:
+            runner_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+        self.assertFalse(health["ok"])
+        google = next(check for check in health["checks"] if check["name"] == "google_login")
+        self.assertFalse(google["ok"])
+        self.assertIn("Google Play", google["user_message"])
+
+    def test_health_check_allows_missing_google_account_when_login_is_optional(self):
+        from capture_console import runner as runner_module
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class OptionalGoogleRunner(ConsoleRunner):
+            def run(self, args, *, timeout=30, env=None):
+                if args and args[0] == "lsof":
+                    return CommandResult(1, "", "")
+                if args and args[-1] == "devices":
+                    return CommandResult(0, "emulator-5554\tdevice\n", "")
+                return CommandResult(0, "", "")
+
+            def adb(self, args, *, timeout=20):
+                if args[:3] == ["shell", "dumpsys", "user"]:
+                    return CommandResult(0, "RUNNING_UNLOCKED", "")
+                if args[:3] == ["shell", "pm", "path"] and args[-1] == "com.example.app":
+                    return CommandResult(0, "package:/data/app/example/base.apk\n", "")
+                if args[:3] == ["shell", "pm", "path"] and args[-1] == "com.android.vending":
+                    return CommandResult(0, "package:/system/priv-app/Phonesky/Phonesky.apk\n", "")
+                if args[:3] == ["shell", "dumpsys", "account"]:
+                    return CommandResult(0, "Accounts: 0\n", "")
+                return CommandResult(0, "", "")
+
+        original_google_required = runner_module.GOOGLE_LOGIN_REQUIRED
+        try:
+            runner_module.GOOGLE_LOGIN_REQUIRED = False
+            health = OptionalGoogleRunner("/tmp").health_check(
+                package_name="com.example.app",
+                mode="system",
+                activity="com.example.app/.MainActivity",
+            )
+        finally:
+            runner_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+        self.assertTrue(health["ok"])
+        google = next(check for check in health["checks"] if check["name"] == "google_login")
+        self.assertTrue(google["ok"])
+
+    def test_health_check_requires_play_store_when_google_login_is_optional(self):
+        from capture_console import runner as runner_module
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        class MissingPlayStoreRunner(ConsoleRunner):
+            def run(self, args, *, timeout=30, env=None):
+                if args and args[0] == "lsof":
+                    return CommandResult(1, "", "")
+                if args and args[-1] == "devices":
+                    return CommandResult(0, "emulator-5554\tdevice\n", "")
+                return CommandResult(0, "", "")
+
+            def adb(self, args, *, timeout=20):
+                if args[:3] == ["shell", "dumpsys", "user"]:
+                    return CommandResult(0, "RUNNING_UNLOCKED", "")
+                if args[:3] == ["shell", "pm", "path"] and args[-1] == "com.example.app":
+                    return CommandResult(0, "package:/data/app/example/base.apk\n", "")
+                if args[:3] == ["shell", "pm", "path"] and args[-1] == "com.android.vending":
+                    return CommandResult(1, "", "Error: package not found")
+                return CommandResult(0, "", "")
+
+        original_google_required = runner_module.GOOGLE_LOGIN_REQUIRED
+        try:
+            runner_module.GOOGLE_LOGIN_REQUIRED = False
+            health = MissingPlayStoreRunner("/tmp").health_check(
                 package_name="com.example.app",
                 mode="system",
                 activity="com.example.app/.MainActivity",
@@ -1365,6 +1884,75 @@ Packages:
             self.assertEqual(flows[1]["noise_reason"], "noise-host")
             detail = get_flow_detail(outdir, flows[0]["id"])
             self.assertEqual(detail["request_json"], {"profile": True})
+
+    def test_result_indexer_prefers_completed_duplicate_flow(self):
+        from capture_console.results import scan_capture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            pending_prefix = "20260806-194907_GET_NO_RESPONSE_api.example.test_profile_flow-1"
+            complete_prefix = "20260806-194908_GET_200_api.example.test_profile_flow-1"
+            header = [
+                "time",
+                "kind",
+                "score",
+                "method",
+                "status",
+                "host",
+                "pattern",
+                "url",
+                "noise_reason",
+                "meta",
+                "request_bin",
+                "response_bin",
+            ]
+            rows = [
+                [
+                    "2026-08-06T19:49:07+08:00",
+                    "candidate",
+                    "40",
+                    "GET",
+                    "NO_RESPONSE",
+                    "api.example.test",
+                    "https://api.example.test/rest/v1/profile",
+                    "https://api.example.test/rest/v1/profile",
+                    "",
+                    f"{pending_prefix}.meta.json",
+                    f"{pending_prefix}.request.bin",
+                    f"{pending_prefix}.response.bin",
+                ],
+                [
+                    "2026-08-06T19:49:08+08:00",
+                    "candidate",
+                    "58",
+                    "GET",
+                    "200",
+                    "api.example.test",
+                    "https://api.example.test/rest/v1/profile",
+                    "https://api.example.test/rest/v1/profile",
+                    "",
+                    f"{complete_prefix}.meta.json",
+                    f"{complete_prefix}.request.bin",
+                    f"{complete_prefix}.response.bin",
+                ],
+            ]
+            (outdir / "all-flows.tsv").write_text(
+                "\n".join("\t".join(row) for row in [header, *rows]) + "\n",
+                encoding="utf-8",
+            )
+            for prefix in (pending_prefix, complete_prefix):
+                (outdir / f"{prefix}.meta.json").write_text(
+                    json.dumps({"summary": {"id": "flow-1", "url": "https://api.example.test/rest/v1/profile"}}),
+                    encoding="utf-8",
+                )
+                (outdir / f"{prefix}.request.bin").write_bytes(b"")
+                (outdir / f"{prefix}.response.bin").write_bytes(b"")
+
+            flows = scan_capture(outdir)
+
+            self.assertEqual(len(flows), 1)
+            self.assertEqual(flows[0]["status"], "200")
+            self.assertEqual(flows[0]["score"], 58)
 
     def test_status_parser_detects_dirty_state(self):
         from capture_console.status import parse_capture_status

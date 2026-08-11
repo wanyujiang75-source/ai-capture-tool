@@ -2,7 +2,7 @@
 
 ## 目标
 
-基于当前 `/Users/wan/AI抓包` 工作区已有能力，输出一份可执行、可追踪、适合后续迭代的长期安卓抓包平台规划书。
+基于当前 `<project-root>` 工作区已有能力，输出一份可执行、可追踪、适合后续迭代的长期安卓抓包平台规划书。
 
 ## 范围
 
@@ -48,3 +48,25 @@
 - 有一份独立 Markdown 规划书。
 - 规划书能直接指导下一轮实现。
 - 规划文件能支持后续 `/clear` 后恢复上下文。
+
+## 2026-08-07 桌面端完整功能验收
+
+| 阶段 | 状态 | 说明 |
+| --- | --- | --- |
+| 14. 验收范围与状态基线 | complete | 已对齐工作树、App 内嵌后端、设备、端口、Doctor 和发布边界 |
+| 15. 自动化与构建验收 | complete | 整包签名、公证门禁、内嵌运行时和开发归档已验收 |
+| 16. 桌面端运行时验收 | complete | App 自托管后端、受限 PATH HTTP smoke、AppKit 退出清理均通过 |
+| 17. 环境与设备准入验收 | complete | Doctor、Google Play、网络、Google 登录策略与 Frida 均已实机验证 |
+| 18. Jenkins 与 APK 安装验收 | complete | Jenkins 最新包、未就绪提示、真实安装与应用同步均已验证 |
+| 19. 抓包闭环验收 | complete | App、session、实时 flow、request/response/cURL、Logcat 和停止清理均已验证 |
+| 20. 分发包审计与最终复测 | complete | 隐私边界、内嵌运行时、签名门禁与全量回归已完成；正式公证仍需公司凭据 |
+
+本轮详细验收约束见 `goal.md` 和 `specs/functional-acceptance.md`。
+
+### 本轮错误记录
+
+| 错误 | 尝试次数 | 当前处理 |
+| --- | --- | --- |
+| `GET /openapi.json` 首次返回 502 | 1 | 根因是 shell 设置 `ALL_PROXY/http_proxy/https_proxy=127.0.0.1:7897` 且没有 `NO_PROXY`；显式直连返回 200。产品的桌面端 APIClient 已禁用代理，不需改代码 |
+| API 摘要 jq 结构假设错误 | 1 | `/api/apps`、`/api/captures`、Jenkins 响应不是验收命令假设的顶层数组；改为先读取实际 JSON 类型后再构造断言，不修改产品代码 |
+| `.app` 整包签名校验失败 | 1 | 已调整资源打包与整包签名顺序；真实构建、`codesign --verify --deep --strict` 和回归测试均已通过，正式公开分发仍需公司 Developer ID 与公证凭据 |

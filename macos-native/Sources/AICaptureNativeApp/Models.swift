@@ -243,6 +243,133 @@ struct BasicActionResponse: Decodable {
     let stderr: String?
 }
 
+enum LogcatSource: String, Codable, CaseIterable, Identifiable, Sendable {
+    case app
+    case system
+    case crash
+
+    var id: String { rawValue }
+}
+
+struct LogcatEntry: Decodable, Identifiable, Equatable, Sendable {
+    let cursor: Int64
+    let timestamp: String
+    let pid: Int?
+    let tid: Int?
+    let level: String
+    let tag: String
+    let message: String
+    let raw: String
+
+    var id: Int64 { cursor }
+}
+
+struct LogcatStartPayload: Encodable, Sendable {
+    let source: LogcatSource
+    let packageName: String
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case packageName = "package_name"
+    }
+}
+
+struct LogcatActionResponse: Decodable, Equatable, Sendable {
+    let deviceID: String
+    let source: LogcatSource?
+    let state: String
+    let packageName: String
+    let nextCursor: Int64
+    let truncated: Bool
+    let entries: [LogcatEntry]
+
+    private enum CodingKeys: String, CodingKey {
+        case deviceID = "device_id"
+        case source
+        case state
+        case packageName = "package_name"
+        case nextCursor = "next_cursor"
+        case truncated
+        case entries
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deviceID = try container.decode(String.self, forKey: .deviceID)
+        let rawSource = try container.decode(String.self, forKey: .source)
+        source = LogcatSource(rawValue: rawSource)
+        state = try container.decode(String.self, forKey: .state)
+        packageName = try container.decode(String.self, forKey: .packageName)
+        nextCursor = try container.decode(Int64.self, forKey: .nextCursor)
+        truncated = try container.decode(Bool.self, forKey: .truncated)
+        entries = try container.decode([LogcatEntry].self, forKey: .entries)
+    }
+}
+
+typealias LogcatPollResponse = LogcatActionResponse
+
+struct GooglePlayImageResponse: Decodable {
+    let googlePlayImage: GooglePlayImageStatus
+
+    private enum CodingKeys: String, CodingKey {
+        case googlePlayImage = "google_play_image"
+    }
+}
+
+struct GooglePlayImageStatus: Decodable {
+    let ok: Bool?
+    let userMessage: String?
+    let fix: String?
+    let recommendedPackage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case userMessage = "user_message"
+        case fix
+        case recommendedPackage = "recommended_package"
+    }
+}
+
+struct EnsureGooglePlayAvdResponse: Decodable {
+    let ok: Bool?
+    let userMessage: String?
+    let fix: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case userMessage = "user_message"
+        case fix
+    }
+}
+
+struct SystemPrepareResponse: Decodable {
+    let prepare: PrepareResult
+}
+
+struct PrepareResult: Decodable {
+    let ok: Bool?
+    let deviceID: String?
+    let userMessage: String?
+    let steps: [PrepareStep]?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case deviceID = "device_id"
+        case userMessage = "user_message"
+        case steps
+    }
+}
+
+struct PrepareStep: Decodable, Identifiable {
+    var id: String { key }
+
+    let key: String
+    let label: String?
+    let ok: Bool?
+    let status: String?
+    let message: String?
+}
+
 struct CaptureStartPayload: Encodable {
     let appId: Int
     let deviceId: String

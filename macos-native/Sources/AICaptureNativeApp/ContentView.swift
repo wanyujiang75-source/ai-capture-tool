@@ -21,7 +21,7 @@ struct ContentView: View {
             case .flows:
                 FlowViews()
             case .logs:
-                placeholderView
+                LogsView()
             }
         }
         .task {
@@ -45,19 +45,6 @@ struct ContentView: View {
                 Label("重新检测后端", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
-            Spacer()
-        }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var placeholderView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(appState.selectedSection.rawValue)
-                .font(.largeTitle.bold())
-            Text("该原生模块将在后续任务接入。当前已完成运行时检测、设备池和应用库读取。")
-                .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(28)

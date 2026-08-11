@@ -394,6 +394,7 @@ EOF
 	      --proxy-port "$PROXY_PORT" \
 	      --frida-host "$FRIDA_HOST" \
       --native-connect-hook \
+      --android-system-cert-hook \
       --socks5 \
       --no-proxy-env \
       --flutter-verify-success-value 1 \

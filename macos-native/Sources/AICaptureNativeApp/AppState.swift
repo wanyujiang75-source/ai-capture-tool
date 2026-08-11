@@ -39,7 +39,7 @@ final class AppState: ObservableObject {
     private var installedAppIDByJenkinsTargetKey: [String: Int] = [:]
 
     init(
-        runtimeManager: RuntimeManager = RuntimeManager(),
+        runtimeManager: RuntimeManager = .shared,
         apiClient: APIClient = APIClient()
     ) {
         self.runtimeManager = runtimeManager
@@ -162,6 +162,30 @@ final class AppState: ObservableObject {
         }
     }
 
+    func prepareSelectedEnvironment(visible: Bool = false) async -> Bool {
+        guard let selectedDeviceID else {
+            setCaptureFailure("请先选择设备。")
+            return false
+        }
+        captureActionState = .loading
+        captureMessage = "正在一键准备环境：检查依赖、Google Play 镜像、模拟器、Google 登录、网络模式和 Frida 准入。"
+        do {
+            let response = try await apiClient.prepareSystem(deviceId: selectedDeviceID, visible: visible)
+            let message = response.prepare.userMessage ?? "环境准备流程已完成。"
+            captureMessage = message
+            await refreshDevices()
+            if response.prepare.ok == true {
+                captureActionState = .loaded
+                return true
+            }
+            captureActionState = .failed(message)
+            return false
+        } catch {
+            setCaptureFailure(error.localizedDescription)
+            return false
+        }
+    }
+
     func launchSelectedApp() async {
         guard let selectedDeviceID else {
             setCaptureFailure("请先选择设备。")
@@ -186,6 +210,11 @@ final class AppState: ObservableObject {
         }
         captureActionState = .loading
         do {
+            let prepared = await prepareSelectedEnvironment()
+            guard prepared else {
+                return
+            }
+            captureActionState = .loading
             let selectedApp = try await resolveSelectedTargetApp()
             let response = try await apiClient.startCapture(
                 appId: selectedApp.id,

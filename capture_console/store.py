@@ -19,53 +19,23 @@ DEFAULT_DEVICE_ID = "device-1"
 DEFAULT_CAPTURE_DEVICES = [
     {
         "device_id": "device-1",
-        "name": "本机保留模拟器 1",
-        "avd_name": "Medium_Phone_API_36.1",
+        "name": "本机抓包模拟器",
+        "avd_name": "AI_Capture_AVD_01",
         "adb_serial": "emulator-5554",
         "proxy_port": 9090,
         "web_port": 9091,
         "frida_port": 27042,
         "enabled": 1,
-        "resident": 1,
-        "idle_release_minutes": 0,
-    },
-    {
-        "device_id": "device-2",
-        "name": "扩展模拟器 2",
-        "avd_name": "Capture_AVD_02",
-        "adb_serial": "emulator-5556",
-        "proxy_port": 9100,
-        "web_port": 9101,
-        "frida_port": 27142,
-        "enabled": 1,
-        "resident": 1,
-        "idle_release_minutes": 0,
-    },
-    {
-        "device_id": "device-3",
-        "name": "扩展模拟器 3",
-        "avd_name": "Capture_AVD_03",
-        "adb_serial": "emulator-5558",
-        "proxy_port": 9110,
-        "web_port": 9111,
-        "frida_port": 27242,
-        "enabled": 1,
-        "resident": 0,
-        "idle_release_minutes": 10,
-    },
-    {
-        "device_id": "device-4",
-        "name": "扩展模拟器 4",
-        "avd_name": "Capture_AVD_04",
-        "adb_serial": "emulator-5560",
-        "proxy_port": 9120,
-        "web_port": 9121,
-        "frida_port": 27342,
-        "enabled": 0,
         "resident": 0,
         "idle_release_minutes": 10,
     },
 ]
+
+
+def should_seed_default_device() -> bool:
+    return os.environ.get("TRACEDECK_DESKTOP", "0").lower() in {"1", "true", "yes", "on"} or os.environ.get(
+        "CAPTURE_SEED_DEFAULT_DEVICE", "0"
+    ).lower() in {"1", "true", "yes", "on"}
 
 
 def now_iso() -> str:
@@ -299,7 +269,15 @@ class CaptureStore:
 
     def _seed_default_devices(self, conn: sqlite3.Connection) -> None:
         timestamp = now_iso()
-        for device in self._configured_devices():
+        configured_devices = self._configured_devices()
+        if not configured_devices:
+            existing_count = conn.execute("SELECT COUNT(*) FROM capture_devices").fetchone()[0]
+            if existing_count:
+                return
+            if not should_seed_default_device():
+                return
+            configured_devices = DEFAULT_CAPTURE_DEVICES
+        for device in configured_devices:
             conn.execute(
                 """
                 INSERT INTO capture_devices (

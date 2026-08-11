@@ -19,7 +19,7 @@
  *
  *************************************************************************************************/
 
-Java.perform(() => {
+const injectAndroidSystemCertificate = () => Java.perform(() => {
     // First, we build a JVM representation of our certificate:
     const String = Java.use("java.lang.String");
     const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
@@ -77,6 +77,21 @@ Java.perform(() => {
             };
         });
 
+        // Attaching to an already-running app means its trust indexes may predate this hook.
+        // Seed those instances immediately so capture does not depend on an app restart race.
+        Java.choose(TrustedCertificateIndexClassname, {
+            onMatch(instance) {
+                try {
+                    instance.index(cert);
+                } catch (e) {
+                    if (DEBUG_MODE) {
+                        console.log(`[ ] Could not inject cert into an existing ${TrustedCertificateIndexClassname}: ${e}`);
+                    }
+                }
+            },
+            onComplete() {}
+        });
+
         if (DEBUG_MODE) console.log(`[+] Injected cert into ${TrustedCertificateIndexClassname}`);
     });
 
@@ -86,3 +101,9 @@ Java.perform(() => {
 
     console.log('== System certificate trust injected ==');
 });
+
+if (globalThis.Java?.available) {
+    injectAndroidSystemCertificate();
+} else {
+    console.warn('Android system certificate injection skipped: Frida Java bridge is unavailable');
+}

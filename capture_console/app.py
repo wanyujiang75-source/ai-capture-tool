@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 from .device_discovery import build_discovered_devices
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
 from .local_config import load_local_config
+from .logcat import LogcatService
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
 from .platforms import capture_supported, unsupported_platform_detail
 from .preflight import build_port_preflight, collect_port_listeners
@@ -41,9 +43,16 @@ UPLOADS_DIR = RUNTIME_DIR / "uploads"
 LATEST_APKS_DIR = RUNTIME_DIR / "apks" / "latest"
 WEB_URL = f"http://127.0.0.1:{LOCAL_CONFIG['capture']['web_port_start']}/?token={LOCAL_CONFIG['capture']['mitmweb_token']}"
 IDLE_SLEEP_SECONDS = int(os.environ.get("CAPTURE_IDLE_SLEEP_SECONDS", "1800"))
+INTERACTIVE_LEASE_SECONDS = int(os.environ.get("CAPTURE_INTERACTIVE_LEASE_SECONDS", "1800"))
+EMULATOR_BOOT_WAIT_SECONDS = int(os.environ.get("CAPTURE_EMULATOR_BOOT_WAIT_SECONDS", "180"))
+EMULATOR_BOOT_POLL_SECONDS = float(os.environ.get("CAPTURE_EMULATOR_BOOT_POLL_SECONDS", "2"))
+DEVICE_NETWORK_WAIT_SECONDS = int(os.environ.get("CAPTURE_DEVICE_NETWORK_WAIT_SECONDS", "30"))
+DEVICE_NETWORK_POLL_SECONDS = float(os.environ.get("CAPTURE_DEVICE_NETWORK_POLL_SECONDS", "2"))
 SETUP_COMPLETED_KEY = "setup_completed"
 SETUP_CHECKED_KEY = "setup_checked"
 GOOGLE_LOGIN_REQUIRED = os.environ.get("REQUIRE_GOOGLE_LOGIN", "0").lower() in {"1", "true", "yes", "on"}
+LOGCAT_PACKAGE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+")
+LOGCAT_REAPER_INTERVAL_SECONDS = 5.0
 
 store = CaptureStore(RUNTIME_DIR / "console.db", devices_config_path=os.environ.get("CAPTURE_DEVICES_CONFIG"))
 runner = ConsoleRunner(
@@ -54,6 +63,9 @@ runner = ConsoleRunner(
     mitm_password=str(LOCAL_CONFIG["capture"]["mitmweb_token"]),
 )
 jenkins_source = JenkinsPackageSource(JenkinsConfig.from_mapping(LOCAL_CONFIG.get("jenkins", {})))
+logcat_service = LogcatService()
+logcat_reaper_stop_event = threading.Event()
+logcat_reaper_thread: Optional[threading.Thread] = None
 app = FastAPI(title="TraceDeck API", version="1.0.0")
 
 
@@ -79,6 +91,11 @@ class JenkinsInstallPayload(BaseModel):
     build_number: int
     artifact_relative_path: str
     environment: str = "test"
+
+
+class LogcatStartPayload(BaseModel):
+    source: str = "app"
+    package_name: str = ""
 
 
 def normalize_requested_capture_mode(target_app: Dict[str, Any], mode: Optional[str]) -> str:
@@ -117,6 +134,20 @@ def device_or_404(device_id: str) -> Dict[str, Any]:
     if not device.get("enabled"):
         raise HTTPException(status_code=409, detail="capture device is disabled")
     return device
+
+
+def mark_device_interactive(device_id: str) -> Dict[str, Any]:
+    device = device_or_404(device_id)
+    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    updates: Dict[str, Any] = {
+        "last_active_at": now,
+        "last_lease_at": now,
+        "sleep_state": "awake",
+        "error": "",
+    }
+    if device.get("lease_status") != "running":
+        updates["lease_status"] = "leased"
+    return store.update_device(device_id, **updates)
 
 
 def runner_for_device_id(device_id: str):
@@ -171,6 +202,7 @@ def desktop_runtime_metadata() -> Dict[str, Any]:
 
 def release_device_runtime(device_id: str, *, force_shutdown: bool = False) -> Dict[str, Any]:
     device = device_or_404(device_id)
+    logcat_service.stop(device_id)
     device_runner = runner_for_device_id(device_id)
     active = store.active_session(device_id=device_id)
     stop_result = device_runner.stop_capture()
@@ -221,10 +253,18 @@ def auto_release_idle_on_demand_devices() -> list[Dict[str, Any]]:
         idle_minutes = int(device.get("idle_release_minutes") or 0)
         if idle_minutes <= 0:
             continue
-        last = parse_timestamp(device.get("last_active_at") or device.get("last_release_at"))
+        idle_seconds = idle_minutes * 60
+        last_values = [
+            parse_timestamp(device.get("last_active_at")),
+            parse_timestamp(device.get("last_release_at")),
+        ]
+        if device.get("lease_status") == "leased":
+            idle_seconds = max(idle_seconds, INTERACTIVE_LEASE_SECONDS)
+            last_values.append(parse_timestamp(device.get("last_lease_at")))
+        last = max((value for value in last_values if value is not None), default=None)
         if last is None:
             continue
-        if (now - last).total_seconds() < idle_minutes * 60:
+        if (now - last).total_seconds() < idle_seconds:
             continue
         device_runner = runner_for_device_id(device["device_id"])
         emulator = device_runner.emulator_status() if hasattr(device_runner, "emulator_status") else {}
@@ -440,11 +480,17 @@ def google_not_ready_detail(state: Dict[str, Any], *, device_id: str) -> Dict[st
     }
 
 
+def google_state_is_acceptable(state: Dict[str, Any]) -> bool:
+    if GOOGLE_LOGIN_REQUIRED:
+        return bool(state.get("ok"))
+    return bool(state.get("play_store_installed"))
+
+
 def ensure_google_ready(device_runner: Any, *, device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     emulator = device_runner.emulator_status() if hasattr(device_runner, "emulator_status") else {}
     device_ok = bool(emulator.get("adb_online", True))
     state = device_runner.google_state(device_ok=device_ok)
-    if GOOGLE_LOGIN_REQUIRED and not state.get("ok"):
+    if not google_state_is_acceptable(state):
         raise HTTPException(status_code=409, detail=google_not_ready_detail(state, device_id=device_id))
     return state
 
@@ -593,8 +639,9 @@ def build_install_metadata(
     device: Dict[str, Any],
     apk_paths: list[Path],
     environment: str,
+    source: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    return {
+    metadata = {
         "package_name": package_name,
         "environment": environment,
         "uploaded_filename": upload_name,
@@ -603,6 +650,77 @@ def build_install_metadata(
         "installed_at": time.strftime("%Y-%m-%d %H:%M:%S %Z"),
         "apk_files": [path.name for path in sorted(apk_paths, key=lambda path: path.name)],
     }
+    if source:
+        metadata["source"] = source
+    return metadata
+
+
+def jenkins_install_source(payload: JenkinsInstallPayload) -> Dict[str, Any]:
+    return {
+        "type": "jenkins",
+        "job_name": payload.job_name,
+        "build_number": payload.build_number,
+        "artifact_relative_path": payload.artifact_relative_path,
+    }
+
+
+def cached_jenkins_install(
+    payload: JenkinsInstallPayload,
+    *,
+    device_runner: Any,
+    environment: str,
+) -> Optional[Dict[str, Any]]:
+    expected_source = jenkins_install_source(payload)
+    expected_filename = Path(payload.artifact_relative_path).name
+    for metadata_path in sorted(LATEST_APKS_DIR.glob("*/metadata.json")):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+
+        archived_source = metadata.get("source")
+        source_matches = archived_source == expected_source
+        legacy_matches = not archived_source and metadata.get("uploaded_filename") == expected_filename
+        if not (source_matches or legacy_matches) or metadata.get("environment") != environment:
+            continue
+
+        archive_dir = metadata_path.parent
+        apk_files = metadata.get("apk_files") or []
+        if not apk_files or any(not (archive_dir / filename).is_file() for filename in apk_files):
+            continue
+
+        package_name = str(metadata.get("package_name") or "")
+        app_record = store.get_app_by_package(package_name) if package_name else None
+        if not app_record:
+            continue
+
+        device = device_runner.package_info(package_name)
+        archived_info = metadata.get("apk_info") or {}
+        archived_code = version_code_number(archived_info.get("version_code"))
+        device_code = version_code_number(device.get("version_code"))
+        code_matches = archived_code is not None and device_code is not None and archived_code == device_code
+        name_matches = bool(
+            archived_info.get("version_name")
+            and device.get("version_name")
+            and str(archived_info["version_name"]) == str(device["version_name"])
+        )
+        if not device.get("installed") or not (code_matches or name_matches):
+            continue
+
+        app_record = store.update_app(app_record["id"], platform="android", environment=environment)
+        version = {**device, "apk_archive_path": str(archive_dir)}
+        updated = store.update_app_version(app_record["id"], version)
+        device_app_state = store.update_device_app_version(payload.device_id, app_record["id"], version)
+        return {
+            "ok": True,
+            "app": updated,
+            "device_app_state": device_app_state,
+            "install": {"cached": True, "stdout": "", "stderr": ""},
+            "version": build_version_response(updated, device),
+            "archive_path": str(archive_dir),
+            "source": expected_source,
+        }
+    return None
 
 
 def install_uploaded_package_for_app(
@@ -614,6 +732,7 @@ def install_uploaded_package_for_app(
     upload_name: str,
     apk_paths: list[Path],
     apk_info: Dict[str, Any],
+    source: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     package_name = apk_info.get("package_name") or ""
     if not package_name:
@@ -656,6 +775,7 @@ def install_uploaded_package_for_app(
         apk_info=apk_info,
         device=device,
         apk_paths=apk_paths,
+        source=source,
     )
     archive_dir = archive_latest_apks(package_name, apk_paths, metadata)
     updated = store.update_app_version(app_record["id"], {**device, "apk_archive_path": str(archive_dir)})
@@ -753,7 +873,7 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
         )
         frida = frida_state_for_device(device, emulator)
         emulator_ready = bool(emulator.get("adb_online") and emulator.get("boot_completed") and emulator.get("unlocked"))
-        google_ready = bool(google.get("ok")) or not GOOGLE_LOGIN_REQUIRED
+        google_ready = google_state_is_acceptable(google)
         ready = bool(emulator_ready and google_ready and frida.get("ok"))
         if ready:
             ready_device_count += 1
@@ -787,8 +907,12 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
         (
             "google",
             "Google 状态",
-            True if not GOOGLE_LOGIN_REQUIRED else any(device.get("google_state", {}).get("ok") for device in devices),
-            "按目标 App 需要确认 Google Play 或账号状态。",
+            any(google_state_is_acceptable(device.get("google_state", {})) for device in devices),
+            (
+                "确认默认模拟器具备 Google Play，并已登录 Google 账号。"
+                if GOOGLE_LOGIN_REQUIRED
+                else "确认默认模拟器具备 Google Play；账号登录按目标 App 需要处理。"
+            ),
         ),
         ("frida", "Frida 准入", any(device.get("frida_state", {}).get("ok") for device in devices), "启动 Frida server 并确认可连接。"),
         ("app", "上传或选择 App", app_count > 0, "上传 APK 或选择已有应用。"),
@@ -827,14 +951,44 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
     }
 
 
+def logcat_reaper_loop() -> None:
+    while not logcat_reaper_stop_event.wait(LOGCAT_REAPER_INTERVAL_SECONDS):
+        logcat_service.reap_idle()
+
+
+def start_logcat_reaper() -> None:
+    global logcat_reaper_thread
+    if logcat_reaper_thread is not None and logcat_reaper_thread.is_alive():
+        return
+    logcat_reaper_stop_event.clear()
+    logcat_reaper_thread = threading.Thread(
+        target=logcat_reaper_loop,
+        name="logcat-idle-reaper",
+        daemon=True,
+    )
+    logcat_reaper_thread.start()
+
+
+def stop_logcat_reaper() -> None:
+    global logcat_reaper_thread
+    logcat_reaper_stop_event.set()
+    thread = logcat_reaper_thread
+    logcat_reaper_thread = None
+    if thread is not None and thread is not threading.current_thread():
+        thread.join(timeout=1.0)
+
+
 @app.on_event("startup")
 def startup() -> None:
     clear_project_capture_records()
+    start_logcat_reaper()
     threading.Thread(target=ensure_resident_devices, daemon=True).start()
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
+    stop_logcat_reaper()
+    logcat_service.stop_all()
     clear_project_capture_records()
 
 
@@ -882,6 +1036,181 @@ def api_system_preflight() -> Dict[str, Any]:
 @app.get("/api/system/network-check")
 def api_system_network_check() -> Dict[str, Any]:
     return {"network": build_host_network_check(os.environ)}
+
+
+@app.get("/api/system/doctor")
+def api_system_doctor() -> Dict[str, Any]:
+    return {"doctor": build_system_doctor()}
+
+
+@app.get("/api/system/google-play-image")
+def api_system_google_play_image() -> Dict[str, Any]:
+    if hasattr(runner, "google_play_image_status"):
+        return {"google_play_image": runner.google_play_image_status()}
+    return {
+        "google_play_image": {
+            "ok": False,
+            "selected": None,
+            "google_play_images": [],
+            "available_images": [],
+            "user_message": "当前运行器不支持 Google Play system image 检查。",
+            "fix": "请升级桌面端后重试。",
+        }
+    }
+
+
+@app.post("/api/system/install-google-play-image")
+def api_system_install_google_play_image() -> Dict[str, Any]:
+    if not hasattr(runner, "install_google_play_system_image"):
+        raise HTTPException(status_code=501, detail="runner does not support Google Play system image installation")
+    return {"google_play_image": runner.install_google_play_system_image()}
+
+
+@app.get("/api/devices/{device_id}/doctor")
+def api_device_doctor(device_id: str) -> Dict[str, Any]:
+    return {"doctor": build_device_doctor(device_id)}
+
+
+@app.post("/api/system/prepare")
+def api_system_prepare(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False) -> Dict[str, Any]:
+    device_runner = runner_for_device_id(device_id)
+    steps: list[Dict[str, Any]] = []
+
+    env = system_env_check()
+    steps.append(prepare_step("env", "环境检查", bool(env.get("ok")), "系统依赖检查通过。" if env.get("ok") else "系统依赖不完整。", env=env))
+    if not env.get("ok"):
+        return api_prepare_blocked(device_id, steps, "系统依赖不完整，请按环境检查修复后重试。")
+
+    ports = system_port_preflight()
+    steps.append(prepare_step("ports", "端口检查", bool(ports.get("ok")), "项目端口可用。" if ports.get("ok") else "项目端口被占用。", ports=ports))
+    if not ports.get("ok"):
+        return api_prepare_blocked(device_id, steps, "项目端口被其他进程占用，请释放端口或更换设备端口配置后重试。")
+
+    emulator = device_runner.emulator_status()
+    emulator_ready = bool(emulator.get("adb_online") and emulator.get("boot_completed") and emulator.get("unlocked"))
+    if not emulator_ready:
+        created_avd: Dict[str, Any] | None = None
+        installed_google_play_image: Dict[str, Any] | None = None
+        avd = (
+            device_runner.avd_status()
+            if hasattr(device_runner, "avd_status")
+            else {"ok": True, "user_message": "AVD 检查不可用。", "fix": ""}
+        )
+        if not avd.get("ok"):
+            created_avd = (
+                device_runner.create_avd_if_possible()
+                if hasattr(device_runner, "create_avd_if_possible")
+                else {"ok": False, "user_message": avd.get("user_message", "默认 AVD 不存在。"), "fix": avd.get("fix", "")}
+            )
+            if not created_avd.get("ok") and hasattr(device_runner, "install_google_play_system_image"):
+                installed_google_play_image = device_runner.install_google_play_system_image()
+                if installed_google_play_image.get("ok") and hasattr(device_runner, "create_avd_if_possible"):
+                    created_avd = device_runner.create_avd_if_possible()
+            avd = (
+                device_runner.avd_status()
+                if hasattr(device_runner, "avd_status")
+                else {"ok": bool(created_avd.get("ok")), "user_message": created_avd.get("user_message", ""), "fix": created_avd.get("fix", "")}
+            )
+            if not avd.get("ok"):
+                steps.append(
+                    prepare_step(
+                        "emulator",
+                        "模拟器准备",
+                        False,
+                        created_avd.get("user_message") or avd.get("user_message", "默认 AVD 不存在。"),
+                        avd=avd,
+                        create_avd=created_avd,
+                        install_google_play_image=installed_google_play_image,
+                    )
+                )
+                return api_prepare_blocked(device_id, steps, created_avd.get("fix") or avd.get("fix") or "请先创建默认 Android 模拟器后重试。")
+        start = device_runner.start_emulator(visible=visible)
+        if start.ok:
+            mark_device_interactive(device_id)
+        emulator = device_runner.emulator_status()
+        emulator_ready = bool(emulator.get("adb_online") and emulator.get("boot_completed") and emulator.get("unlocked"))
+        deadline = time.monotonic() + EMULATOR_BOOT_WAIT_SECONDS
+        while start.ok and not emulator_ready and time.monotonic() < deadline:
+            time.sleep(EMULATOR_BOOT_POLL_SECONDS)
+            emulator = device_runner.emulator_status()
+            emulator_ready = bool(
+                emulator.get("adb_online")
+                and emulator.get("boot_completed")
+                and emulator.get("unlocked")
+            )
+        steps.append(
+            prepare_step(
+                "emulator",
+                "模拟器准备",
+                emulator_ready,
+                "模拟器已启动并解锁。" if emulator_ready else "模拟器尚未就绪，请等待启动完成并手动解锁。",
+                start={"ok": start.ok, "stdout": start.stdout, "stderr": start.stderr},
+                avd=avd,
+                create_avd=created_avd,
+                install_google_play_image=installed_google_play_image,
+                emulator=emulator,
+            )
+        )
+    else:
+        steps.append(prepare_step("emulator", "模拟器准备", True, "模拟器在线且已解锁。", emulator=emulator))
+    if not emulator_ready:
+        return api_prepare_blocked(device_id, steps, "模拟器未完成启动或未解锁，请处理后重试一键准备。")
+    mark_device_interactive(device_id)
+
+    network_switch = (
+        device_runner.enter_capture_network()
+        if hasattr(device_runner, "enter_capture_network")
+        else {"ok": True, "network": runner_network_state(device_runner)}
+    )
+    network = runner_device_network_check(device_runner)
+    network_deadline = time.monotonic() + DEVICE_NETWORK_WAIT_SECONDS
+    while network_switch.get("ok") and not network.get("ok") and time.monotonic() < network_deadline:
+        time.sleep(DEVICE_NETWORK_POLL_SECONDS)
+        network = runner_device_network_check(device_runner)
+    network_ok = bool(network_switch.get("ok") and network.get("ok"))
+    steps.append(
+        prepare_step(
+            "network",
+            "抓包网络模式",
+            network_ok,
+            "已进入抓包网络模式，Android 全局代理已清理。" if network_ok else "抓包网络模式未通过。",
+            switch=network_switch,
+            network=network,
+        )
+    )
+    if not network_ok:
+        return api_prepare_blocked(device_id, steps, "模拟器网络不可用或 Android 代理状态异常，请查看网络诊断。")
+
+    frida = frida_state_for_device(device_or_404(device_id), emulator)
+    if not frida.get("ok"):
+        prepared = device_runner.prepare_frida_server() if hasattr(device_runner, "prepare_frida_server") else {"ok": False}
+        emulator = device_runner.emulator_status()
+        frida = frida_state_for_device(device_or_404(device_id), emulator)
+        steps.append(
+            prepare_step(
+                "frida",
+                "Frida 准入",
+                bool(frida.get("ok")),
+                "Frida server 可用。" if frida.get("ok") else "Frida server 不可用。",
+                prepare=prepared,
+                frida=frida,
+            )
+        )
+    else:
+        steps.append(prepare_step("frida", "Frida 准入", True, "Frida server 可用。", frida=frida))
+    if not frida.get("ok"):
+        return api_prepare_blocked(device_id, steps, "Frida 准入失败，请确认模拟器具备 root 权限并重新启动 Frida。")
+
+    doctor = build_device_doctor(device_id)
+    return {
+        "prepare": {
+            "ok": bool(doctor.get("ok")),
+            "device_id": device_id,
+            "steps": steps,
+            "doctor": doctor,
+            "user_message": "环境已准备完成，可以安装应用并启动抓包。" if doctor.get("ok") else "准备流程已执行，但仍存在诊断阻塞项。",
+        }
+    }
 
 
 @app.get("/api/setup/state")
@@ -934,6 +1263,103 @@ def runner_network_state(device_runner: Any) -> Dict[str, Any]:
         return device_runner.network_state()
     emulator = device_runner.emulator_status() if hasattr(device_runner, "emulator_status") else {}
     return build_device_network_state(emulator)
+
+
+def runner_device_network_check(device_runner: Any) -> Dict[str, Any]:
+    if hasattr(device_runner, "device_network_check"):
+        return device_runner.device_network_check()
+    return runner_network_state(device_runner)
+
+
+def build_device_doctor(device_id: str) -> Dict[str, Any]:
+    device = device_or_404(device_id)
+    device_runner = runner_for_device_id(device_id)
+    emulator = device_runner.emulator_status() if hasattr(device_runner, "emulator_status") else {}
+    avd = (
+        device_runner.avd_status()
+        if hasattr(device_runner, "avd_status")
+        else {"ok": bool(emulator.get("adb_online") or emulator.get("process_running")), "user_message": "AVD 检查不可用。"}
+    )
+    capture = device_runner.capture_status() if hasattr(device_runner, "capture_status") else {}
+    google = (
+        device_runner.google_state(device_ok=bool(emulator.get("adb_online")))
+        if hasattr(device_runner, "google_state")
+        else {"ok": True, "state": "skipped", "user_message": "Google 登录检查已跳过。"}
+    )
+    frida = frida_state_for_device(device, emulator)
+    network = runner_device_network_check(device_runner)
+    emulator_ready = bool(emulator.get("adb_online") and emulator.get("boot_completed") and emulator.get("unlocked"))
+    avd_ready = bool(avd.get("ok") or emulator.get("adb_online") or emulator.get("process_running"))
+    google_ready = google_state_is_acceptable(google)
+    active = store.active_session(device_id=device_id)
+    ok = bool(avd_ready and emulator_ready and google_ready and frida.get("ok") and network.get("ok"))
+    return {
+        "ok": ok,
+        "device_id": device_id,
+        "device": {**device, **device_runtime_policy(device)},
+        "avd": avd,
+        "emulator": emulator,
+        "network": network,
+        "google": google,
+        "frida": frida,
+        "capture": capture,
+        "active_session": active,
+        "user_message": "设备已满足抓包准备条件。" if ok else "设备尚未满足抓包准备条件，请按诊断项处理。",
+    }
+
+
+def build_system_doctor() -> Dict[str, Any]:
+    env = system_env_check()
+    ports = system_port_preflight()
+    host_network = build_host_network_check(os.environ)
+    google_play_image = (
+        runner.google_play_image_status()
+        if hasattr(runner, "google_play_image_status")
+        else {
+            "ok": False,
+            "selected": None,
+            "google_play_images": [],
+            "available_images": [],
+            "user_message": "当前运行器不支持 Google Play system image 检查。",
+            "fix": "请升级桌面端后重试。",
+        }
+    )
+    devices = [build_device_doctor(device["device_id"]) for device in store.list_devices(include_disabled=False)]
+    ready_devices = [device for device in devices if device.get("ok")]
+    ok = bool(env.get("ok") and ports.get("ok") and host_network.get("ok") and google_play_image.get("ok") and ready_devices)
+    return {
+        "ok": ok,
+        "env": env,
+        "ports": ports,
+        "host_network": host_network,
+        "google_play_image": google_play_image,
+        "devices": devices,
+        "ready_device_count": len(ready_devices),
+        "user_message": "本机环境已满足抓包准备条件。" if ok else "本机环境仍有阻塞项，请查看失败诊断。",
+    }
+
+
+def prepare_step(key: str, label: str, ok: bool, message: str, **extra: Any) -> Dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "ok": ok,
+        "status": "passed" if ok else "blocked",
+        "message": message,
+        **extra,
+    }
+
+
+def api_prepare_blocked(device_id: str, steps: list[Dict[str, Any]], message: str) -> Dict[str, Any]:
+    return {
+        "prepare": {
+            "ok": False,
+            "device_id": device_id,
+            "steps": steps,
+            "doctor": build_device_doctor(device_id),
+            "user_message": message,
+        }
+    }
 
 
 def discovery_occupied_ports(slot_count: int = 20) -> set[int]:
@@ -1013,7 +1439,10 @@ def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False
     device_runner = runner_for_device_id(device_id)
     result = device_runner.start_emulator(visible=visible)
     store.set_system_state("running")
-    store.touch_device(device_id)
+    if result.ok:
+        mark_device_interactive(device_id)
+    else:
+        store.touch_device(device_id)
     return {
         "ok": result.ok,
         "stdout": result.stdout,
@@ -1025,6 +1454,27 @@ def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False
 @app.post("/api/devices/{device_id}/start")
 def api_start_device(device_id: str, visible: bool = False) -> Dict[str, Any]:
     return api_start_emulator(device_id=device_id, visible=visible)
+
+
+@app.post("/api/devices/{device_id}/ensure-google-play-avd")
+def api_ensure_google_play_avd(device_id: str) -> Dict[str, Any]:
+    device_runner = runner_for_device_id(device_id)
+    if not hasattr(device_runner, "create_avd_if_possible"):
+        raise HTTPException(status_code=501, detail="runner does not support Google Play AVD creation")
+    created = device_runner.create_avd_if_possible()
+    avd = (
+        device_runner.avd_status()
+        if hasattr(device_runner, "avd_status")
+        else {"ok": bool(created.get("ok")), "avd_name": device_or_404(device_id).get("avd_name", "")}
+    )
+    return {
+        "device_id": device_id,
+        "ok": bool(created.get("ok") and avd.get("ok")),
+        "create_avd": created,
+        "avd": avd,
+        "user_message": "Google Play 抓包模拟器已就绪。" if created.get("ok") and avd.get("ok") else created.get("user_message", "Google Play 抓包模拟器尚未就绪。"),
+        "fix": "" if created.get("ok") and avd.get("ok") else created.get("fix", ""),
+    }
 
 
 @app.get("/api/devices/{device_id}/preview")
@@ -1046,6 +1496,92 @@ def api_device_preview(device_id: str, request: Request) -> Dict[str, Any]:
         "token_configured": bool(token),
         "user_message": "已生成模拟器预览入口。",
     }
+
+
+def validate_logcat_start_payload(payload: LogcatStartPayload) -> tuple[str, str]:
+    source = payload.source.strip().lower()
+    package_name = payload.package_name.strip()
+    if source not in LogcatService.SOURCES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "invalid logcat source",
+                "user_message": "日志来源无效。",
+                "fix": "请选择应用、系统或崩溃日志。",
+            },
+        )
+    if source == "app" and LOGCAT_PACKAGE_PATTERN.fullmatch(package_name) is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "invalid Android package name",
+                "user_message": "应用包名无效，无法读取目标应用日志。",
+                "fix": "请选择已安装应用，或填写类似 com.example.app 的完整包名。",
+            },
+        )
+    return source, package_name if source == "app" else ""
+
+
+def logcat_pid_resolver(device_runner: Any):
+    def resolve(package_name: str) -> Optional[int]:
+        result = device_runner.adb(["shell", "pidof", "-s", package_name], timeout=10)
+        if not result.ok:
+            return None
+        value = result.stdout.strip().split(maxsplit=1)[0] if result.stdout.strip() else ""
+        return int(value) if value.isdigit() else None
+
+    return resolve
+
+
+@app.post("/api/devices/{device_id}/logcat/start")
+def api_start_logcat(device_id: str, payload: LogcatStartPayload) -> Dict[str, Any]:
+    device_or_404(device_id)
+    source, package_name = validate_logcat_start_payload(payload)
+    device_runner = runner_for_device_id(device_id)
+    emulator = device_runner.emulator_status()
+    if not emulator.get("adb_online"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "emulator is not online",
+                "user_message": "当前设备未连接，无法读取 Android 日志。",
+                "fix": "请先启动模拟器并等待设备进入在线状态。",
+            },
+        )
+    if not hasattr(device_runner, "adb_command_prefix") or not hasattr(device_runner, "process_environment"):
+        raise HTTPException(status_code=501, detail="runner does not support Logcat streaming")
+    mark_device_interactive(device_id)
+    try:
+        return logcat_service.start(
+            device_id=device_id,
+            adb_command=device_runner.adb_command_prefix(),
+            process_environment=device_runner.process_environment(),
+            source=source,
+            package_name=package_name,
+            pid_resolver=logcat_pid_resolver(device_runner) if source == "app" else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/devices/{device_id}/logcat")
+def api_poll_logcat(device_id: str, after: int = 0, limit: int = 500) -> Dict[str, Any]:
+    device_or_404(device_id)
+    if after < 0:
+        raise HTTPException(status_code=422, detail="after must be non-negative")
+    return logcat_service.poll(device_id, after=after, limit=max(1, min(limit, 1000)))
+
+
+@app.post("/api/devices/{device_id}/logcat/clear")
+def api_clear_logcat(device_id: str) -> Dict[str, Any]:
+    device_or_404(device_id)
+    return logcat_service.clear(device_id)
+
+
+@app.post("/api/devices/{device_id}/logcat/stop")
+def api_stop_logcat(device_id: str) -> Dict[str, Any]:
+    device_or_404(device_id)
+    return logcat_service.stop(device_id)
 
 
 @app.post("/api/devices/{device_id}/lease")
@@ -1086,6 +1622,7 @@ def api_device_network_maintenance(device_id: str, proxy: str = "") -> Dict[str,
             },
         )
     device_runner = runner_for_device_id(device_id)
+    mark_device_interactive(device_id)
     if not hasattr(device_runner, "enter_maintenance_network"):
         result = device_runner.set_android_proxy(target_proxy)
         return {"device_id": device_id, "ok": result.ok, "stdout": result.stdout, "stderr": result.stderr, "network": runner_network_state(device_runner)}
@@ -1095,6 +1632,7 @@ def api_device_network_maintenance(device_id: str, proxy: str = "") -> Dict[str,
 @app.post("/api/devices/{device_id}/network/capture")
 def api_device_network_capture(device_id: str) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
+    mark_device_interactive(device_id)
     if not hasattr(device_runner, "enter_capture_network"):
         result = device_runner.clear_android_proxy()
         return {"device_id": device_id, "ok": result.ok, "stdout": result.stdout, "stderr": result.stderr, "network": runner_network_state(device_runner)}
@@ -1108,6 +1646,7 @@ def api_device_network_clear_proxy(device_id: str) -> Dict[str, Any]:
 
 @app.post("/api/devices/{device_id}/open-google-login")
 def api_open_google_login(device_id: str) -> Dict[str, Any]:
+    mark_device_interactive(device_id)
     return {"device_id": device_id, **runner_for_device_id(device_id).open_google_login()}
 
 
@@ -1116,6 +1655,7 @@ def api_prepare_frida(device_id: str) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
     if not hasattr(device_runner, "prepare_frida_server"):
         raise HTTPException(status_code=501, detail="runner does not support Frida preparation")
+    mark_device_interactive(device_id)
     return {"device_id": device_id, **device_runner.prepare_frida_server()}
 
 
@@ -1123,6 +1663,7 @@ def api_prepare_frida(device_id: str) -> Dict[str, Any]:
 def api_system_sleep() -> Dict[str, Any]:
     if list_active_sessions():
         raise HTTPException(status_code=409, detail="active capture exists; stop captures before sleeping")
+    logcat_service.stop_all()
     store.set_system_state("sleeping")
     results = []
     for device in store.list_devices(include_disabled=False):
@@ -1184,6 +1725,7 @@ def api_system_resources() -> Dict[str, Any]:
 @app.post("/api/cleanup")
 def api_cleanup(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
+    logcat_service.stop(device_id)
     result, proxy_result = stop_capture_and_clear_proxy(device_runner)
     active = store.active_session(device_id=device_id)
     if active:
@@ -1242,7 +1784,12 @@ def api_install_jenkins_package(payload: JenkinsInstallPayload) -> Dict[str, Any
     device_runner = runner_for_device_id(payload.device_id)
     ensure_no_active_capture_for_update(device_id=payload.device_id)
     ensure_emulator_ready_for_install(device_id=payload.device_id)
+    mark_device_interactive(payload.device_id)
     target_environment = validate_app_environment(payload.environment)
+    source = jenkins_install_source(payload)
+    cached = cached_jenkins_install(payload, device_runner=device_runner, environment=target_environment)
+    if cached:
+        return cached
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="jenkins-install-", dir=str(UPLOADS_DIR)) as tmp:
@@ -1268,13 +1815,9 @@ def api_install_jenkins_package(payload: JenkinsInstallPayload) -> Dict[str, Any
             upload_name=upload_name,
             apk_paths=apk_paths,
             apk_info=apk_info,
+            source=source,
         )
-        result["source"] = {
-            "type": "jenkins",
-            "job_name": payload.job_name,
-            "build_number": payload.build_number,
-            "artifact_relative_path": payload.artifact_relative_path,
-        }
+        result["source"] = source
         return result
 
 
@@ -1288,6 +1831,7 @@ def api_launch_app(app_id: int, device_id: str = DEFAULT_DEVICE_ID) -> Dict[str,
 
     device_runner = runner_for_device_id(device_id)
     ensure_google_ready(device_runner, device_id=device_id)
+    mark_device_interactive(device_id)
     result = device_runner.launch_app(
         package_name=target_app["package_name"],
         activity=target_app.get("activity", ""),
@@ -1378,6 +1922,7 @@ async def api_install_app(
     device_runner = runner_for_device_id(device_id)
     ensure_no_active_capture_for_update(device_id=device_id)
     ensure_emulator_ready_for_install(device_id=device_id)
+    mark_device_interactive(device_id)
     target_environment = validate_app_environment(environment or target_app.get("environment") or "production")
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1408,6 +1953,7 @@ async def api_install_uploaded_app(
     device_runner = runner_for_device_id(device_id)
     ensure_no_active_capture_for_update(device_id=device_id)
     ensure_emulator_ready_for_install(device_id=device_id)
+    mark_device_interactive(device_id)
     target_environment = validate_app_environment(environment)
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1434,6 +1980,7 @@ def api_validate_capture(app_id: int, device_id: str = DEFAULT_DEVICE_ID) -> Dic
     device_runner = runner_for_device_id(device_id)
     ensure_no_active_capture_for_update(device_id=device_id)
     ensure_google_ready(device_runner, device_id=device_id)
+    mark_device_interactive(device_id)
     assert_device_ports_available(device_id)
 
     requested_mode = normalize_requested_capture_mode(target_app, None)
@@ -1590,6 +2137,7 @@ def api_start_capture(payload: CaptureStartPayload) -> Dict[str, Any]:
     if current.get("exporter") == "running" or current.get("frida_hook") == "running":
         raise HTTPException(status_code=409, detail="dirty capture process state; run cleanup first")
     ensure_google_ready(device_runner, device_id=device_id)
+    mark_device_interactive(device_id)
     assert_device_ports_available(device_id)
 
     requested_mode = normalize_requested_capture_mode(target_app, payload.mode)

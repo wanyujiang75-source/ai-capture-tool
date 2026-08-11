@@ -199,7 +199,36 @@ def _scan_tsv(outdir: Path, tsv_path: Path) -> List[Dict[str, Any]]:
         return []
     with tsv_path.open(encoding="utf-8", errors="replace", newline="") as fp:
         reader = csv.DictReader(fp, delimiter="\t")
-        return [_flow_from_row(outdir, row) for row in reader if row.get("url")]
+        return _dedupe_flow_updates([_flow_from_row(outdir, row) for row in reader if row.get("url")])
+
+
+def _has_response(flow: Dict[str, Any]) -> bool:
+    return str(flow.get("status") or "") != "NO_RESPONSE"
+
+
+def _preferred_flow(existing: Dict[str, Any], candidate: Dict[str, Any]) -> Dict[str, Any]:
+    existing_has_response = _has_response(existing)
+    candidate_has_response = _has_response(candidate)
+    if candidate_has_response and not existing_has_response:
+        return candidate
+    if existing_has_response and not candidate_has_response:
+        return existing
+    return candidate if str(candidate.get("time") or "") >= str(existing.get("time") or "") else existing
+
+
+def _dedupe_flow_updates(flows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    deduped: Dict[str, Dict[str, Any]] = {}
+    passthrough: List[Dict[str, Any]] = []
+    for flow in flows:
+        flow_key = str(flow.get("flow_id") or "")
+        if not flow_key:
+            passthrough.append(flow)
+            continue
+        if flow_key in deduped:
+            deduped[flow_key] = _preferred_flow(deduped[flow_key], flow)
+        else:
+            deduped[flow_key] = flow
+    return [*deduped.values(), *passthrough]
 
 
 def scan_capture(outdir: str | Path) -> List[Dict[str, Any]]:

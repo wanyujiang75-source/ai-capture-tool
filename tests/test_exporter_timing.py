@@ -65,6 +65,64 @@ class CaptureExporterTimingTests(unittest.TestCase):
         self.assertRegex(summary["request_started_at"], r"2026-05-\d{2}T\d{2}:\d{2}:\d{2}\.100")
         self.assertRegex(summary["response_finished_at"], r"2026-05-\d{2}T\d{2}:\d{2}:\d{2}\.380")
 
+    def test_once_reexports_legacy_pending_flow_when_response_arrives(self):
+        exporter = load_exporter()
+
+        class FakeMitmWeb:
+            def __init__(self, *_args):
+                pass
+
+            def login(self):
+                pass
+
+            def flows(self):
+                return [
+                    {
+                        "id": "flow-1",
+                        "request": {
+                            "method": "GET",
+                            "scheme": "https",
+                            "host": "198.18.5.89",
+                            "pretty_host": "api.example.test",
+                            "port": 443,
+                            "path": "/rest/v1/profile",
+                            "headers": [["accept", "application/json"]],
+                            "timestamp_start": 1779243300.100,
+                            "timestamp_end": 1779243300.120,
+                        },
+                        "response": {
+                            "status_code": 200,
+                            "headers": [["content-type", "application/json"]],
+                            "timestamp_start": 1779243300.350,
+                            "timestamp_end": 1779243300.380,
+                        },
+                    }
+                ]
+
+            def flow_content(self, flow_id, part):
+                if flow_id != "flow-1":
+                    raise AssertionError(f"unexpected flow id: {flow_id}")
+                if part == "response":
+                    return b'{"ok":true}'
+                return b""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            (outdir / "seen-flow-ids.txt").write_text("flow-1\n", encoding="utf-8")
+            argv = [
+                "ai_capture_export.py",
+                "--outdir",
+                str(outdir),
+                "--once",
+            ]
+
+            with mock.patch.object(exporter, "MitmWeb", FakeMitmWeb), mock.patch.object(exporter.sys, "argv", argv):
+                self.assertEqual(exporter.main(), 0)
+
+            candidates = (outdir / "candidates.tsv").read_text(encoding="utf-8")
+            self.assertIn("\t200\t", candidates)
+            self.assertEqual(len(list(outdir.glob("*.response.json"))), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

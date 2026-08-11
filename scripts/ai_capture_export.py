@@ -509,18 +509,45 @@ def write_summary(outdir, stats, patterns, recent, web_url):
 
 def load_seen(path):
     if not os.path.exists(path):
-        return set()
+        return {}
+    seen = {}
     with open(path, encoding="utf-8", errors="replace") as fh:
-        return {line.strip() for line in fh if line.strip()}
+        for line in fh:
+            value = line.strip()
+            if not value:
+                continue
+            parts = value.split("\t", 1)
+            flow_id = parts[0].strip()
+            state = parts[1].strip() if len(parts) > 1 else "pending"
+            if flow_id:
+                seen[flow_id] = state if state in {"pending", "complete"} else "pending"
+    return seen
 
 
 def save_seen(path, seen):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        for item in sorted(seen):
-            fh.write(item)
+        for flow_id, state in sorted(seen.items()):
+            fh.write(flow_id)
+            fh.write("\t")
+            fh.write(state)
             fh.write("\n")
     os.replace(tmp, path)
+
+
+def flow_has_response(summary):
+    return str(summary["status"]) != "NO_RESPONSE"
+
+
+def should_export_flow(flow_id, summary, seen):
+    state = seen.get(flow_id)
+    if state is None:
+        return True
+    return state == "pending" and flow_has_response(summary)
+
+
+def exported_state(summary):
+    return "complete" if flow_has_response(summary) else "pending"
 
 
 def handle_signal(signum, frame):
@@ -671,12 +698,12 @@ def main():
             for flow in flows:
                 summary = flow_summary(flow)
                 flow_id = summary["id"]
-                if not flow_id or flow_id in seen:
+                if not flow_id or not should_export_flow(flow_id, summary, seen):
                     continue
-                seen.add(flow_id)
                 stats["total"] += 1
                 stats["hosts"][summary["host"]] += 1
                 export_flow(client, args.outdir, flow, summary, stats, patterns, recent, args.capture_noise)
+                seen[flow_id] = exported_state(summary)
             save_seen(seen_path, seen)
             serializable_patterns = {
                 pattern: {

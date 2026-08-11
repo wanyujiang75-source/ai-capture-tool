@@ -1,12 +1,10 @@
 on property:sys.boot_completed=1
-    start frida_server
+    start ai_capture_root_grant
 
-service frida_server /debug_ramdisk/frida-server -l 0.0.0.0:27042 -d /data/local/tmp/frida -P -C
+service ai_capture_root_grant /system/bin/sh /debug_ramdisk/ai-capture-root-grant.sh
     class late_start
     user root
-    group root inet
-    setenv TMPDIR /data/local/tmp
-    setenv HOME /data/local/tmp
+    group root
     disabled
     oneshot
     seclabel u:r:magisk:s0

@@ -25,7 +25,7 @@ struct CaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("抓包")
                 .font(.largeTitle.bold())
-            Text("选择设备和应用后，可在原生桌面端启动 Frida、打开 App、开始或停止抓包。")
+            Text("一键准备 Google Play 登录模拟器后，安装 Jenkins 包并启动 Android 抓包。")
                 .foregroundStyle(.secondary)
         }
     }
@@ -83,10 +83,10 @@ struct CaptureView: View {
             }
             Button {
                 Task {
-                    await appState.prepareSelectedFrida()
+                    _ = await appState.prepareSelectedEnvironment(visible: true)
                 }
             } label: {
-                Label("启动 Frida", systemImage: "bolt.fill")
+                Label("一键准备环境", systemImage: "checklist.checked")
             }
             Button {
                 Task {
@@ -140,6 +140,7 @@ struct CaptureView: View {
     private var selectedSummary: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("当前设备：\(appState.selectedDevice?.name ?? appState.selectedDeviceID ?? "-")")
+            Text("Google：\(appState.selectedDevice?.googleState?.userMessage ?? "待检测")")
             Text("Jenkins 包：\(appState.selectedJenkinsPackage?.jobName ?? "-")")
             Text("构建产物：\(appState.selectedJenkinsPackage?.artifactFileName ?? "-")")
             Text("安装后应用：\(appState.selectedApp?.name ?? "操作时自动解析")")

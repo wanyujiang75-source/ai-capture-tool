@@ -3,4 +3,4 @@ uvicorn[standard]==0.49.0
 pydantic==2.11.10
 mitmproxy==12.2.3
 frida-tools==14.8.2
-frida==17.9.1
+frida==17.17.0

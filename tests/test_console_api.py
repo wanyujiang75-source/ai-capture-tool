@@ -1,7 +1,9 @@
 import asyncio
+import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -39,22 +41,34 @@ class CaptureConsoleApiTests(unittest.TestCase):
             idle_release_minutes=idle_release_minutes,
         )
 
-    def test_devices_api_handles_empty_project_without_seeded_device_pool(self):
+    def test_devices_api_seeds_single_downloadable_default_device_for_new_project(self):
         original_store = app_module.store
         original_runner = app_module.runner
 
-        class RunnerShouldNotBeCalled:
+        class DefaultDeviceRunner:
             def for_device(self, device):
-                raise AssertionError("empty device list must not build device runners")
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+            def capture_status(self):
+                return {"health": "idle"}
+
+            def google_state(self, device_ok=False):
+                return {"ok": False}
 
         with tempfile.TemporaryDirectory() as tmp:
             try:
-                app_module.store = CaptureStore(Path(tmp) / "console.db")
-                app_module.runner = RunnerShouldNotBeCalled()
+                with mock.patch.dict(os.environ, {"TRACEDECK_DESKTOP": "1"}):
+                    app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = DefaultDeviceRunner()
 
                 result = app_module.api_list_devices()
 
-                self.assertEqual(result["devices"], [])
+                self.assertEqual(len(result["devices"]), 1)
+                self.assertEqual(result["devices"][0]["device_id"], "device-1")
+                self.assertEqual(result["devices"][0]["avd_name"], "AI_Capture_AVD_01")
                 self.assertEqual(result["system"]["state"], "running")
             finally:
                 app_module.store = original_store
@@ -440,6 +454,727 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_system_doctor_summarizes_environment_ports_network_and_devices(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_network_check = app_module.build_host_network_check
+        original_preflight = app_module.system_port_preflight
+
+        class DoctorRunner:
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": [{"name": "adb", "ok": True}]}
+
+            def emulator_status(self):
+                return {
+                    "adb_online": True,
+                    "boot_completed": True,
+                    "unlocked": True,
+                    "android_proxy": "127.0.0.1:7890",
+                }
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return True, "frida-ps reachable"
+
+            def device_network_check(self):
+                return {"ok": True, "checks": [{"name": "emulator_dns", "ok": True}], "mode": "maintenance_proxy"}
+
+            def google_play_image_status(self):
+                return {
+                    "ok": True,
+                    "selected": {"package": "system-images;android-36.1;google_apis_playstore;arm64-v8a"},
+                    "user_message": "已找到 Google Play system image。",
+                    "fix": "",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = DoctorRunner()
+                app_module.build_host_network_check = lambda env: {"ok": True, "checks": [{"name": "host_direct", "ok": True}]}
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_doctor()
+
+                self.assertTrue(result["doctor"]["ok"])
+                self.assertTrue(result["doctor"]["env"]["ok"])
+                self.assertTrue(result["doctor"]["ports"]["ok"])
+                self.assertTrue(result["doctor"]["host_network"]["ok"])
+                self.assertEqual(result["doctor"]["devices"][0]["device_id"], "device-1")
+                self.assertEqual(result["doctor"]["devices"][0]["network"]["mode"], "maintenance_proxy")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.build_host_network_check = original_network_check
+                app_module.system_port_preflight = original_preflight
+
+    def test_google_play_image_api_reports_selected_playstore_image(self):
+        original_runner = app_module.runner
+
+        class GooglePlayImageRunner:
+            def google_play_image_status(self):
+                return {
+                    "ok": True,
+                    "selected": {
+                        "package": "system-images;android-36.1;google_apis_playstore;arm64-v8a",
+                        "tag": "google_apis_playstore",
+                    },
+                    "user_message": "已找到 Google Play system image。",
+                    "fix": "",
+                }
+
+        try:
+            app_module.runner = GooglePlayImageRunner()
+
+            result = app_module.api_system_google_play_image()
+
+            self.assertTrue(result["google_play_image"]["ok"])
+            self.assertEqual(
+                result["google_play_image"]["selected"]["package"],
+                "system-images;android-36.1;google_apis_playstore;arm64-v8a",
+            )
+        finally:
+            app_module.runner = original_runner
+
+    def test_system_doctor_includes_google_play_image_status(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_network_check = app_module.build_host_network_check
+        original_preflight = app_module.system_port_preflight
+
+        class DoctorRunner:
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+            def capture_status(self):
+                return {"health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {"ok": False, "state": "adb_unavailable"}
+
+            def frida_server_status(self, *, device_ok):
+                return False, "adb unavailable"
+
+            def device_network_check(self):
+                return {"ok": False, "checks": []}
+
+            def google_play_image_status(self):
+                return {
+                    "ok": False,
+                    "selected": None,
+                    "recommended_package": "system-images;android-36.1;google_apis_playstore;arm64-v8a",
+                    "user_message": "缺少可用于 Google 登录的 Google Play system image。",
+                    "fix": "sdkmanager install",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = DoctorRunner()
+                app_module.build_host_network_check = lambda env: {"ok": True, "checks": []}
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_doctor()
+
+                self.assertFalse(result["doctor"]["google_play_image"]["ok"])
+                self.assertIn("google_apis_playstore", result["doctor"]["google_play_image"]["recommended_package"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.build_host_network_check = original_network_check
+                app_module.system_port_preflight = original_preflight
+
+    def test_install_google_play_image_api_uses_runner(self):
+        original_runner = app_module.runner
+
+        class GooglePlayImageRunner:
+            def install_google_play_system_image(self):
+                return {
+                    "ok": True,
+                    "installed": True,
+                    "package": "system-images;android-36.1;google_apis_playstore;arm64-v8a",
+                    "user_message": "Google Play system image 安装完成。",
+                }
+
+        try:
+            app_module.runner = GooglePlayImageRunner()
+
+            result = app_module.api_system_install_google_play_image()
+
+            self.assertTrue(result["google_play_image"]["ok"])
+            self.assertTrue(result["google_play_image"]["installed"])
+        finally:
+            app_module.runner = original_runner
+
+    def test_ensure_google_play_avd_api_uses_selected_device_runner(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DeviceRunner:
+            def create_avd_if_possible(self):
+                return {"ok": True, "created": True, "user_message": "已创建默认 AVD。"}
+
+            def avd_status(self):
+                return {"ok": True, "avd_name": "AI_Capture_AVD_01"}
+
+        class PoolRunner:
+            def for_device(self, device):
+                return DeviceRunner()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = PoolRunner()
+
+                result = app_module.api_ensure_google_play_avd("device-1")
+
+                self.assertTrue(result["avd"]["ok"])
+                self.assertTrue(result["create_avd"]["created"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_device_doctor_reports_network_and_frida_state(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DeviceDoctorRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {
+                    "adb_online": True,
+                    "boot_completed": True,
+                    "unlocked": True,
+                    "android_proxy": "null",
+                }
+
+            def capture_status(self):
+                return {"health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return False, "frida-ps failed"
+
+            def device_network_check(self):
+                return {
+                    "ok": False,
+                    "mode": "direct",
+                    "checks": [
+                        {
+                            "name": "emulator_google",
+                            "ok": False,
+                            "user_message": "模拟器无法访问 Google。",
+                            "fix": "进入维护模式后重试。",
+                        }
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = DeviceDoctorRunner()
+
+                result = app_module.api_device_doctor("device-1")
+
+                self.assertFalse(result["doctor"]["ok"])
+                self.assertFalse(result["doctor"]["frida"]["ok"])
+                self.assertFalse(result["doctor"]["network"]["ok"])
+                self.assertIn("Google", result["doctor"]["network"]["checks"][0]["user_message"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_device_doctor_accepts_play_store_without_account_in_optional_mode(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
+
+        class DeviceDoctorRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True, "android_proxy": "null"}
+
+            def avd_status(self):
+                return {"ok": True, "avd_name": "AI_Capture_AVD_01"}
+
+            def capture_status(self):
+                return {"health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {
+                    "ok": False,
+                    "state": "not_logged_in",
+                    "play_store_installed": True,
+                    "google_account_present": False,
+                    "user_message": "当前未登录 Google。",
+                }
+
+            def frida_server_status(self, *, device_ok):
+                return True, "frida-ps reachable"
+
+            def device_network_check(self):
+                return {"ok": True, "mode": "direct", "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = DeviceDoctorRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = False
+
+                result = app_module.api_device_doctor("device-1")
+
+                self.assertTrue(result["doctor"]["ok"])
+                self.assertEqual(result["doctor"]["google"]["state"], "not_logged_in")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+    def test_system_prepare_starts_emulator_enters_capture_network_and_prepares_frida(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+
+        class PrepareRunner:
+            def __init__(self):
+                self.calls = []
+                self.started = False
+                self.frida_ready = False
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {
+                    "adb_online": self.started,
+                    "boot_completed": self.started,
+                    "unlocked": self.started,
+                    "android_proxy": "127.0.0.1:7890" if not self.calls or self.calls[-1] != "capture_network" else "null",
+                }
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                self.started = True
+                return CommandResult(0, "started", "")
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return (self.frida_ready, "frida ready" if self.frida_ready else "frida missing")
+
+            def enter_capture_network(self):
+                self.calls.append("capture_network")
+                return {"ok": True, "network": {"mode": "direct"}}
+
+            def prepare_frida_server(self):
+                self.calls.append("prepare_frida")
+                self.frida_ready = True
+                return {"ok": True, "frida": {"ok": True, "detail": "frida-ps reachable"}}
+
+            def device_network_check(self):
+                return {"ok": True, "mode": "direct", "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = PrepareRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertTrue(result["prepare"]["ok"])
+                self.assertEqual(runner.calls, ["start_emulator", "capture_network", "prepare_frida"])
+                self.assertEqual([step["key"] for step in result["prepare"]["steps"]], ["env", "ports", "emulator", "network", "frida"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+
+    def test_system_prepare_waits_for_new_emulator_to_finish_booting(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+        original_sleep = app_module.time.sleep
+
+        class DelayedBootRunner:
+            def __init__(self):
+                self.calls = []
+                self.status_checks = 0
+                self.started = False
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                self.status_checks += 1
+                ready = self.started and self.status_checks >= 4
+                return {
+                    "process_running": self.started,
+                    "adb_online": ready,
+                    "boot_completed": ready,
+                    "unlocked": ready,
+                    "android_proxy": "null",
+                }
+
+            def avd_status(self):
+                return {"ok": True, "avd_name": "AI_Capture_AVD_01"}
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                self.started = True
+                return CommandResult(0, "started", "")
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return (True, "frida ready")
+
+            def enter_capture_network(self):
+                self.calls.append("capture_network")
+                return {"ok": True, "network": {"mode": "direct"}}
+
+            def device_network_check(self):
+                return {"ok": True, "mode": "direct", "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = DelayedBootRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+                app_module.time.sleep = lambda _seconds: None
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=True)
+
+                self.assertTrue(result["prepare"]["ok"])
+                self.assertGreaterEqual(runner.status_checks, 4)
+                self.assertEqual(runner.calls, ["start_emulator", "capture_network"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+                app_module.time.sleep = original_sleep
+
+    def test_system_prepare_waits_for_cold_boot_network_to_become_ready(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+        original_sleep = app_module.time.sleep
+
+        class DelayedNetworkRunner:
+            def __init__(self):
+                self.calls = []
+                self.network_checks = 0
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {
+                    "adb_online": True,
+                    "boot_completed": True,
+                    "unlocked": True,
+                    "android_proxy": "null",
+                }
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return (True, "frida ready")
+
+            def enter_capture_network(self):
+                self.calls.append("capture_network")
+                return {"ok": True, "network": {"mode": "direct"}}
+
+            def device_network_check(self):
+                self.network_checks += 1
+                return {
+                    "ok": self.network_checks >= 2,
+                    "mode": "direct",
+                    "checks": [],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = DelayedNetworkRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+                app_module.time.sleep = lambda _seconds: None
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertTrue(result["prepare"]["ok"])
+                self.assertGreaterEqual(runner.network_checks, 2)
+                self.assertEqual(runner.calls, ["capture_network"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+                app_module.time.sleep = original_sleep
+
+    def test_system_prepare_creates_default_avd_when_system_image_is_available(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+
+        class PrepareRunner:
+            def __init__(self):
+                self.calls = []
+                self.avd_exists = False
+                self.started = False
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {"adb_online": self.started, "boot_completed": self.started, "unlocked": self.started}
+
+            def avd_status(self):
+                return {
+                    "ok": self.avd_exists,
+                    "avd_name": "AI_Capture_AVD_01",
+                    "user_message": "AVD exists" if self.avd_exists else "AVD missing",
+                    "fix": "create AVD",
+                }
+
+            def create_avd_if_possible(self):
+                self.calls.append("create_avd")
+                self.avd_exists = True
+                return {"ok": True, "created": True, "user_message": "created"}
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                self.started = True
+                return CommandResult(0, "started", "")
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return (True, "frida ready")
+
+            def enter_capture_network(self):
+                self.calls.append("capture_network")
+                return {"ok": True, "network": {"mode": "direct"}}
+
+            def device_network_check(self):
+                return {"ok": True, "mode": "direct", "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = PrepareRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertTrue(result["prepare"]["ok"])
+                self.assertEqual(runner.calls, ["create_avd", "start_emulator", "capture_network"])
+                emulator_step = next(step for step in result["prepare"]["steps"] if step["key"] == "emulator")
+                self.assertEqual(emulator_step["create_avd"]["user_message"], "created")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+
+    def test_system_prepare_blocks_with_clear_message_when_default_avd_cannot_be_created(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+
+        class PrepareRunner:
+            def __init__(self):
+                self.calls = []
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+            def avd_status(self):
+                return {"ok": False, "avd_name": "AI_Capture_AVD_01", "user_message": "AVD missing", "fix": "create AVD"}
+
+            def create_avd_if_possible(self):
+                self.calls.append("create_avd")
+                return {
+                    "ok": False,
+                    "created": False,
+                    "user_message": "没有找到可直接创建模拟器的 Android system image。",
+                    "fix": "请安装 Google APIs system image。",
+                }
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": False, "state": "adb_unavailable"}
+
+            def frida_server_status(self, *, device_ok):
+                return (False, "adb unavailable")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = PrepareRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertFalse(result["prepare"]["ok"])
+                self.assertEqual(runner.calls, ["create_avd"])
+                self.assertIn("Google APIs system image", result["prepare"]["user_message"])
+                self.assertEqual([step["key"] for step in result["prepare"]["steps"]], ["env", "ports", "emulator"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+
+    def test_system_prepare_installs_google_play_image_before_creating_default_avd(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+
+        class PrepareRunner:
+            def __init__(self):
+                self.calls = []
+                self.image_installed = False
+                self.avd_exists = False
+                self.started = False
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {"adb_online": self.started, "boot_completed": self.started, "unlocked": self.started}
+
+            def avd_status(self):
+                return {"ok": self.avd_exists, "avd_name": "AI_Capture_AVD_01", "available_avds": []}
+
+            def create_avd_if_possible(self):
+                self.calls.append("create_avd")
+                if not self.image_installed:
+                    return {
+                        "ok": False,
+                        "created": False,
+                        "user_message": "没有找到可用于 Google 登录的 Google Play system image。",
+                        "fix": "sdkmanager google_apis_playstore",
+                    }
+                self.avd_exists = True
+                return {"ok": True, "created": True, "user_message": "created"}
+
+            def install_google_play_system_image(self):
+                self.calls.append("install_image")
+                self.image_installed = True
+                return {"ok": True, "installed": True, "user_message": "installed"}
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                self.started = True
+                return CommandResult(0, "started", "")
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "missing", "frida_hook": "missing"}
+
+            def google_state(self, **kwargs):
+                return {"ok": True, "state": "ok", "play_store_installed": True, "google_account_present": True}
+
+            def frida_server_status(self, *, device_ok):
+                return True, "frida ready"
+
+            def enter_capture_network(self):
+                self.calls.append("capture_network")
+                return {"ok": True, "network": {"mode": "direct"}}
+
+            def device_network_check(self):
+                return {"ok": True, "mode": "direct", "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = PrepareRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertTrue(result["prepare"]["ok"])
+                self.assertEqual(runner.calls, ["create_avd", "install_image", "create_avd", "start_emulator", "capture_network"])
+                emulator_step = next(step for step in result["prepare"]["steps"] if step["key"] == "emulator")
+                self.assertTrue(emulator_step["install_google_play_image"]["ok"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+
     def test_setup_state_defaults_to_incomplete_until_marked_complete(self):
         original_store = app_module.store
         original_runner = app_module.runner
@@ -485,6 +1220,56 @@ class CaptureConsoleApiTests(unittest.TestCase):
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
+
+    def test_setup_state_treats_google_account_as_optional_when_login_is_not_required(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
+
+        class SetupRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True}
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+            def google_state(self, **kwargs):
+                return {
+                    "ok": False,
+                    "state": "not_logged_in",
+                    "play_store_installed": True,
+                    "google_account_present": False,
+                    "user_message": "请先登录 Google。",
+                    "fix": "打开 Google 登录入口。",
+                }
+
+            def frida_server_status(self, *, device_ok):
+                return True, "frida-ps reachable"
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = SetupRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = False
+                app_module.store.set_system_value(app_module.SETUP_CHECKED_KEY, "1")
+
+                result = app_module.api_setup_state()["setup"]
+                google_step = next(step for step in result["steps"] if step["key"] == "google")
+
+                self.assertTrue(google_step["ok"])
+                self.assertEqual(result["current_step"], "app")
+                self.assertFalse(result["google_login_required"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_setup_mark_complete_requires_ready_device_and_passed_validation(self):
         original_store = app_module.store
@@ -927,6 +1712,9 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 self.assertTrue(result["ok"])
                 self.assertTrue(runner.opened)
                 self.assertEqual(result["google_state"]["state"], "not_logged_in")
+                device = app_module.store.get_device("device-1")
+                self.assertEqual(device["lease_status"], "leased")
+                self.assertIsNotNone(device["last_lease_at"])
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
@@ -1129,6 +1917,170 @@ class CaptureConsoleApiTests(unittest.TestCase):
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+    def test_package_install_readiness_allows_missing_google_account_in_optional_mode(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
+
+        class MissingGoogleRunner:
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True}
+
+            def google_state(self, **kwargs):
+                return {
+                    "ok": False,
+                    "state": "not_logged_in",
+                    "play_store_installed": True,
+                    "google_account_present": False,
+                    "user_message": "请先在模拟器内登录 Google 账号。",
+                    "fix": "点击“去登录 Google”，完成登录后刷新状态。",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = MissingGoogleRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = False
+
+                app_module.ensure_emulator_ready_for_install(device_id="device-1")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+    def test_package_install_readiness_still_rejects_missing_play_store_in_optional_mode(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
+
+        class MissingPlayStoreRunner:
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True}
+
+            def google_state(self, **kwargs):
+                return {
+                    "ok": False,
+                    "state": "missing_play_store",
+                    "play_store_installed": False,
+                    "google_account_present": False,
+                    "user_message": "当前模拟器缺少 Google Play。",
+                    "fix": "请使用 Google Play AVD 重建设备。",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = MissingPlayStoreRunner()
+                app_module.GOOGLE_LOGIN_REQUIRED = False
+
+                with self.assertRaises(HTTPException) as ctx:
+                    app_module.ensure_emulator_ready_for_install(device_id="device-1")
+
+                self.assertEqual(ctx.exception.status_code, 409)
+                self.assertEqual(ctx.exception.detail["state"], "missing_play_store")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
+
+    def test_jenkins_install_reuses_matching_archive_already_installed_on_device(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_source = app_module.jenkins_source
+        original_latest_apks_dir = app_module.LATEST_APKS_DIR
+        original_google_required = app_module.GOOGLE_LOGIN_REQUIRED
+
+        class CachedInstallRunner:
+            def for_device(self, device):
+                return self
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+            def emulator_status(self):
+                return {"adb_online": True, "boot_completed": True, "unlocked": True}
+
+            def google_state(self, **kwargs):
+                return {
+                    "ok": False,
+                    "state": "not_logged_in",
+                    "play_store_installed": True,
+                    "google_account_present": False,
+                }
+
+            def package_info(self, package_name):
+                return {
+                    "package_name": package_name,
+                    "installed": True,
+                    "version_code": "1",
+                    "version_name": "1.0.0",
+                    "last_update_time": "2026-08-10 18:13:40",
+                    "installer_package": "null",
+                    "signature_hint": "3e53e186",
+                    "activity": "com.example.glp1_tracker/.MainActivity",
+                    "error": "",
+                }
+
+        class UnexpectedDownloadSource:
+            def download_package(self, **kwargs):
+                raise AssertionError("matching installed Jenkins build must not be downloaded again")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                root = Path(tmp)
+                app_module.store = CaptureStore(root / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = CachedInstallRunner()
+                app_module.jenkins_source = UnexpectedDownloadSource()
+                app_module.LATEST_APKS_DIR = root / "apks" / "latest"
+                app_module.GOOGLE_LOGIN_REQUIRED = False
+                app = app_module.store.create_app(
+                    platform="android",
+                    environment="test",
+                    name="GLP Tracker 测试包",
+                    package_name="com.example.glp1_tracker",
+                    activity="com.example.glp1_tracker/.MainActivity",
+                    default_mode="flutter-socks",
+                )
+                archive_dir = app_module.LATEST_APKS_DIR / "com.example.glp1_tracker"
+                archive_dir.mkdir(parents=True)
+                (archive_dir / "glp-1-tracker_158.apk").write_bytes(b"apk")
+                (archive_dir / "metadata.json").write_text(
+                    json.dumps(
+                        {
+                            "package_name": "com.example.glp1_tracker",
+                            "environment": "test",
+                            "uploaded_filename": "glp-1-tracker_158.apk",
+                            "apk_info": {"version_code": "1", "version_name": "1.0.0"},
+                            "apk_files": ["glp-1-tracker_158.apk"],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                app_module.store.update_app_version(app["id"], {"apk_archive_path": str(archive_dir)})
+
+                result = app_module.api_install_jenkins_package(
+                    app_module.JenkinsInstallPayload(
+                        device_id="device-1",
+                        job_name="glp-1-tracker",
+                        build_number=158,
+                        artifact_relative_path="glp-1-tracker_158.apk",
+                        environment="test",
+                    )
+                )
+
+                self.assertTrue(result["ok"])
+                self.assertTrue(result["install"]["cached"])
+                self.assertEqual(result["app"]["package_name"], "com.example.glp1_tracker")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.jenkins_source = original_source
+                app_module.LATEST_APKS_DIR = original_latest_apks_dir
                 app_module.GOOGLE_LOGIN_REQUIRED = original_google_required
 
     def test_devices_api_recovers_running_capture_for_each_device(self):
@@ -1829,6 +2781,112 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_auto_release_preserves_recent_interactive_lease(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_lease_seconds = app_module.INTERACTIVE_LEASE_SECONDS
+
+        class ReleaseRunner:
+            def __init__(self):
+                self.killed = False
+
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True, "process_running": True}
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "proxy cleared", "")
+
+            def stop_emulator(self):
+                self.killed = True
+                return CommandResult(0, "OK", "")
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                leased_at = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(timespec="seconds")
+                app_module.store.update_device(
+                    "device-1",
+                    lease_status="leased",
+                    last_active_at=leased_at,
+                    last_lease_at=leased_at,
+                )
+                runner = ReleaseRunner()
+                app_module.runner = runner
+                app_module.INTERACTIVE_LEASE_SECONDS = 30 * 60
+
+                result = app_module.auto_release_idle_on_demand_devices()
+
+                self.assertEqual(result, [])
+                self.assertFalse(runner.killed)
+                self.assertEqual(app_module.store.get_device("device-1")["lease_status"], "leased")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.INTERACTIVE_LEASE_SECONDS = original_lease_seconds
+
+    def test_auto_release_expires_stale_interactive_lease(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_lease_seconds = app_module.INTERACTIVE_LEASE_SECONDS
+
+        class ReleaseRunner:
+            def __init__(self):
+                self.killed = False
+
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True, "process_running": True}
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "proxy cleared", "")
+
+            def stop_emulator(self):
+                self.killed = True
+                return CommandResult(0, "OK", "")
+
+            def capture_status(self):
+                return {"exporter": "missing", "frida_hook": "missing", "health": "idle"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                leased_at = (datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat(timespec="seconds")
+                app_module.store.update_device(
+                    "device-1",
+                    lease_status="leased",
+                    last_active_at=leased_at,
+                    last_lease_at=leased_at,
+                )
+                runner = ReleaseRunner()
+                app_module.runner = runner
+                app_module.INTERACTIVE_LEASE_SECONDS = 30 * 60
+
+                result = app_module.auto_release_idle_on_demand_devices()
+
+                self.assertEqual(len(result), 1)
+                self.assertTrue(runner.killed)
+                self.assertEqual(app_module.store.get_device("device-1")["lease_status"], "idle")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.INTERACTIVE_LEASE_SECONDS = original_lease_seconds
+
     def test_force_release_resident_device_closes_emulator(self):
         original_store = app_module.store
         original_runner = app_module.runner
@@ -2048,6 +3106,331 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
                 app_module.scan_capture = original_scan_capture
+
+    def test_logcat_app_source_requires_valid_package_name(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class OnlineRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = OnlineRunner()
+
+                for package_name in ("", "com.example.app;rm -rf /", "com..example"):
+                    with self.subTest(package_name=package_name):
+                        with self.assertRaises(HTTPException) as ctx:
+                            app_module.api_start_logcat(
+                                "device-1",
+                                app_module.LogcatStartPayload(
+                                    source="app",
+                                    package_name=package_name,
+                                ),
+                            )
+
+                        self.assertEqual(ctx.exception.status_code, 422)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_logcat_start_rejects_offline_device(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class OfflineRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = OfflineRunner()
+
+                with self.assertRaises(HTTPException) as ctx:
+                    app_module.api_start_logcat(
+                        "device-1",
+                        app_module.LogcatStartPayload(source="system"),
+                    )
+
+                self.assertEqual(ctx.exception.status_code, 409)
+                self.assertEqual(
+                    {
+                        "message": "emulator is not online",
+                        "user_message": "当前设备未连接，无法读取 Android 日志。",
+                        "fix": "请先启动模拟器并等待设备进入在线状态。",
+                    },
+                    ctx.exception.detail,
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_logcat_lifecycle_is_device_scoped(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_service = app_module.logcat_service
+
+        class OnlineRunner:
+            def for_device(self, device):
+                return self
+
+            def emulator_status(self):
+                return {"adb_online": True}
+
+            def adb_command_prefix(self):
+                return ["adb", "-s", "emulator-5554"]
+
+            def process_environment(self):
+                return {"DEVICE": "device-1"}
+
+            def adb(self, args, timeout=20):
+                self.last_adb = args
+                return CommandResult(0, "2468\n", "")
+
+        class FakeLogcatService:
+            def __init__(self):
+                self.calls = []
+
+            def start(self, **kwargs):
+                self.calls.append(("start", kwargs))
+                return {
+                    "device_id": kwargs["device_id"],
+                    "source": kwargs["source"],
+                    "state": "streaming",
+                    "package_name": kwargs["package_name"],
+                    "next_cursor": 0,
+                    "truncated": False,
+                    "entries": [],
+                }
+
+            def poll(self, device_id, *, after, limit):
+                self.calls.append(("poll", {"device_id": device_id, "after": after, "limit": limit}))
+                return {
+                    "device_id": device_id,
+                    "source": "app",
+                    "state": "streaming",
+                    "package_name": "com.example.app",
+                    "next_cursor": 12,
+                    "truncated": False,
+                    "entries": [{"cursor": 12, "message": "ready"}],
+                }
+
+            def clear(self, device_id):
+                self.calls.append(("clear", {"device_id": device_id}))
+                return {"device_id": device_id, "state": "streaming", "next_cursor": 12}
+
+            def stop(self, device_id):
+                self.calls.append(("stop", {"device_id": device_id}))
+                return {"device_id": device_id, "state": "stopped", "next_cursor": 12}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                online_runner = OnlineRunner()
+                app_module.runner = online_runner
+                service = FakeLogcatService()
+                app_module.logcat_service = service
+
+                started = app_module.api_start_logcat(
+                    "device-1",
+                    app_module.LogcatStartPayload(
+                        source="app",
+                        package_name="com.example.app",
+                    ),
+                )
+                polled = app_module.api_poll_logcat("device-1", after=5, limit=5000)
+                cleared = app_module.api_clear_logcat("device-1")
+                stopped = app_module.api_stop_logcat("device-1")
+
+                start_call = dict(service.calls[0][1])
+                pid_resolver = start_call.pop("pid_resolver")
+                self.assertEqual(
+                    {
+                        "device_id": "device-1",
+                        "adb_command": ["adb", "-s", "emulator-5554"],
+                        "process_environment": {"DEVICE": "device-1"},
+                        "source": "app",
+                        "package_name": "com.example.app",
+                    },
+                    start_call,
+                )
+                self.assertEqual(2468, pid_resolver("com.example.app"))
+                self.assertEqual(
+                    [
+                        ("poll", {"device_id": "device-1", "after": 5, "limit": 1000}),
+                        ("clear", {"device_id": "device-1"}),
+                        ("stop", {"device_id": "device-1"}),
+                    ],
+                    service.calls[1:],
+                )
+                self.assertEqual("streaming", started["state"])
+                self.assertEqual([{"cursor": 12, "message": "ready"}], polled["entries"])
+                self.assertEqual(
+                    {"device_id": "device-1", "state": "streaming", "next_cursor": 12},
+                    cleared,
+                )
+                self.assertEqual(
+                    {"device_id": "device-1", "state": "stopped", "next_cursor": 12},
+                    stopped,
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.logcat_service = original_service
+
+    def test_release_device_stops_only_that_device_logcat(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_service = app_module.logcat_service
+
+        class ReleaseRunner:
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped capture", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "cleared proxy", "")
+
+        class FakeLogcatService:
+            def __init__(self):
+                self.stopped = []
+
+            def stop(self, device_id):
+                self.stopped.append(device_id)
+                return {"device_id": device_id, "state": "stopped"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=1)
+                app_module.runner = ReleaseRunner()
+                service = FakeLogcatService()
+                app_module.logcat_service = service
+
+                result = app_module.release_device_runtime("device-1")
+
+                self.assertEqual(["device-1"], service.stopped)
+                self.assertTrue(result["ok"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.logcat_service = original_service
+
+    def test_shutdown_stops_all_logcat_sessions(self):
+        original_service = app_module.logcat_service
+        original_clear = app_module.clear_project_capture_records
+
+        class FakeLogcatService:
+            def __init__(self):
+                self.stop_all_calls = 0
+
+            def stop_all(self):
+                self.stop_all_calls += 1
+
+        try:
+            service = FakeLogcatService()
+            app_module.logcat_service = service
+            app_module.clear_project_capture_records = lambda: None
+
+            app_module.shutdown()
+
+            self.assertEqual(1, service.stop_all_calls)
+        finally:
+            app_module.logcat_service = original_service
+            app_module.clear_project_capture_records = original_clear
+
+    def test_system_sleep_stops_all_logcat_sessions(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_service = app_module.logcat_service
+
+        class SleepRunner:
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped capture", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "cleared proxy", "")
+
+            def stop_emulator(self):
+                return CommandResult(0, "stopped emulator", "")
+
+        class FakeLogcatService:
+            def __init__(self):
+                self.stop_all_calls = 0
+
+            def stop_all(self):
+                self.stop_all_calls += 1
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = SleepRunner()
+                service = FakeLogcatService()
+                app_module.logcat_service = service
+
+                app_module.api_system_sleep()
+
+                self.assertEqual(1, service.stop_all_calls)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.logcat_service = original_service
+
+    def test_cleanup_stops_device_logcat_session(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_service = app_module.logcat_service
+
+        class CleanupRunner:
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped capture", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "cleared proxy", "")
+
+        class FakeLogcatService:
+            def __init__(self):
+                self.stopped = []
+
+            def stop(self, device_id):
+                self.stopped.append(device_id)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = CleanupRunner()
+                service = FakeLogcatService()
+                app_module.logcat_service = service
+
+                app_module.api_cleanup("device-1")
+
+                self.assertEqual(["device-1"], service.stopped)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.logcat_service = original_service
 
 
 if __name__ == "__main__":

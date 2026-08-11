@@ -213,12 +213,14 @@ def build_combined_script(args):
             json.dumps(env).replace("\\", "\\\\").replace("'", "\\'"),
         )
         parts.append(env_script)
-    if args.native_connect_hook or args.native_tls_hook:
+    if args.native_connect_hook or args.native_tls_hook or args.android_system_cert_hook:
         parts.append(build_config(repo_dir, cert_pem, args.proxy_host, args.proxy_port, args.debug, socks5=args.socks5))
     if args.native_connect_hook:
         parts.append(read_text(os.path.join(repo_dir, "native-connect-hook.js")))
     if args.native_tls_hook:
         parts.append(read_text(os.path.join(repo_dir, "native-tls-hook.js")))
+    if args.android_system_cert_hook:
+        parts.append(read_text(os.path.join(repo_dir, "android", "android-system-certificate-injection.js")))
     parts.append(FORCE_FLUTTER_CERT_OK_SCRIPT.replace(
         "%FLUTTER_VERIFY_SUCCESS_VALUE%",
         str(int(args.flutter_verify_success_value)),
@@ -244,6 +246,7 @@ def main():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--native-tls-hook", action="store_true", help="Also load HTTP Toolkit native TLS hook. Usually not needed for Flutter dart:io.")
     parser.add_argument("--native-connect-hook", action="store_true", help="Redirect app TCP connect() calls to the proxy.")
+    parser.add_argument("--android-system-cert-hook", action="store_true", help="Trust the mitmproxy CA in Android Conscrypt clients, including existing trust indexes.")
     parser.add_argument("--socks5", action="store_true", help="Use SOCKS5 handshakes in native-connect-hook so mitmproxy sees the original destination.")
     parser.add_argument("--flutter-verify-success-value", type=int, choices=(0, 1), default=0, help="Return value used by the Flutter ssl_verify_peer_cert hook.")
     parser.add_argument("--duration", type=int, default=0, help="Seconds to keep hooks alive. 0 means until Ctrl-C.")

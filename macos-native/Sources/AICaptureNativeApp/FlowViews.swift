@@ -78,18 +78,13 @@ struct FlowViews: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             } else {
-                List(appState.flows, selection: $appState.selectedFlowID) { flow in
-                    Button {
-                        Task {
-                            await appState.loadFlowDetail(flow)
-                            if let detail = appState.selectedFlowDetail {
-                                detailTab = preferredDetailTab(for: detail)
-                            }
+                List(appState.flows) { flow in
+                    FlowRow(flow: flow)
+                        .contentShape(Rectangle())
+                        .listRowBackground(rowBackground(for: flow))
+                        .onTapGesture {
+                            selectFlow(flow)
                         }
-                    } label: {
-                        FlowRow(flow: flow)
-                    }
-                    .buttonStyle(.plain)
                 }
                 .listStyle(.plain)
             }
@@ -198,6 +193,19 @@ struct FlowViews: View {
             return Text("已同步").foregroundStyle(.green)
         case .failed:
             return Text("失败").foregroundStyle(.red)
+        }
+    }
+
+    private func rowBackground(for flow: FlowSummary) -> Color {
+        appState.selectedFlowID == flow.id ? Color.accentColor.opacity(0.12) : Color.clear
+    }
+
+    private func selectFlow(_ flow: FlowSummary) {
+        Task {
+            await appState.loadFlowDetail(flow)
+            if let detail = appState.selectedFlowDetail {
+                detailTab = preferredDetailTab(for: detail)
+            }
         }
     }
 
