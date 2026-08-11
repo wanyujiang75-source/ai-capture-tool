@@ -288,6 +288,14 @@ class NativeAppPackagingTests(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(archive.is_file(), result.stdout)
+        self.assertEqual(
+            f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n",
+            archive_checksum.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            f"{hashlib.sha256(source_archive.read_bytes()).hexdigest()}  {source_archive.name}\n",
+            source_checksum.read_text(encoding="utf-8"),
+        )
         with tarfile.open(source_archive, "r:gz") as source_bundle:
             source_names = set(source_bundle.getnames())
         self.assertIn("release/package.sh", source_names)

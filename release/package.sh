@@ -16,6 +16,15 @@ else
 fi
 DESKTOP_ARCHIVE_PATH="$ROOT_DIR/release/$DESKTOP_ARCHIVE_NAME"
 
+write_checksum() {
+  local target_path="$1"
+  local target_dir
+  local target_name
+  target_dir="$(dirname "$target_path")"
+  target_name="$(basename "$target_path")"
+  (cd "$target_dir" && shasum -a 256 "$target_name" >"$target_name.sha256")
+}
+
 case "$RELEASE_KIND" in
   development)
     ;;
@@ -71,7 +80,7 @@ else
   ditto -c -k --sequesterRsrc --keepParent \
     "$ROOT_DIR/macos-native/build/AI抓包工具.app" \
     "$DESKTOP_ARCHIVE_PATH"
-  shasum -a 256 "$DESKTOP_ARCHIVE_PATH" >"$DESKTOP_ARCHIVE_PATH.sha256"
+  write_checksum "$DESKTOP_ARCHIVE_PATH"
 fi
 
 (
@@ -116,6 +125,6 @@ fi
     docs
 )
 
-shasum -a 256 "$ARCHIVE_PATH" >"$ARCHIVE_PATH.sha256"
+write_checksum "$ARCHIVE_PATH"
 echo "$DESKTOP_ARCHIVE_PATH"
 echo "$ARCHIVE_PATH"
