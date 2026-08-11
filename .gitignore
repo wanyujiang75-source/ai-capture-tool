@@ -67,6 +67,8 @@ tools/rootAVD/**
 !tools/rootAVD/frida.rc
 !tools/rootAVD/rootAVD.sh
 !tools/rootAVD/rootAVD.bat
+!tools/rootAVD/sbin/
+!tools/rootAVD/sbin/ai-capture-root-grant.sh
 
 # Nested vendor repo metadata. Keep source files, not their local git histories.
 tools/**/.git/
