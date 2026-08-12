@@ -113,7 +113,7 @@ struct LogsView: View {
             Divider()
                 .frame(height: 22)
 
-            TextField("搜索 Tag、消息或 PID", text: $controller.searchText)
+            TextField("搜索 Tag 或消息", text: $controller.searchText)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 220, maxWidth: 380)
 
@@ -181,10 +181,8 @@ struct LogsView: View {
                 .frame(width: 150, alignment: .leading)
             Text("级别")
                 .frame(width: 42, alignment: .leading)
-            Text("PID / TID")
-                .frame(width: 105, alignment: .leading)
             Text("Tag")
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 180, alignment: .leading)
             Text("消息")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -217,7 +215,7 @@ struct LogsView: View {
                             .id(entry.cursor)
                     }
                 }
-                .frame(minWidth: 1_000, alignment: .topLeading)
+                .frame(minWidth: 850, alignment: .topLeading)
             }
             .onChange(of: controller.filteredEntries.last?.cursor) { _, cursor in
                 guard controller.autoScroll, !controller.isPaused, let cursor else {
@@ -311,10 +309,8 @@ private struct LogcatRow: View {
             Text(entry.level.isEmpty ? "-" : entry.level)
                 .fontWeight(.bold)
                 .frame(width: 42, alignment: .leading)
-            Text(processText)
-                .frame(width: 105, alignment: .leading)
             Text(entry.tag.isEmpty ? "-" : entry.tag)
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 180, alignment: .leading)
                 .lineLimit(1)
             Text(messageText)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -325,10 +321,6 @@ private struct LogcatRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(entry.cursor.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.025))
-    }
-
-    private var processText: String {
-        "\(entry.pid.map(String.init) ?? "-") / \(entry.tid.map(String.init) ?? "-")"
     }
 
     private var messageText: String {

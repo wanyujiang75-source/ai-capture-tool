@@ -3,6 +3,7 @@ import SwiftUI
 struct FlowViews: View {
     @EnvironmentObject private var appState: AppState
     @State private var detailTab = "request"
+    @State private var searchText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -67,18 +68,47 @@ struct FlowViews: View {
             HStack {
                 Text("Session #\(appState.activeSessionID ?? 0)")
                     .font(.title2.bold())
-                Text("\(appState.flows.count) 条")
+                Text("\(filteredFlows.count) / \(appState.flows.count) 条")
                     .foregroundStyle(.secondary)
                 Spacer()
                 stateText(appState.flowLoadState)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("搜索 URL、Host、Path、方法或状态码", text: $searchText)
+                    .textFieldStyle(.plain)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("清除搜索")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(.separator, lineWidth: 1)
             }
             if appState.flows.isEmpty {
                 Text("暂无接口。操作 App 后会自动刷新。")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
+            } else if filteredFlows.isEmpty {
+                Text("没有匹配的接口，请调整搜索内容。")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
             } else {
-                List(appState.flows) { flow in
+                List(filteredFlows) { flow in
                     FlowRow(flow: flow)
                         .contentShape(Rectangle())
                         .listRowBackground(rowBackground(for: flow))
@@ -96,6 +126,10 @@ struct FlowViews: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.separator, lineWidth: 1)
         }
+    }
+
+    private var filteredFlows: [FlowSummary] {
+        FlowListPresentation.filtered(appState.flows, query: searchText)
     }
 
     private var flowDetail: some View {
@@ -221,26 +255,29 @@ private struct FlowRow: View {
     let flow: FlowSummary
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(flow.time ?? "-")
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .frame(width: 88, alignment: .leading)
-            Text(flow.method ?? "-")
-                .font(.caption.bold())
-                .frame(width: 52)
-            Text(flow.status ?? "-")
-                .font(.caption.bold())
-                .foregroundStyle(statusColor)
-                .frame(width: 70)
-            Text(durationText)
-                .font(.caption.bold())
-                .foregroundStyle(.blue)
-                .frame(width: 78)
-            Text(flow.path ?? flow.url ?? "-")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text(flow.time ?? "-")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 112, alignment: .leading)
+                Text(flow.method ?? "-")
+                    .font(.caption.bold())
+                    .frame(width: 52)
+                Text(flow.status ?? "-")
+                    .font(.caption.bold())
+                    .foregroundStyle(statusColor)
+                    .frame(width: 82)
+                Text(durationText)
+                    .font(.caption.bold())
+                    .foregroundStyle(.blue)
+                    .frame(width: 78)
+                Spacer()
+            }
+            Text(FlowListPresentation.endpoint(for: flow))
                 .font(.callout.monospaced())
-                .lineLimit(1)
-            Spacer()
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 8)
     }
