@@ -105,6 +105,7 @@ fi
     --exclude='release/*.zip' \
     --exclude='release/*.sha256' \
     README.md \
+    INSTALL.md \
     setup.sh \
     start.sh \
     start_capture.sh \

@@ -298,6 +298,7 @@ class NativeAppPackagingTests(unittest.TestCase):
         )
         with tarfile.open(source_archive, "r:gz") as source_bundle:
             source_names = set(source_bundle.getnames())
+        self.assertIn("INSTALL.md", source_names)
         self.assertIn("release/package.sh", source_names)
         self.assertIn("release/notarize-app.sh", source_names)
         with tempfile.TemporaryDirectory() as temporary_directory:

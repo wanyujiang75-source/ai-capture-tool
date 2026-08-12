@@ -1,7 +1,7 @@
 # AI抓包工具 macOS 原生桌面端
 
 这是 SwiftUI 原生桌面端，不使用 React/WebView 作为主界面。普通用户请先阅读
-[桌面端使用指南](../docs/desktop-user-guide.md)；本文件只说明开发、构建和发布。
+[安装指南](../INSTALL.md) 和 [桌面端使用指南](../docs/desktop-user-guide.md)；本文件只说明开发、构建和发布。
 
 V1 目标：
 

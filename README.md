@@ -4,20 +4,25 @@ AI抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 S
 
 项目默认不包含历史抓包结果、上传 APK、本机数据库、cookie、token 或账号状态。新数据库会创建一台默认本机抓包设备 `device-1 / AI_Capture_AVD_01 / emulator-5554`；如果已有设备数据库或外部设备配置，不会覆盖。
 
-## 下载使用
+## 安装
 
-桌面端 V1 支持 **macOS 14+ / Apple Silicon**。普通用户应下载 Release 中的
-`AI-Capture-Desktop-*-arm64.zip`，解压后把 `AI抓包工具.app` 移入“应用程序”目录，再双击打开。
+桌面端 V1 支持 **macOS 14+ / Apple Silicon**，提供多条安装路径：
 
-文件名不含 `development` 的正式分发包必须经过 Developer ID 签名和 Apple 公证，可以直接打开。文件名包含
-`development-arm64` 的内部开发包使用 ad-hoc 签名，首次打开时可能需要右键选择“打开”，
-或在“系统设置 -> 隐私与安全性”中允许。
+- **Codex 辅助安装**：把 [安装指南](INSTALL.md) 交给 Codex，由 Codex 检查环境、下载、校验、安装和验收。
+- **手动下载安装**：从 [GitHub Releases](https://github.com/wanyujiang75-source/ai-capture-tool/releases) 下载 `arm64.zip`，解压后拖入“应用程序”。
+- **源码构建**：克隆仓库后在本机构建，适合开发和调试。
+- **升级或新主机配置**：保留现有数据升级，或在全新 Mac 上准备 Android SDK 和 Google Play 模拟器。
+
+完整命令、可复制给 Codex 的提示词、安全边界和验收步骤见 **[INSTALL.md](INSTALL.md)**。
+
+文件名不含 `development` 的正式分发包必须经过 Developer ID 签名和 Apple 公证。文件名包含
+`development-arm64` 的内部开发包使用 ad-hoc 签名，首次打开时可能需要用户在 macOS 安全界面手动允许。
 
 桌面 App 已内嵌 Python、FastAPI、mitmproxy 和 Frida 客户端运行时，不需要用户手动启动后端。
 新 Mac 仍需具备 Android Studio 或 Android SDK；首次准备环境时，工具会检查 SDK、安装或定位
 Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 
-完整操作和排错说明见 [桌面端使用指南](docs/desktop-user-guide.md)。
+安装后的完整操作和排错说明见 [桌面端使用指南](docs/desktop-user-guide.md)。
 
 ### 首次抓包
 
@@ -29,25 +34,7 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 6. 在模拟器内操作目标功能，在“接口”页实时查看 Request、Response 和 cURL。
 7. 完成后回到“抓包”页点击“停止抓包”。
 
-### 从源码构建
-
-开发者构建需要 Xcode Command Line Tools、SwiftPM 和 `uv`：
-
-```bash
-git clone https://github.com/wanyujiang75-source/ai-capture-tool.git
-cd ai-capture-tool
-brew install uv
-xcode-select --install
-macos-native/scripts/build-app.sh
-```
-
-生成后打开：
-
-```text
-macos-native/build/AI抓包工具.app
-```
-
-桌面端会自动启动 `.app` 内置的本机后端，不需要手动运行 `./start.sh`。如果是未签名的本地构建，macOS Gatekeeper 可能会阻止首次打开；内部使用时可以在系统设置的安全性页面允许打开，正式分发时需要进行签名和 notarization。
+桌面端会自动启动 `.app` 内置的本机后端，不需要手动运行 `./start.sh`。源码构建步骤统一维护在 [安装指南](INSTALL.md#路径-c从源码构建) 中。
 
 桌面端运行数据保存在：
 

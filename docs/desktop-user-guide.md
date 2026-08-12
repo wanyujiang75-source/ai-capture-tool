@@ -31,6 +31,8 @@ Android Studio，完成 SDK License 接受和基础组件下载。
 
 ## 2. 安装桌面 App
 
+完整安装路径见 [安装指南](../INSTALL.md)，其中包括 Codex 辅助安装、手动下载、源码构建、升级和新主机配置。下面是手动安装的最短流程：
+
 1. 下载 `AI-Capture-Desktop-*-arm64.zip`。
 2. 校验下载页面提供的 `.sha256`（可选但推荐）：
 
