@@ -190,6 +190,42 @@ struct LogcatControllerTests {
     }
 }
 
+@Suite
+struct LogcatTextFormatterTests {
+    @Test
+    func formatsMultipleEntriesAsOneSelectableTextBlock() {
+        let entries = [
+            LogcatEntry(
+                cursor: 1,
+                timestamp: "08-12 15:09:44.971",
+                pid: 1234,
+                tid: 1235,
+                level: "I",
+                tag: "ThinkingAnalytics.DataHandle",
+                message: "\"#simulator\": true,",
+                raw: ""
+            ),
+            LogcatEntry(
+                cursor: 2,
+                timestamp: "",
+                pid: nil,
+                tid: nil,
+                level: "",
+                tag: "",
+                message: "",
+                raw: "unparsed continuation"
+            )
+        ]
+
+        #expect(
+            LogcatTextFormatter.plainText(entries) == """
+            08-12 15:09:44.971\tI\tThinkingAnalytics.DataHandle\t"#simulator": true,
+            -\t-\t-\tunparsed continuation
+            """
+        )
+    }
+}
+
 private func entry(
     cursor: Int64,
     level: String = "I",

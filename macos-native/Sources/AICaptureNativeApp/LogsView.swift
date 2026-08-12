@@ -1,8 +1,11 @@
+import AppKit
 import SwiftUI
 
 struct LogsView: View {
     @EnvironmentObject private var appState: AppState
     @StateObject private var controller = LogcatController()
+    @State private var displayMode: LogcatDisplayMode = .table
+    @State private var copySucceeded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -110,6 +113,15 @@ struct LogsView: View {
                 Label("清空", systemImage: "trash")
             }
 
+            Button(action: copyFilteredLogs) {
+                Label(
+                    copySucceeded ? "已复制" : "复制当前结果",
+                    systemImage: copySucceeded ? "checkmark" : "doc.on.doc"
+                )
+            }
+            .disabled(controller.filteredEntries.isEmpty)
+            .help("复制当前搜索和级别筛选后的全部日志")
+
             Divider()
                 .frame(height: 22)
 
@@ -123,6 +135,15 @@ struct LogsView: View {
                 }
             }
             .frame(width: 190)
+
+            Picker("显示方式", selection: $displayMode) {
+                ForEach(LogcatDisplayMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 130)
 
             Toggle("自动滚动", isOn: $controller.autoScroll)
                 .toggleStyle(.switch)
@@ -158,12 +179,19 @@ struct LogsView: View {
 
     private var logConsole: some View {
         VStack(spacing: 0) {
-            logHeader
-            Divider()
+            if displayMode == .table {
+                logHeader
+                Divider()
+            }
             if controller.filteredEntries.isEmpty {
                 emptyConsole
             } else {
-                logRows
+                switch displayMode {
+                case .table:
+                    logRows
+                case .plainText:
+                    plainTextLogs
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -223,6 +251,25 @@ struct LogsView: View {
                 }
                 proxy.scrollTo(cursor, anchor: .bottom)
             }
+        }
+    }
+
+    private var plainTextLogs: some View {
+        SelectableLogTextView(text: LogcatTextFormatter.plainText(controller.filteredEntries))
+    }
+
+    private func copyFilteredLogs() {
+        let text = LogcatTextFormatter.plainText(controller.filteredEntries)
+        guard !text.isEmpty else {
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        copySucceeded = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            copySucceeded = false
         }
     }
 
@@ -296,6 +343,78 @@ struct LogsView: View {
             return "调整搜索内容或最低日志级别后重试。"
         }
         return controller.message
+    }
+}
+
+private struct SelectableLogTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return scrollView
+        }
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = false
+        textView.usesFindBar = true
+        textView.font = .monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .textBackgroundColor
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.isHorizontallyResizable = true
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView, textView.string != text else {
+            return
+        }
+        let selectedRanges = textView.selectedRanges
+        let visibleOrigin = scrollView.contentView.bounds.origin
+        textView.string = text
+        let textLength = (text as NSString).length
+        let validRanges = selectedRanges.compactMap { value -> NSValue? in
+            let range = value.rangeValue
+            guard range.location <= textLength else {
+                return nil
+            }
+            return NSValue(
+                range: NSRange(
+                    location: range.location,
+                    length: min(range.length, textLength - range.location)
+                )
+            )
+        }
+        if !validRanges.isEmpty {
+            textView.selectedRanges = validRanges
+        }
+        scrollView.contentView.scroll(to: visibleOrigin)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+}
+
+private enum LogcatDisplayMode: String, CaseIterable, Identifiable {
+    case table
+    case plainText
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .table:
+            "表格"
+        case .plainText:
+            "纯文本"
+        }
     }
 }
 
