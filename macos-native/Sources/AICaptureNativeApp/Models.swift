@@ -123,7 +123,7 @@ struct GoogleState: Decodable {
     }
 }
 
-struct CaptureApp: Decodable, Identifiable {
+struct CaptureApp: Decodable, Identifiable, Sendable {
     let id: Int
     let platform: String?
     let environment: String?
@@ -166,6 +166,79 @@ struct CaptureApp: Decodable, Identifiable {
         lastValidationStatus = container.decodeFlexibleString(forKey: .lastValidationStatus)
         lastValidationMessage = container.decodeFlexibleString(forKey: .lastValidationMessage)
         lastSuccessMode = container.decodeFlexibleString(forKey: .lastSuccessMode)
+    }
+}
+
+struct ForegroundAppState: Decodable, Equatable, Sendable {
+    let state: String
+    let packageName: String?
+    let activity: String?
+    let component: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case state
+        case packageName = "package_name"
+        case activity
+        case component
+    }
+}
+
+struct ForegroundAppVersion: Decodable, Sendable {
+    let versionName: String?
+    let versionCode: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case versionName = "version_name"
+        case versionCode = "version_code"
+    }
+}
+
+struct ForegroundReadiness: Decodable, Sendable {
+    let state: String?
+    let flowCount: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case state
+        case flowCount = "flow_count"
+    }
+}
+
+struct ForegroundReadinessResponse: Decodable, Sendable {
+    let readiness: ForegroundReadiness
+}
+
+struct ForegroundTargetResponse: Decodable, Sendable {
+    let state: String
+    let packageName: String?
+    let activity: String?
+    let component: String?
+    let captureState: String
+    let app: CaptureApp?
+    let version: ForegroundAppVersion?
+    let readiness: ForegroundReadiness?
+
+    private enum CodingKeys: String, CodingKey {
+        case state
+        case packageName = "package_name"
+        case activity
+        case component
+        case captureState = "capture_state"
+        case app
+        case version
+        case readiness
+    }
+
+    func updating(captureState: String, readiness: ForegroundReadiness?) -> Self {
+        Self(
+            state: state,
+            packageName: packageName,
+            activity: activity,
+            component: component,
+            captureState: captureState,
+            app: app,
+            version: version,
+            readiness: readiness
+        )
     }
 }
 
@@ -407,6 +480,7 @@ struct CaptureSession: Decodable {
     let mode: String?
     let outdir: String?
     let deviceId: String?
+    let packageName: String?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -414,6 +488,7 @@ struct CaptureSession: Decodable {
         case mode
         case outdir
         case deviceId = "device_id"
+        case packageName = "package_name"
     }
 }
 

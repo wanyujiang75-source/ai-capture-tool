@@ -11,7 +11,13 @@ protocol LogcatAPI: Sendable {
     func stopLogcat(deviceID: String) async throws -> LogcatActionResponse
 }
 
-struct APIClient: LogcatAPI, @unchecked Sendable {
+protocol ForegroundTargetAPI: Sendable {
+    func getForegroundApp(deviceID: String) async throws -> ForegroundAppState
+    func resolveForegroundTarget(deviceID: String) async throws -> ForegroundTargetResponse
+    func getAppReadiness(appID: Int, deviceID: String) async throws -> ForegroundReadinessResponse
+}
+
+struct APIClient: LogcatAPI, ForegroundTargetAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -43,6 +49,21 @@ struct APIClient: LogcatAPI, @unchecked Sendable {
     func getJenkinsPackages() async throws -> [JenkinsPackage] {
         let response: JenkinsPackagesResponse = try await get("api/package-sources/jenkins/packages")
         return response.packages
+    }
+
+    func getForegroundApp(deviceID: String) async throws -> ForegroundAppState {
+        try await get("api/devices/\(deviceID)/foreground-app")
+    }
+
+    func resolveForegroundTarget(deviceID: String) async throws -> ForegroundTargetResponse {
+        try await post("api/devices/\(deviceID)/foreground-target/resolve")
+    }
+
+    func getAppReadiness(appID: Int, deviceID: String) async throws -> ForegroundReadinessResponse {
+        try await get(
+            "api/apps/\(appID)/readiness",
+            queryItems: [URLQueryItem(name: "device_id", value: deviceID)]
+        )
     }
 
     func startDevice(deviceId: String, visible: Bool = false) async throws -> BasicActionResponse {

@@ -15,9 +15,10 @@ struct CaptureView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
-            if appState.deviceLoadState == .idle || appState.jenkinsLoadState == .idle {
-                await appState.refreshCaptureTargets()
+            if appState.deviceLoadState == .idle {
+                await appState.refreshDevices()
             }
+            await appState.monitorForegroundTarget()
         }
     }
 
@@ -25,7 +26,7 @@ struct CaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("抓包")
                 .font(.largeTitle.bold())
-            Text("一键准备 Google Play 登录模拟器后，安装 Jenkins 包并启动 Android 抓包。")
+            Text("打开设备中的目标 App 后自动识别并检查抓包能力。")
                 .foregroundStyle(.secondary)
         }
     }
@@ -52,16 +53,7 @@ struct CaptureView: View {
                     Label("打开模拟器", systemImage: "iphone.gen3.radiowaves.left.and.right")
                 }
             }
-            Picker("应用", selection: selectedAppBinding) {
-                if appState.jenkinsPackages.isEmpty {
-                    Text("暂无 Jenkins 包").tag("")
-                } else {
-                    ForEach(appState.jenkinsPackages) { package in
-                        Text("\(package.jobName) #\(package.buildNumber) · \(package.artifactFileName)").tag(package.id)
-                    }
-                }
-            }
-            selectedSummary
+            foregroundTargetCard
         }
         .padding(18)
         .background(.background)
@@ -76,7 +68,8 @@ struct CaptureView: View {
         HStack(spacing: 12) {
             Button {
                 Task {
-                    await appState.refreshCaptureTargets()
+                    await appState.refreshDevices()
+                    await appState.refreshForegroundTarget(forceResolve: true)
                 }
             } label: {
                 Label("刷新", systemImage: "arrow.clockwise")
@@ -90,19 +83,13 @@ struct CaptureView: View {
             }
             Button {
                 Task {
-                    await appState.launchSelectedApp()
-                }
-            } label: {
-                Label("打开应用", systemImage: "app.badge")
-            }
-            Button {
-                Task {
                     await appState.startSelectedCapture()
                 }
             } label: {
                 Label("一键开始抓包", systemImage: "record.circle")
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!appState.canStartForegroundCapture)
             Button(role: .destructive) {
                 Task {
                     await appState.stopSelectedCapture()
@@ -112,6 +99,48 @@ struct CaptureView: View {
             }
         }
         .disabled(isBusy)
+    }
+
+    private var foregroundTargetCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: appState.foregroundTarget?.app == nil ? "app.dashed" : "app.fill")
+                    .foregroundStyle(appState.canStartForegroundCapture ? .green : .orange)
+                Text(appState.foregroundTarget?.app?.name ?? "等待前台应用")
+                    .font(.headline)
+                Spacer()
+                Text(foregroundStateLabel)
+                    .font(.caption.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.thinMaterial)
+                    .clipShape(Capsule())
+            }
+            Text(appState.foregroundTarget?.packageName ?? "请在模拟器中打开需要分析的 App")
+                .font(.callout.monospaced())
+                .foregroundStyle(.secondary)
+            if let activity = appState.foregroundTarget?.activity, !activity.isEmpty {
+                Text(activity)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            Text(appState.foregroundCaptureGuidance)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(.thinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var foregroundStateLabel: String {
+        switch appState.foregroundTarget?.captureState {
+        case "ready": "可开始"
+        case "waiting_traffic": "等待流量"
+        case "capturable": "可抓包"
+        case "blocked": "未就绪"
+        default: "自动检测"
+        }
     }
 
     private var messagePanel: some View {
@@ -137,32 +166,11 @@ struct CaptureView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private var selectedSummary: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("当前设备：\(appState.selectedDevice?.name ?? appState.selectedDeviceID ?? "-")")
-            Text("Google：\(appState.selectedDevice?.googleState?.userMessage ?? "待检测")")
-            Text("Jenkins 包：\(appState.selectedJenkinsPackage?.jobName ?? "-")")
-            Text("构建产物：\(appState.selectedJenkinsPackage?.artifactFileName ?? "-")")
-            Text("安装后应用：\(appState.selectedApp?.name ?? "操作时自动解析")")
-            Text("默认模式：\(appState.selectedApp?.defaultMode ?? "flutter-socks")")
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
-    }
-
     private var selectedDeviceBinding: Binding<String> {
         Binding {
             appState.selectedDeviceID ?? ""
         } set: { value in
             appState.selectedDeviceID = value.isEmpty ? nil : value
-        }
-    }
-
-    private var selectedAppBinding: Binding<String> {
-        Binding {
-            appState.selectedJenkinsPackageID ?? ""
-        } set: { value in
-            appState.selectedJenkinsPackageID = value.isEmpty ? nil : value
         }
     }
 

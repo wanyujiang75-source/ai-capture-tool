@@ -33,17 +33,24 @@ final class AppState: ObservableObject {
     @Published var selectedFlowDetail: FlowDetail?
     @Published var selectedFlowCurl = ""
     @Published var flowDetailLoadState: LoadState = .idle
+    @Published var foregroundTarget: ForegroundTargetResponse?
+    @Published var foregroundTargetLoadState: LoadState = .idle
 
     private let runtimeManager: RuntimeManager
     private let apiClient: APIClient
+    private let foregroundAPI: any ForegroundTargetAPI
     private var installedAppIDByJenkinsTargetKey: [String: Int] = [:]
+    private var lastForegroundComponent: String?
+    private var lastForegroundDeviceID: String?
 
     init(
         runtimeManager: RuntimeManager = .shared,
-        apiClient: APIClient = APIClient()
+        apiClient: APIClient = APIClient(),
+        foregroundAPI: (any ForegroundTargetAPI)? = nil
     ) {
         self.runtimeManager = runtimeManager
         self.apiClient = apiClient
+        self.foregroundAPI = foregroundAPI ?? apiClient
         self.runtimeDirectory = runtimeManager.runtimeDirectory
     }
 
@@ -128,6 +135,94 @@ final class AppState: ObservableObject {
         return jenkinsPackages.first { $0.id == selectedJenkinsPackageID }
     }
 
+    var hasForegroundSessionMismatch: Bool {
+        guard let activePackage = selectedDevice?.activeSession?.packageName,
+              let targetPackage = foregroundTarget?.app?.packageName else {
+            return false
+        }
+        return !activePackage.isEmpty && activePackage != targetPackage
+    }
+
+    var canStartForegroundCapture: Bool {
+        foregroundTarget?.captureState == "ready"
+            && foregroundTarget?.app != nil
+            && !hasForegroundSessionMismatch
+            && selectedDeviceID != nil
+    }
+
+    var foregroundCaptureGuidance: String {
+        if hasForegroundSessionMismatch {
+            return "当前设备正在抓取另一个应用，请先停止现有抓包任务。"
+        }
+        guard let target = foregroundTarget else {
+            return "请在设备中打开需要分析的 App，工具会自动识别。"
+        }
+        switch target.captureState {
+        case "ready":
+            return "已识别前台应用，可以开始抓包。"
+        case "waiting_traffic":
+            return "抓包运行中，请操作 App 触发网络请求。"
+        case "capturable":
+            return "已捕获当前应用接口，抓包能力验证通过。"
+        case "blocked":
+            return "当前应用未通过抓包准入，请查看状态并修复。"
+        default:
+            return "正在检测前台应用。"
+        }
+    }
+
+    func refreshForegroundTarget(forceResolve: Bool = false) async {
+        guard let selectedDeviceID else {
+            foregroundTarget = nil
+            foregroundTargetLoadState = .idle
+            lastForegroundComponent = nil
+            lastForegroundDeviceID = nil
+            return
+        }
+        foregroundTargetLoadState = .loading
+        do {
+            let foreground = try await foregroundAPI.getForegroundApp(deviceID: selectedDeviceID)
+            guard foreground.state == "ready", let component = foreground.component, !component.isEmpty else {
+                foregroundTarget = nil
+                selectedAppID = nil
+                lastForegroundComponent = nil
+                lastForegroundDeviceID = selectedDeviceID
+                foregroundTargetLoadState = .loaded
+                return
+            }
+
+            let targetChanged = lastForegroundDeviceID != selectedDeviceID || lastForegroundComponent != component
+            if forceResolve || targetChanged || foregroundTarget == nil {
+                let resolved = try await foregroundAPI.resolveForegroundTarget(deviceID: selectedDeviceID)
+                foregroundTarget = resolved
+                lastForegroundComponent = component
+                lastForegroundDeviceID = selectedDeviceID
+                if let app = resolved.app {
+                    selectedAppID = app.id
+                    if let index = apps.firstIndex(where: { $0.id == app.id }) {
+                        apps[index] = app
+                    } else {
+                        apps.append(app)
+                    }
+                }
+            } else if activeSessionID != nil, let appID = foregroundTarget?.app?.id {
+                let response = try await foregroundAPI.getAppReadiness(appID: appID, deviceID: selectedDeviceID)
+                let state = (response.readiness.flowCount ?? 0) > 0 ? "capturable" : "waiting_traffic"
+                foregroundTarget = foregroundTarget?.updating(captureState: state, readiness: response.readiness)
+            }
+            foregroundTargetLoadState = .loaded
+        } catch {
+            foregroundTargetLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func monitorForegroundTarget() async {
+        while !Task.isCancelled {
+            await refreshForegroundTarget()
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
     func startSelectedDevice() async {
         guard let selectedDeviceID else {
             setCaptureFailure("请先选择设备。")
@@ -208,6 +303,15 @@ final class AppState: ObservableObject {
             setCaptureFailure("请先选择设备。")
             return
         }
+        if hasForegroundSessionMismatch {
+            setCaptureFailure(foregroundCaptureGuidance)
+            return
+        }
+        await refreshForegroundTarget(forceResolve: true)
+        guard let targetApp = foregroundTarget?.app, canStartForegroundCapture else {
+            setCaptureFailure(foregroundCaptureGuidance)
+            return
+        }
         captureActionState = .loading
         do {
             let prepared = await prepareSelectedEnvironment()
@@ -215,9 +319,8 @@ final class AppState: ObservableObject {
                 return
             }
             captureActionState = .loading
-            let selectedApp = try await resolveSelectedTargetApp()
             let response = try await apiClient.startCapture(
-                appId: selectedApp.id,
+                appId: targetApp.id,
                 deviceId: selectedDeviceID,
                 mode: nil
             )
@@ -227,7 +330,7 @@ final class AppState: ObservableObject {
             selectedFlowCurl = ""
             flows = []
             let sessionText = response.session?.id.map { "#\($0)" } ?? ""
-            let modeText = response.session?.mode ?? selectedApp.defaultMode ?? "auto"
+            let modeText = response.session?.mode ?? targetApp.defaultMode ?? "auto"
             captureMessage = "抓包已启动 \(sessionText)，模式 \(modeText)。"
             captureActionState = .loaded
             await refreshDevices()

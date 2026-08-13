@@ -60,6 +60,36 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 @Suite(.serialized)
 struct APIClientTests {
     @Test
+    func readsAndResolvesForegroundTargetUsingDedicatedEndpoints() async throws {
+        CapturingURLProtocol.reset(
+            responseData: Data(
+                """
+                {
+                  "state": "ready",
+                  "package_name": "com.example.music",
+                  "activity": "com.example.music/.MainActivity",
+                  "component": "com.example.music/.MainActivity",
+                  "capture_state": "ready",
+                  "app": null,
+                  "version": null,
+                  "readiness": null
+                }
+                """.utf8
+            )
+        )
+        let client = makeClient()
+
+        _ = try await client.getForegroundApp(deviceID: "device-2")
+        _ = try await client.resolveForegroundTarget(deviceID: "device-2")
+
+        #expect(CapturingURLProtocol.observedRequests.map(\.httpMethod) == ["GET", "POST"])
+        #expect(CapturingURLProtocol.observedRequests.compactMap { $0.url?.path } == [
+            "/api/devices/device-2/foreground-app",
+            "/api/devices/device-2/foreground-target/resolve"
+        ])
+    }
+
+    @Test
     func jenkinsInstallAllowsLongArtifactDownloads() async throws {
         CapturingURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
