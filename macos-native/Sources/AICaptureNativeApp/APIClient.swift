@@ -25,7 +25,13 @@ protocol LocalPackageInstallAPI: Sendable {
     ) async throws -> CaptureApp?
 }
 
-struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, @unchecked Sendable {
+protocol FlowAPI: Sendable {
+    func getFlows(sessionID: Int) async throws -> [FlowSummary]
+    func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail
+    func getFlowCurl(sessionID: Int, flowID: String) async throws -> String
+}
+
+struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession

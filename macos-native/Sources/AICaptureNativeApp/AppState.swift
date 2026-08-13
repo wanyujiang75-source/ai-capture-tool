@@ -41,6 +41,7 @@ final class AppState: ObservableObject {
     private let apiClient: APIClient
     private let foregroundAPI: any ForegroundTargetAPI
     private let packageInstallAPI: any LocalPackageInstallAPI
+    private let flowAPI: any FlowAPI
     private var lastForegroundComponent: String?
     private var lastForegroundDeviceID: String?
 
@@ -48,12 +49,14 @@ final class AppState: ObservableObject {
         runtimeManager: RuntimeManager = .shared,
         apiClient: APIClient = APIClient(),
         foregroundAPI: (any ForegroundTargetAPI)? = nil,
-        packageInstallAPI: (any LocalPackageInstallAPI)? = nil
+        packageInstallAPI: (any LocalPackageInstallAPI)? = nil,
+        flowAPI: (any FlowAPI)? = nil
     ) {
         self.runtimeManager = runtimeManager
         self.apiClient = apiClient
         self.foregroundAPI = foregroundAPI ?? apiClient
         self.packageInstallAPI = packageInstallAPI ?? apiClient
+        self.flowAPI = flowAPI ?? apiClient
         self.runtimeDirectory = runtimeManager.runtimeDirectory
     }
 
@@ -554,7 +557,14 @@ final class AppState: ObservableObject {
         }
         flowLoadState = .loading
         do {
-            flows = try await apiClient.getFlows(sessionID: activeSessionID)
+            let refreshedFlows = try await flowAPI.getFlows(sessionID: activeSessionID)
+            flows = refreshedFlows
+            if let selectedFlowID, !refreshedFlows.contains(where: { $0.id == selectedFlowID }) {
+                self.selectedFlowID = nil
+                selectedFlowDetail = nil
+                selectedFlowCurl = ""
+                flowDetailLoadState = .idle
+            }
             flowLoadState = .loaded
         } catch {
             flowLoadState = .failed(error.localizedDescription)
@@ -567,10 +577,12 @@ final class AppState: ObservableObject {
             return
         }
         selectedFlowID = flow.id
+        selectedFlowDetail = nil
+        selectedFlowCurl = ""
         flowDetailLoadState = .loading
         do {
-            selectedFlowDetail = try await apiClient.getFlowDetail(sessionID: activeSessionID, flowID: flow.id)
-            selectedFlowCurl = try await apiClient.getFlowCurl(sessionID: activeSessionID, flowID: flow.id)
+            selectedFlowDetail = try await flowAPI.getFlowDetail(sessionID: activeSessionID, flowID: flow.id)
+            selectedFlowCurl = try await flowAPI.getFlowCurl(sessionID: activeSessionID, flowID: flow.id)
             flowDetailLoadState = .loaded
         } catch {
             flowDetailLoadState = .failed(error.localizedDescription)

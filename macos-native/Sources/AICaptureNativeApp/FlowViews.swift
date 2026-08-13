@@ -57,10 +57,12 @@ struct FlowViews: View {
     private var flowContent: some View {
         HSplitView {
             flowList
-                .frame(minWidth: 460, idealWidth: 560)
+                .frame(minWidth: 460, idealWidth: 560, maxHeight: .infinity, alignment: .topLeading)
             flowDetail
-                .frame(minWidth: 520)
+                .frame(minWidth: 520, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .layoutPriority(1)
     }
 
     private var flowList: some View {
