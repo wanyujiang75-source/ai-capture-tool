@@ -140,8 +140,11 @@ final class AppState: ObservableObject {
     }
 
     var canStartForegroundCapture: Bool {
-        foregroundTarget?.captureState == "ready"
-            && foregroundTarget?.app != nil
+        guard let target = foregroundTarget else {
+            return false
+        }
+        return ["ready", "blocked"].contains(target.captureState)
+            && target.app != nil
             && !hasForegroundSessionMismatch
             && selectedDeviceID != nil
     }
@@ -161,7 +164,7 @@ final class AppState: ObservableObject {
         case "capturable":
             return "已捕获当前应用接口，抓包能力验证通过。"
         case "blocked":
-            return "当前应用未通过抓包准入，请查看状态并修复。"
+            return "前台应用已识别；开始抓包时会自动准备 Frida 和网络环境。"
         default:
             return "正在检测前台应用。"
         }
@@ -329,24 +332,31 @@ final class AppState: ObservableObject {
         captureActionState = .loading
         do {
             let response = try await apiClient.stopCapture(deviceId: selectedDeviceID)
-            activeSessionID = nil
-            flows = []
-            selectedFlowID = nil
-            selectedFlowDetail = nil
-            selectedFlowCurl = ""
+            didStopCapture()
             let okText = response.ok == false ? "停止结果异常" : "抓包已停止"
             captureMessage = okText
             captureActionState = .loaded
             await refreshDevices()
+            await refreshForegroundTarget(forceResolve: true)
         } catch {
             setCaptureFailure(error.localizedDescription)
+        }
+    }
+
+    func didStopCapture() {
+        activeSessionID = nil
+        flows = []
+        selectedFlowID = nil
+        selectedFlowDetail = nil
+        selectedFlowCurl = ""
+        if let foregroundTarget {
+            self.foregroundTarget = foregroundTarget.updating(captureState: "ready", readiness: nil)
         }
     }
 
     func installJenkinsPackage(_ package: JenkinsPackage) async {
         jenkinsInstallState = .loading
         installingJenkinsPackageID = package.id
-        jenkinsMessage = "正在校验安装环境：准备将 \(package.artifactFileName) 安装到 \(selectedDeviceID ?? "目标模拟器")。"
         jenkinsMessage = "正在安装 \(package.artifactFileName)：正在从 Jenkins 下载构建产物并执行 Android 包安装，请保持模拟器在线且不要关闭窗口。"
         do {
             if let installedApp = try await installJenkinsPackageOnSelectedDevice(package) {

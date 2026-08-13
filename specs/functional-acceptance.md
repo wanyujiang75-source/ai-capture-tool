@@ -29,14 +29,19 @@
 2. 模拟器未就绪时安装返回专业、可执行的提示。
 3. 模拟器就绪且当前 Google 准入策略通过时，APK 安装到所选设备并同步应用信息。
 4. 本地上传 APK 与 Jenkins 安装均不能误操作其他设备。
+5. Jenkins 和本地 APK 只作为安装来源，不得直接绑定或覆盖抓包目标。
+6. Android Studio、ADB 等外部方式安装的未知 App 打开后，必须自动登记且保留已有应用元数据。
 
 ## E. 抓包闭环
 
-1. 启动应用、Frida 和抓包后形成 active session。
-2. App 操作产生的新接口实时出现在列表顶部。
-3. flow 详情同时展示请求 headers/body、响应 headers/body、状态、耗时和 cURL。
-4. HTTP 200 且有响应体的 flow 必须能读取响应；无响应必须明确显示 `NO_RESPONSE`，不能伪造内容。
-5. 停止抓包后 exporter、Frida hook、mitmproxy 和项目端口清理，Android proxy 恢复。
+1. Launcher、System UI 和锁屏不得登记为业务目标；普通前台 App 在 5 秒内显示包名和 Activity。
+2. 前台 App 已识别但 Frida 尚未运行时，必须允许“一键开始抓包”并自动完成环境准备。
+3. 启动应用、Frida 和抓包后形成 active session，状态从 `waiting_traffic` 进入 `capturable`。
+4. App 操作产生的新接口实时出现在列表顶部，列表展示完整 URL。
+5. flow 详情同时展示请求 headers/body、响应 headers/body、状态、耗时和 cURL。
+6. HTTP 200 且有响应体的 flow 必须能读取响应；无响应必须明确显示 `NO_RESPONSE`，不能伪造内容。
+7. 活动 Session 与新前台包不一致时禁止自动切换，必须提示先停止当前 Session。
+8. 停止抓包后 exporter、Frida hook、mitmproxy 和项目端口清理，Android proxy 恢复；同一前台 App 可立即开始新 Session。
 
 ## F. 分发到新 Mac
 

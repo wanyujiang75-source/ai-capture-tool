@@ -105,7 +105,7 @@ struct CaptureView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: appState.foregroundTarget?.app == nil ? "app.dashed" : "app.fill")
-                    .foregroundStyle(appState.canStartForegroundCapture ? .green : .orange)
+                    .foregroundStyle(foregroundTargetColor)
                 Text(appState.foregroundTarget?.app?.name ?? "等待前台应用")
                     .font(.headline)
                 Spacer()
@@ -138,8 +138,16 @@ struct CaptureView: View {
         case "ready": "可开始"
         case "waiting_traffic": "等待流量"
         case "capturable": "可抓包"
-        case "blocked": "未就绪"
+        case "blocked": "可自动准备"
         default: "自动检测"
+        }
+    }
+
+    private var foregroundTargetColor: Color {
+        switch appState.foregroundTarget?.captureState {
+        case "ready", "capturable": .green
+        case "blocked": .blue
+        default: .orange
         }
     }
 

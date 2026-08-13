@@ -106,6 +106,36 @@ struct ForegroundTargetTests {
         #expect(state.foregroundCaptureGuidance.contains("先停止"))
     }
 
+    @Test
+    func allowsOneClickPreparationForDetectedBlockedTarget() throws {
+        let state = AppState()
+        state.selectedDeviceID = "device-1"
+        state.foregroundTarget = try decodeTarget(
+            packageName: "com.example.front",
+            captureState: "blocked"
+        )
+
+        #expect(state.canStartForegroundCapture)
+        #expect(state.foregroundCaptureGuidance.contains("自动准备"))
+    }
+
+    @Test
+    func stoppingCaptureClearsStaleCapturableState() throws {
+        let state = AppState()
+        state.selectedDeviceID = "device-1"
+        state.activeSessionID = 42
+        state.foregroundTarget = try decodeTarget(
+            packageName: "com.example.front",
+            captureState: "capturable"
+        )
+
+        state.didStopCapture()
+
+        #expect(state.activeSessionID == nil)
+        #expect(state.foregroundTarget?.captureState == "ready")
+        #expect(state.canStartForegroundCapture)
+    }
+
     private func decodeTarget(
         packageName: String,
         captureState: String
