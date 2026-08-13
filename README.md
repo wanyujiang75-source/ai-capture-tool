@@ -1,6 +1,6 @@
-# AI抓包工具
+# 抓包工具
 
-AI抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 SwiftUI 原生应用，会自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、本地 APK/Jenkins 测试包安装、前台 App 自动识别、抓包启动、接口查看和 cURL 导出。
+抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 SwiftUI 原生应用，会自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、本地 APK/Jenkins 测试包安装、前台 App 自动识别、抓包启动、接口查看和 cURL 导出。
 
 项目默认不包含历史抓包结果、上传 APK、本机数据库、cookie、token 或账号状态。新数据库会创建一台默认本机抓包设备 `device-1 / AI_Capture_AVD_01 / emulator-5554`；如果已有设备数据库或外部设备配置，不会覆盖。
 
@@ -41,6 +41,8 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 ```text
 ~/Library/Application Support/AI抓包工具/runtime-native/
 ```
+
+为兼容旧版本并保留历史抓包、APK 与配置，运行数据目录继续沿用原路径。
 
 包括 SQLite 数据库、抓包结果、上传 APK、日志和临时进程文件。升级 App 不应删除该目录。
 

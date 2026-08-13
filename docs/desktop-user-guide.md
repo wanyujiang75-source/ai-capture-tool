@@ -1,6 +1,6 @@
-# AI抓包工具桌面端使用指南
+# 抓包工具桌面端使用指南
 
-本文面向在自己 Mac 上使用 `AI抓包工具.app` 的测试、产品和开发人员。当前版本仅支持
+本文面向在自己 Mac 上使用 `抓包工具.app` 的测试、产品和开发人员。当前版本仅支持
 macOS + Android；iOS、Windows、Linux 和服务器多人共享不在桌面端 V1 范围内。
 
 ## 1. 使用前准备
@@ -40,7 +40,7 @@ Android Studio，完成 SDK License 接受和基础组件下载。
    shasum -a 256 -c AI-Capture-Desktop-*.zip.sha256
    ```
 
-3. 解压 ZIP，把 `AI抓包工具.app` 移入 `/Applications`。
+3. 解压 ZIP，把 `抓包工具.app` 移入 `/Applications`。
 4. 双击打开。正式包应直接通过 Gatekeeper；内部开发包需要右键选择“打开”，或在
    “系统设置 -> 隐私与安全性”中允许。
 
@@ -104,7 +104,7 @@ Launcher、System UI 和锁屏不会被误登记为业务 App。
 export JENKINS_BASE_URL="http://jenkins.example.internal:8080"
 export JENKINS_USERNAME="jenkins-user"
 export JENKINS_PASSWORD="<从安全存储读取>"
-open -na "/Applications/AI抓包工具.app"
+open -na "/Applications/抓包工具.app"
 ```
 
 不要把真实密码写入仓库、截图、抓包说明或共享脚本。
@@ -211,7 +211,7 @@ Session 证据，再针对该 App 评估额外适配，不应把广告流量或 
 ## 10. 卸载
 
 1. 先停止活动抓包并退出桌面 App。
-2. 删除 `/Applications/AI抓包工具.app`。
+2. 删除 `/Applications/抓包工具.app`。若仍保留升级前的 `/Applications/AI抓包工具.app`，也可一并删除。
 3. 如确认不再需要历史数据，再手动删除：
 
    ```text

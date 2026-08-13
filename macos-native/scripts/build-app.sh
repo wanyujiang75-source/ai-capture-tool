@@ -3,9 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_ROOT="$(cd "$ROOT_DIR/.." && pwd)"
-APP_NAME="${APP_NAME:-AI抓包工具}"
+APP_NAME="${APP_NAME:-抓包工具}"
 CONFIGURATION="${CONFIGURATION:-debug}"
 APP_DIR="$ROOT_DIR/build/$APP_NAME.app"
+LEGACY_APP_DIR="$ROOT_DIR/build/AI抓包工具.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
@@ -26,6 +27,9 @@ if [[ ! -x "$EXECUTABLE" ]]; then
 fi
 
 rm -rf "$APP_DIR"
+if [[ "$APP_NAME" == "抓包工具" ]]; then
+  rm -rf "$LEGACY_APP_DIR"
+fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
 

@@ -15,6 +15,7 @@ else
   DESKTOP_ARCHIVE_NAME="AI-Capture-Desktop-$VERSION-development-$HOST_ARCH.zip"
 fi
 DESKTOP_ARCHIVE_PATH="$ROOT_DIR/release/$DESKTOP_ARCHIVE_NAME"
+NATIVE_APP_PATH="$ROOT_DIR/macos-native/build/抓包工具.app"
 
 write_checksum() {
   local target_path="$1"
@@ -49,7 +50,7 @@ case "$RELEASE_KIND" in
 esac
 
 if [[ "$HOST_ARCH" != "arm64" ]]; then
-  echo "AI抓包工具 V1 desktop release requires Apple Silicon arm64; current architecture: $HOST_ARCH" >&2
+  echo "抓包工具 V1 desktop release requires Apple Silicon arm64; current architecture: $HOST_ARCH" >&2
   exit 1
 fi
 
@@ -66,7 +67,7 @@ if command -v swift >/dev/null 2>&1; then
   (cd "$ROOT_DIR/macos-native" && MACOS_SIGN_IDENTITY="$SIGN_IDENTITY" ./scripts/build-app.sh >/dev/null)
 fi
 
-if [[ ! -d "$ROOT_DIR/macos-native/build/AI抓包工具.app" ]]; then
+if [[ ! -d "$NATIVE_APP_PATH" ]]; then
   echo "native macOS app is missing; install Xcode command line tools and run macos-native/scripts/build-app.sh before packaging." >&2
   exit 1
 fi
@@ -74,11 +75,11 @@ fi
 rm -f "$DESKTOP_ARCHIVE_PATH" "$DESKTOP_ARCHIVE_PATH.sha256"
 if [[ "$RELEASE_KIND" == "distribution" ]]; then
   "$ROOT_DIR/release/notarize-app.sh" \
-    "$ROOT_DIR/macos-native/build/AI抓包工具.app" \
+    "$NATIVE_APP_PATH" \
     "$DESKTOP_ARCHIVE_PATH"
 else
   ditto -c -k --sequesterRsrc --keepParent \
-    "$ROOT_DIR/macos-native/build/AI抓包工具.app" \
+    "$NATIVE_APP_PATH" \
     "$DESKTOP_ARCHIVE_PATH"
   write_checksum "$DESKTOP_ARCHIVE_PATH"
 fi

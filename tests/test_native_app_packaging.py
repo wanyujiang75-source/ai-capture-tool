@@ -18,7 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = ROOT / "macos-native" / "scripts" / "build-app.sh"
-APP_PATH = ROOT / "macos-native" / "build" / "AI抓包工具.app"
+APP_PATH = ROOT / "macos-native" / "build" / "抓包工具.app"
+LEGACY_APP_PATH = ROOT / "macos-native" / "build" / "AI抓包工具.app"
 PACKAGE_SCRIPT = ROOT / "release" / "package.sh"
 NOTARIZE_SCRIPT = ROOT / "release" / "notarize-app.sh"
 RELEASE_DIR = ROOT / "release"
@@ -79,8 +80,12 @@ class NativeAppPackagingTests(unittest.TestCase):
 
         with info_plist.open("rb") as plist_file:
             bundle_properties = plistlib.load(plist_file)
+        self.assertEqual("抓包工具", bundle_properties["CFBundleExecutable"])
+        self.assertEqual("抓包工具", bundle_properties["CFBundleName"])
+        self.assertEqual("抓包工具", bundle_properties["CFBundleDisplayName"])
         self.assertEqual("AppIcon", bundle_properties["CFBundleIconFile"])
         self.assertTrue(icon_path.is_file(), icon_path)
+        self.assertFalse(LEGACY_APP_PATH.exists(), LEGACY_APP_PATH)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             iconset_path = Path(temporary_directory) / "AppIcon.iconset"
@@ -307,9 +312,9 @@ class NativeAppPackagingTests(unittest.TestCase):
                 ["ditto", "-x", "-k", str(archive), str(extracted)],
                 check=True,
             )
-            extracted_app = extracted / "AI抓包工具.app"
+            extracted_app = extracted / "抓包工具.app"
             self.assertTrue(
-                (extracted_app / "Contents" / "MacOS" / "AI抓包工具").is_file()
+                (extracted_app / "Contents" / "MacOS" / "抓包工具").is_file()
             )
             verification = subprocess.run(
                 [

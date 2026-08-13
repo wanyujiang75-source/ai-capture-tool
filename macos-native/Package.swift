@@ -7,7 +7,7 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "AI抓包工具", targets: ["AICaptureNativeApp"])
+        .executable(name: "抓包工具", targets: ["AICaptureNativeApp"])
     ],
     targets: [
         .executableTarget(

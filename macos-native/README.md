@@ -1,4 +1,4 @@
-# AI抓包工具 macOS 原生桌面端
+# 抓包工具 macOS 原生桌面端
 
 这是 SwiftUI 原生桌面端，不使用 React/WebView 作为主界面。普通用户请先阅读
 [安装指南](../INSTALL.md) 和 [桌面端使用指南](../docs/desktop-user-guide.md)；本文件只说明开发、构建和发布。
@@ -25,7 +25,7 @@ cd macos-native
 swift test
 swift build
 ./scripts/build-app.sh
-open "build/AI抓包工具.app"
+open "build/抓包工具.app"
 ```
 
 说明：SwiftPM 裸可执行文件只用于编译验证，实际桌面窗口通过 `.app` 包运行。
@@ -69,5 +69,5 @@ env -u CAPTURE_DEVICES_CONFIG -u CAPTURE_RUNTIME_DIR \
 swift test --package-path macos-native
 macos-native/scripts/build-app.sh
 codesign --verify --deep --strict --verbose=2 \
-  "macos-native/build/AI抓包工具.app"
+  "macos-native/build/抓包工具.app"
 ```

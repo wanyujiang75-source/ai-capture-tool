@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI抓包工具</title>
+    <title>抓包工具</title>
     <style>
       :root {
         color: #151923;
@@ -299,7 +299,7 @@
         <div class="brand">
           <span class="brand-mark">AI</span>
           <div>
-            <strong>AI抓包工具</strong>
+            <strong>抓包工具</strong>
             <small>桌面端工作台 · 本机抓包服务由应用自动管理</small>
           </div>
         </div>
@@ -319,7 +319,7 @@
       </header>
 
       <section class="workspace">
-        <iframe id="consoleFrame" class="console-frame" title="AI抓包工具控制台"></iframe>
+        <iframe id="consoleFrame" class="console-frame" title="抓包工具控制台"></iframe>
         <div id="launchCover" class="launch-cover">
           <div class="launch-card">
             <div class="eyebrow">Desktop Application</div>
@@ -411,7 +411,7 @@
 
       async function refreshInfo() {
         if (!invoke) {
-          setState("error", "Tauri API 不可用", "请从 AI抓包工具.app 启动，不要直接打开 HTML 文件。");
+          setState("error", "Tauri API 不可用", "请从 抓包工具.app 启动，不要直接打开 HTML 文件。");
           return;
         }
         try {

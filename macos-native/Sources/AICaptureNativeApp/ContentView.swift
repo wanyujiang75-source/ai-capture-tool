@@ -9,7 +9,7 @@ struct ContentView: View {
                 Label(section.rawValue, systemImage: section.systemImage)
                     .tag(section)
             }
-            .navigationTitle("AI抓包工具")
+            .navigationTitle("抓包工具")
         } detail: {
             switch appState.selectedSection {
             case .setup:

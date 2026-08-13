@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.identifier = Self.mainWindowIdentifier
-        window.title = "AI抓包工具"
+        window.title = "抓包工具"
         window.minSize = NSSize(width: 1180, height: 760)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(

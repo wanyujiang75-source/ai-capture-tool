@@ -1,6 +1,6 @@
-# AI抓包工具安装指南
+# 抓包工具安装指南
 
-本文是 AI抓包工具的统一安装入口。Codex 辅助安装只是其中一条便捷路径；也可以手动安装、从源码构建或升级已有版本。
+本文是抓包工具的统一安装入口。Codex 辅助安装只是其中一条便捷路径；也可以手动安装、从源码构建或升级已有版本。
 
 ## 选择安装方式
 
@@ -19,7 +19,7 @@
 把本文件交给 Codex，或者把下面这段话直接发送给 Codex：
 
 ```text
-请阅读并严格按照下面的安装指南，在这台 Mac 上安装和验收 AI抓包工具：
+请阅读并严格按照下面的安装指南，在这台 Mac 上安装和验收抓包工具：
 https://github.com/wanyujiang75-source/ai-capture-tool/blob/main/INSTALL.md
 
 请优先从该仓库的 GitHub Releases 下载最新的 macOS Apple Silicon 桌面 ZIP，不要从第三方地址下载。先检查 macOS 版本、CPU 架构、磁盘空间、已有安装和 Android SDK；下载后校验 Release 提供的 SHA-256，再安装到 /Applications。若没有写入 /Applications 的权限，安装到当前用户的 ~/Applications。
@@ -58,7 +58,7 @@ Codex 可以自动完成：
    shasum -a 256 -c AI-Capture-Desktop-*.zip.sha256
    ```
 
-5. 双击解压 ZIP，把 `AI抓包工具.app` 拖入“应用程序”。升级时在 Finder 中选择“替换”。
+5. 双击解压 ZIP，把 `抓包工具.app` 拖入“应用程序”。若安装过旧版 `AI抓包工具.app`，先保留旧版，待新版验收通过后再删除旧 App。
 6. 双击启动。正式公证包应直接通过 Gatekeeper；内部开发包可能需要右键选择“打开”，或在“系统设置 -> 隐私与安全性”中手动允许。
 
 不要直接在 ZIP 预览窗口内运行 App，也不要用命令关闭 Gatekeeper 或移除安全隔离属性。
@@ -75,7 +75,7 @@ cd ai-capture-tool
 npm --prefix web ci
 npm --prefix web run build
 macos-native/scripts/build-app.sh
-open "macos-native/build/AI抓包工具.app"
+open "macos-native/build/抓包工具.app"
 ```
 
 本地构建默认使用 ad-hoc 签名，仅用于开发验证。给他人分发时必须使用 Developer ID 签名并完成 Apple notarization，详见 [桌面端开发与发布说明](macos-native/README.md)。
@@ -84,7 +84,7 @@ open "macos-native/build/AI抓包工具.app"
 
 1. 在桌面端停止当前抓包并退出应用。
 2. 按路径 A 或路径 B 下载并校验新版本。
-3. 替换 `/Applications/AI抓包工具.app`；不要删除应用数据目录或 Android AVD。
+3. 把 `/Applications/抓包工具.app` 更新为新版本；从旧名称升级时，新旧 App 可短暂并存，验收新版后再删除 `/Applications/AI抓包工具.app`。不要删除应用数据目录或 Android AVD。
 4. 启动新版本，确认“环境”页显示内部服务已就绪。
 
 升级 App 不会要求删除以下数据目录：
@@ -101,7 +101,7 @@ open "macos-native/build/AI抓包工具.app"
 
 1. 从 [Android 官方网站](https://developer.android.com/studio) 安装 Android Studio。
 2. 至少启动一次 Android Studio，完成 SDK 组件安装和 License 接受。
-3. 打开 AI抓包工具，在“环境”页确认内部服务已就绪。
+3. 打开抓包工具，在“环境”页确认内部服务已就绪。
 4. 在“抓包”页执行“一键准备环境”。工具会定位 SDK、准备 Google Play 系统镜像、创建模拟器并检查网络和 Frida。
 5. 模拟器启动后手动解锁；目标 App 需要 Google 登录时，再手动登录。
 
@@ -109,7 +109,7 @@ open "macos-native/build/AI抓包工具.app"
 
 ## 安装后验收
 
-1. 启动 `AI抓包工具.app`。
+1. 启动 `抓包工具.app`。
 2. “环境”页应显示内部服务已就绪。
 3. 可选终端检查：
 
