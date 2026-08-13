@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from .device_discovery import parse_adb_devices
+from .foreground import empty_foreground_state, parse_foreground_component
 from .network import build_device_network_state
 from .status import parse_capture_status
 
@@ -264,6 +265,22 @@ class ConsoleRunner:
             "log_file": str(self.runtime_dir / f"emulator-{self.avd_name}.log"),
             "devices": devices.stdout.strip(),
         }
+
+    def foreground_app_state(self) -> Dict[str, str]:
+        status = self.emulator_status()
+        if not status.get("adb_online"):
+            return empty_foreground_state("device_offline")
+        if not status.get("unlocked"):
+            return empty_foreground_state("device_locked")
+
+        parsed = parse_foreground_component(str(status.get("foreground") or ""))
+        if parsed["state"] == "ready":
+            return parsed
+
+        activities = self.adb(["shell", "dumpsys", "activity", "activities"], timeout=15)
+        if not activities.ok:
+            return parsed
+        return parse_foreground_component(activities.stdout)
 
     def start_emulator(self, *, visible: bool = False) -> CommandResult:
         retained_check = self.retained_target_check()

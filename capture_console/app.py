@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .device_discovery import build_discovered_devices
+from .foreground import capture_state
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
 from .local_config import load_local_config
 from .logcat import LogcatService
@@ -1741,6 +1742,90 @@ def api_cleanup(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 @app.get("/api/apps")
 def api_list_apps() -> Dict[str, Any]:
     return {"apps": store.list_apps()}
+
+
+@app.get("/api/devices/{device_id}/foreground-app")
+def api_foreground_app(device_id: str) -> Dict[str, Any]:
+    return runner_for_device_id(device_id).foreground_app_state()
+
+
+@app.post("/api/devices/{device_id}/foreground-target/resolve")
+def api_resolve_foreground_target(device_id: str) -> Dict[str, Any]:
+    device_runner = runner_for_device_id(device_id)
+    foreground = device_runner.foreground_app_state()
+    if foreground.get("state") != "ready":
+        return {
+            **foreground,
+            "capture_state": "blocked" if foreground.get("state") != "no_target" else "detected",
+            "app": None,
+            "version": None,
+            "readiness": None,
+        }
+
+    package_name = str(foreground["package_name"])
+    version = device_runner.package_info(package_name)
+    if not version.get("installed"):
+        return {
+            **foreground,
+            "state": "package_missing",
+            "capture_state": "blocked",
+            "app": None,
+            "version": version,
+            "readiness": None,
+        }
+
+    activity = str(version.get("activity") or foreground.get("activity") or "")
+    version["activity"] = activity
+    target_app = store.get_app_by_package(package_name)
+    if target_app is None:
+        target_app = store.create_app(
+            name=package_name,
+            package_name=package_name,
+            activity=activity,
+            environment="production",
+            default_mode="auto",
+            notes="自动识别自前台应用",
+        )
+    target_app = store.update_app_version(target_app["id"], version)
+    store.update_device_app_version(device_id, target_app["id"], version)
+
+    reconcile_active_session(device_id=device_id)
+    active = store.active_session(device_id=device_id)
+    flow_count = 0
+    if active and active.get("package_name") == package_name:
+        flow_count = len(scan_capture(Path(active["outdir"])))
+
+    capture_status = device_runner.capture_status()
+    health_mode = target_app.get("last_success_mode") or target_app.get("default_mode") or "system"
+    if health_mode == "auto":
+        health_mode = "system"
+    health = device_runner.health_check(
+        package_name=package_name,
+        mode=health_mode,
+        activity=activity,
+    )
+    readiness = build_readiness_report(
+        app=target_app,
+        health=health,
+        capture_status=capture_status,
+        active_session=active,
+        flow_count=flow_count,
+        foreground=str(foreground.get("component") or ""),
+    )
+    readiness_state = "blocked" if any(check.get("state") == "fail" for check in readiness["checks"]) else "ready"
+    target_capture_state = capture_state(
+        app=target_app,
+        active_session=active,
+        flow_count=flow_count,
+        readiness_state=readiness_state,
+    )
+    return {
+        **foreground,
+        "capture_state": target_capture_state,
+        "app": target_app,
+        "version": version,
+        "readiness": readiness,
+    }
 
 
 @app.post("/api/apps")

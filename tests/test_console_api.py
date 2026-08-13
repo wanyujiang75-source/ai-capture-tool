@@ -41,6 +41,188 @@ class CaptureConsoleApiTests(unittest.TestCase):
             idle_release_minutes=idle_release_minutes,
         )
 
+    def test_foreground_target_resolve_registers_unknown_installed_app(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class ForegroundRunner:
+            def for_device(self, device):
+                return self
+
+            def foreground_app_state(self):
+                return {
+                    "state": "ready",
+                    "package_name": "com.example.newapp",
+                    "activity": "com.example.newapp/.MainActivity",
+                    "component": "com.example.newapp/.MainActivity",
+                }
+
+            def package_info(self, package_name):
+                return {
+                    "package_name": package_name,
+                    "installed": True,
+                    "activity": "com.example.newapp/.MainActivity",
+                    "version_name": "2.4.0",
+                    "version_code": "24",
+                    "last_update_time": "2026-08-13 17:00:00",
+                    "installer_package": "com.android.shell",
+                    "signature_hint": "abc123",
+                    "error": "",
+                }
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "stopped", "frida_hook": "stopped"}
+
+            def emulator_status(self):
+                return {"foreground": "com.example.newapp/.MainActivity"}
+
+            def health_check(self, **kwargs):
+                return {
+                    "ok": True,
+                    "resolved_activity": "com.example.newapp/.MainActivity",
+                    "checks": [
+                        {"name": "retained_emulator", "ok": True},
+                        {"name": "adb_device", "ok": True},
+                        {"name": "android_unlocked", "ok": True},
+                        {"name": "package_activity", "ok": True},
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = ForegroundRunner()
+
+                result = app_module.api_resolve_foreground_target("device-1")
+
+                self.assertEqual(result["state"], "ready")
+                self.assertEqual(result["capture_state"], "ready")
+                self.assertEqual(result["app"]["package_name"], "com.example.newapp")
+                self.assertEqual(result["app"]["default_mode"], "auto")
+                self.assertEqual(result["app"]["environment"], "production")
+                self.assertEqual(result["version"]["version_name"], "2.4.0")
+                self.assertEqual(len(app_module.store.list_apps()), 1)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_foreground_target_resolve_preserves_existing_app_metadata(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class ForegroundRunner:
+            def for_device(self, device):
+                return self
+
+            def foreground_app_state(self):
+                return {
+                    "state": "ready",
+                    "package_name": "com.example.known",
+                    "activity": "com.example.known/.UpdatedActivity",
+                    "component": "com.example.known/.UpdatedActivity",
+                }
+
+            def package_info(self, package_name):
+                return {
+                    "package_name": package_name,
+                    "installed": True,
+                    "activity": "com.example.known/.UpdatedActivity",
+                    "version_name": "3.0.0",
+                    "version_code": "30",
+                    "last_update_time": "",
+                    "installer_package": "",
+                    "signature_hint": "",
+                    "error": "",
+                }
+
+            def capture_status(self):
+                return {"health": "idle", "exporter": "stopped", "frida_hook": "stopped"}
+
+            def emulator_status(self):
+                return {"foreground": "com.example.known/.UpdatedActivity"}
+
+            def health_check(self, **kwargs):
+                return {
+                    "ok": True,
+                    "resolved_activity": "com.example.known/.UpdatedActivity",
+                    "checks": [
+                        {"name": "retained_emulator", "ok": True},
+                        {"name": "adb_device", "ok": True},
+                        {"name": "android_unlocked", "ok": True},
+                        {"name": "package_activity", "ok": True},
+                    ],
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                existing = app_module.store.create_app(
+                    name="Human Name",
+                    package_name="com.example.known",
+                    activity="",
+                    environment="test",
+                    default_mode="flutter-socks",
+                    notes="keep this note",
+                )
+                app_module.store.update_app(existing["id"], last_success_mode="flutter-socks")
+                app_module.runner = ForegroundRunner()
+
+                result = app_module.api_resolve_foreground_target("device-1")
+
+                self.assertEqual(result["app"]["name"], "Human Name")
+                self.assertEqual(result["app"]["environment"], "test")
+                self.assertEqual(result["app"]["default_mode"], "flutter-socks")
+                self.assertEqual(result["app"]["notes"], "keep this note")
+                self.assertEqual(result["app"]["last_success_mode"], "flutter-socks")
+                self.assertEqual(result["app"]["activity"], "com.example.known/.UpdatedActivity")
+                self.assertEqual(len(app_module.store.list_apps()), 1)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_foreground_target_does_not_register_system_or_missing_package(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class ForegroundRunner:
+            package_installed = True
+
+            def for_device(self, device):
+                return self
+
+            def foreground_app_state(self):
+                if self.package_installed:
+                    return {"state": "no_target", "package_name": "", "activity": "", "component": ""}
+                return {
+                    "state": "ready",
+                    "package_name": "com.example.missing",
+                    "activity": "com.example.missing/.MainActivity",
+                    "component": "com.example.missing/.MainActivity",
+                }
+
+            def package_info(self, package_name):
+                return {"package_name": package_name, "installed": False, "error": "not found"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                fake_runner = ForegroundRunner()
+                app_module.runner = fake_runner
+
+                no_target = app_module.api_resolve_foreground_target("device-1")
+                fake_runner.package_installed = False
+                missing = app_module.api_resolve_foreground_target("device-1")
+
+                self.assertEqual(no_target["state"], "no_target")
+                self.assertEqual(missing["state"], "package_missing")
+                self.assertEqual(app_module.store.list_apps(), [])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_devices_api_seeds_single_downloadable_default_device_for_new_project(self):
         original_store = app_module.store
         original_runner = app_module.runner
