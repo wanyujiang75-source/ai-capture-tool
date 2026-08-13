@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DeviceAppView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var showingAPKPicker = false
 
     private let columns = [
         GridItem(.adaptive(minimum: 320), spacing: 14, alignment: .top)
@@ -13,12 +15,27 @@ struct DeviceAppView: View {
                 header
                 loadSummary
                 deviceSection
+                localPackageSection
                 jenkinsSection
             }
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .fileImporter(
+            isPresented: $showingAPKPicker,
+            allowedContentTypes: [UTType(filenameExtension: "apk", conformingTo: .data) ?? .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let fileURL = urls.first else { return }
+                Task { await appState.installLocalAPK(fileURL) }
+            case .failure(let error):
+                appState.localInstallMessage = "无法读取所选 APK：\(error.localizedDescription)"
+                appState.localInstallState = .failed(appState.localInstallMessage)
+            }
+        }
         .task {
             if appState.deviceLoadState == .idle, appState.appLoadState == .idle {
                 await appState.refreshWorkspaceData()
@@ -31,7 +48,7 @@ struct DeviceAppView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("设备与应用")
                     .font(.largeTitle.bold())
-                Text("选择设备，直接从 Jenkins 企业级构建任务安装最新测试包；生产包可通过用户自主添加流程进入抓包。")
+                Text("选择设备后，可安装本地 APK 或 Jenkins 测试包；打开任一 App 后会自动识别抓包目标。")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -43,6 +60,34 @@ struct DeviceAppView: View {
                 Label("刷新列表", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private var localPackageSection: some View {
+        SectionPanel(title: "自主安装", subtitle: "本地 APK") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Text("安装设备：\(appState.selectedDeviceID ?? "未选择")")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        showingAPKPicker = true
+                    } label: {
+                        Label("选择本地 APK", systemImage: "folder.badge.plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(appState.localInstallState == .loading)
+                    if appState.localInstallState == .loading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                Text(appState.localInstallMessage.isEmpty
+                     ? "本地 APK 默认作为生产包安装；安装完成后请在模拟器中手动打开。"
+                     : appState.localInstallMessage)
+                    .font(.callout)
+                    .foregroundStyle(localInstallMessageColor)
+            }
         }
     }
 
@@ -159,6 +204,17 @@ struct DeviceAppView: View {
 
     private var jenkinsMessageColor: Color {
         switch appState.jenkinsInstallState {
+        case .failed:
+            .red
+        case .loaded:
+            .green
+        default:
+            .secondary
+        }
+    }
+
+    private var localInstallMessageColor: Color {
+        switch appState.localInstallState {
         case .failed:
             .red
         case .loaded:

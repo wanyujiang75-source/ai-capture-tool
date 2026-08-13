@@ -17,7 +17,15 @@ protocol ForegroundTargetAPI: Sendable {
     func getAppReadiness(appID: Int, deviceID: String) async throws -> ForegroundReadinessResponse
 }
 
-struct APIClient: LogcatAPI, ForegroundTargetAPI, @unchecked Sendable {
+protocol LocalPackageInstallAPI: Sendable {
+    func installLocalAPK(
+        fileURL: URL,
+        deviceID: String,
+        environment: String
+    ) async throws -> CaptureApp?
+}
+
+struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -89,6 +97,40 @@ struct APIClient: LogcatAPI, ForegroundTargetAPI, @unchecked Sendable {
                 environment: environment
             )
         )
+    }
+
+    func installLocalAPK(
+        fileURL: URL,
+        deviceID: String,
+        environment: String
+    ) async throws -> CaptureApp? {
+        var request = URLRequest(
+            url: url(
+                path: "api/apps/install",
+                queryItems: [
+                    URLQueryItem(name: "filename", value: fileURL.lastPathComponent),
+                    URLQueryItem(name: "environment", value: environment),
+                    URLQueryItem(name: "device_id", value: deviceID)
+                ]
+            )
+        )
+        request.httpMethod = "POST"
+        request.timeoutInterval = 900
+        request.setValue("application/vnd.android.package-archive", forHTTPHeaderField: "Content-Type")
+
+        let (data, response) = try await session.upload(for: request, fromFile: fileURL)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw APIClientError.httpStatus(httpResponse.statusCode, body)
+        }
+        do {
+            return try decoder.decode(JenkinsInstallResponse.self, from: data).app
+        } catch {
+            throw APIClientError.decoding(error.localizedDescription)
+        }
     }
 
     func prepareFrida(deviceId: String) async throws -> BasicActionResponse {

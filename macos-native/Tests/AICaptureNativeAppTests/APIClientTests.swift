@@ -90,6 +90,51 @@ struct APIClientTests {
     }
 
     @Test
+    func uploadsLocalAPKToSelectedDeviceAsProductionPackage() async throws {
+        CapturingURLProtocol.reset(
+            responseData: Data(
+                """
+                {
+                  "app": {
+                    "id": 12,
+                    "platform": "android",
+                    "environment": "production",
+                    "name": "Local App",
+                    "package_name": "com.example.local",
+                    "default_mode": "auto"
+                  }
+                }
+                """.utf8
+            )
+        )
+        let client = makeClient()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("My App 42.apk")
+        try Data("apk-bytes".utf8).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let response = try await client.installLocalAPK(
+            fileURL: fileURL,
+            deviceID: "device-3",
+            environment: "production"
+        )
+
+        let request = try #require(CapturingURLProtocol.observedRequests.last)
+        let requestURL = try #require(request.url)
+        let components = try #require(URLComponents(url: requestURL, resolvingAgainstBaseURL: false))
+        #expect(request.httpMethod == "POST")
+        #expect(components.path == "/api/apps/install")
+        #expect(Set(components.queryItems ?? []) == Set([
+            URLQueryItem(name: "filename", value: "My App 42.apk"),
+            URLQueryItem(name: "environment", value: "production"),
+            URLQueryItem(name: "device_id", value: "device-3")
+        ]))
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/vnd.android.package-archive")
+        #expect(request.timeoutInterval == 900)
+        #expect(response?.packageName == "com.example.local")
+    }
+
+    @Test
     func jenkinsInstallAllowsLongArtifactDownloads() async throws {
         CapturingURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral

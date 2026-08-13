@@ -23,7 +23,6 @@ final class AppState: ObservableObject {
     @Published var jenkinsMessage = ""
     @Published var selectedDeviceID: String?
     @Published var selectedAppID: Int?
-    @Published var selectedJenkinsPackageID: String?
     @Published var captureActionState: LoadState = .idle
     @Published var captureMessage = ""
     @Published var activeSessionID: Int?
@@ -35,22 +34,26 @@ final class AppState: ObservableObject {
     @Published var flowDetailLoadState: LoadState = .idle
     @Published var foregroundTarget: ForegroundTargetResponse?
     @Published var foregroundTargetLoadState: LoadState = .idle
+    @Published var localInstallState: LoadState = .idle
+    @Published var localInstallMessage = ""
 
     private let runtimeManager: RuntimeManager
     private let apiClient: APIClient
     private let foregroundAPI: any ForegroundTargetAPI
-    private var installedAppIDByJenkinsTargetKey: [String: Int] = [:]
+    private let packageInstallAPI: any LocalPackageInstallAPI
     private var lastForegroundComponent: String?
     private var lastForegroundDeviceID: String?
 
     init(
         runtimeManager: RuntimeManager = .shared,
         apiClient: APIClient = APIClient(),
-        foregroundAPI: (any ForegroundTargetAPI)? = nil
+        foregroundAPI: (any ForegroundTargetAPI)? = nil,
+        packageInstallAPI: (any LocalPackageInstallAPI)? = nil
     ) {
         self.runtimeManager = runtimeManager
         self.apiClient = apiClient
         self.foregroundAPI = foregroundAPI ?? apiClient
+        self.packageInstallAPI = packageInstallAPI ?? apiClient
         self.runtimeDirectory = runtimeManager.runtimeDirectory
     }
 
@@ -126,13 +129,6 @@ final class AppState: ObservableObject {
             return nil
         }
         return apps.first { $0.id == selectedAppID }
-    }
-
-    var selectedJenkinsPackage: JenkinsPackage? {
-        guard let selectedJenkinsPackageID else {
-            return nil
-        }
-        return jenkinsPackages.first { $0.id == selectedJenkinsPackageID }
     }
 
     var hasForegroundSessionMismatch: Bool {
@@ -281,23 +277,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    func launchSelectedApp() async {
-        guard let selectedDeviceID else {
-            setCaptureFailure("请先选择设备。")
-            return
-        }
-        captureActionState = .loading
-        do {
-            let app = try await resolveSelectedTargetApp()
-            _ = try await apiClient.launchApp(appId: app.id, deviceId: selectedDeviceID)
-            captureMessage = "应用已打开：\(app.name ?? app.packageName ?? "目标应用")。"
-            captureActionState = .loaded
-            await refreshDevices()
-        } catch {
-            setCaptureFailure(error.localizedDescription)
-        }
-    }
-
     func startSelectedCapture() async {
         guard let selectedDeviceID else {
             setCaptureFailure("请先选择设备。")
@@ -371,9 +350,9 @@ final class AppState: ObservableObject {
         jenkinsMessage = "正在安装 \(package.artifactFileName)：正在从 Jenkins 下载构建产物并执行 Android 包安装，请保持模拟器在线且不要关闭窗口。"
         do {
             if let installedApp = try await installJenkinsPackageOnSelectedDevice(package) {
-                jenkinsMessage = "已安装 \(installedApp.name ?? package.artifactFileName)。"
+                jenkinsMessage = "已安装 \(installedApp.name ?? package.artifactFileName)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
             } else {
-                jenkinsMessage = "已安装 \(package.artifactFileName)。"
+                jenkinsMessage = "已安装 \(package.artifactFileName)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
             }
             jenkinsInstallState = .loaded
         } catch {
@@ -382,6 +361,60 @@ final class AppState: ObservableObject {
             jenkinsInstallState = .failed(message)
         }
         installingJenkinsPackageID = nil
+    }
+
+    func installLocalAPK(_ fileURL: URL) async {
+        guard fileURL.pathExtension.lowercased() == "apk" else {
+            let message = "请选择扩展名为 .apk 的 Android 安装包。"
+            localInstallMessage = message
+            localInstallState = .failed(message)
+            return
+        }
+        if let readinessMessage = selectedDeviceInstallReadinessMessage() {
+            localInstallMessage = readinessMessage
+            localInstallState = .failed(readinessMessage)
+            return
+        }
+        guard let selectedDeviceID else {
+            let message = "未选择安装目标：请先选择一台已启动的 Android 模拟器后再安装。"
+            localInstallMessage = message
+            localInstallState = .failed(message)
+            return
+        }
+
+        localInstallState = .loading
+        localInstallMessage = "正在安装 \(fileURL.lastPathComponent)：正在校验 APK 并安装到 \(selectedDeviceID)，请保持模拟器在线。"
+        let accessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+        do {
+            let installedApp = try await packageInstallAPI.installLocalAPK(
+                fileURL: fileURL,
+                deviceID: selectedDeviceID,
+                environment: "production"
+            )
+            if let app = installedApp, !apps.contains(where: { $0.id == app.id }) {
+                apps.append(app)
+            }
+            didInstallPackage()
+            let name = installedApp?.name ?? fileURL.lastPathComponent
+            localInstallMessage = "已安装 \(name)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
+            localInstallState = .loaded
+        } catch {
+            let message = friendlyJenkinsInstallError(error)
+            localInstallMessage = message
+            localInstallState = .failed(message)
+        }
+    }
+
+    func didInstallPackage() {
+        foregroundTarget = nil
+        selectedAppID = nil
+        lastForegroundComponent = nil
+        lastForegroundDeviceID = nil
     }
 
     private func selectedDeviceInstallReadinessMessage() -> String? {
@@ -403,31 +436,6 @@ final class AppState: ObservableObject {
         return nil
     }
 
-    private func resolveSelectedTargetApp() async throws -> CaptureApp {
-        guard let package = selectedJenkinsPackage else {
-            if selectedJenkinsPackageID != nil {
-                throw UserVisibleError("当前 Jenkins 包已不可用：请刷新 Jenkins 列表后重新选择。")
-            }
-            throw UserVisibleError("请先选择 Jenkins 安装包。")
-        }
-
-        if let selectedDeviceID {
-            let targetKey = jenkinsInstallCacheKey(deviceID: selectedDeviceID, packageID: package.id)
-            if let appID = installedAppIDByJenkinsTargetKey[targetKey],
-               let installedApp = apps.first(where: { $0.id == appID }) {
-                selectedAppID = installedApp.id
-                return installedApp
-            }
-        }
-
-        captureMessage = "正在安装 \(package.artifactFileName)：首次使用该 Jenkins 构建前，需要先安装到当前模拟器。"
-        let installedApp = try await installJenkinsPackageOnSelectedDevice(package)
-        guard let installedApp else {
-            throw UserVisibleError("Jenkins 包已安装，但后端未返回可启动应用信息，请刷新后重试。")
-        }
-        return installedApp
-    }
-
     private func installJenkinsPackageOnSelectedDevice(_ package: JenkinsPackage) async throws -> CaptureApp? {
         await refreshDevices()
         if let readinessMessage = selectedDeviceInstallReadinessMessage() {
@@ -442,18 +450,15 @@ final class AppState: ObservableObject {
             environment: package.environment ?? "test"
         )
         if let installedApp = response.app {
-            selectedAppID = installedApp.id
-            let targetKey = jenkinsInstallCacheKey(deviceID: selectedDeviceID, packageID: package.id)
-            installedAppIDByJenkinsTargetKey[targetKey] = installedApp.id
+            if let index = apps.firstIndex(where: { $0.id == installedApp.id }) {
+                apps[index] = installedApp
+            } else {
+                apps.append(installedApp)
+            }
         }
-        await refreshDeviceAndApps()
-        return response.app.flatMap { responseApp in
-            apps.first(where: { $0.id == responseApp.id }) ?? responseApp
-        }
-    }
-
-    private func jenkinsInstallCacheKey(deviceID: String, packageID: String) -> String {
-        "\(deviceID)|\(packageID)"
+        didInstallPackage()
+        await refreshDevices()
+        return response.app
     }
 
     private func friendlyJenkinsInstallError(_ error: Error) -> String {
@@ -479,9 +484,6 @@ final class AppState: ObservableObject {
         }
         if selectedAppID == nil || !apps.contains(where: { $0.id == selectedAppID }) {
             selectedAppID = apps.first?.id
-        }
-        if selectedJenkinsPackageID == nil || !jenkinsPackages.contains(where: { $0.id == selectedJenkinsPackageID }) {
-            selectedJenkinsPackageID = jenkinsPackages.first?.id
         }
     }
 
