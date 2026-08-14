@@ -41,8 +41,11 @@ Android Studio，完成 SDK License 接受和基础组件下载。
    ```
 
 3. 解压 ZIP，把 `抓包工具.app` 移入 `/Applications`。
-4. 双击打开。正式包应直接通过 Gatekeeper；内部开发包需要右键选择“打开”，或在
-   “系统设置 -> 隐私与安全性”中允许。
+4. 双击打开。正式公证包应直接通过 Gatekeeper。
+5. 内部预览包如果显示“Apple 无法验证‘抓包工具’”，点击“完成”，不要点击“移到废纸篓”。打开
+   “系统设置 -> 隐私与安全性”，向下找到该 App 的拦截提示，点击“仍要打开”，完成 Mac 登录验证后再确认“打开”。
+
+“仍要打开”通常只在尝试启动 App 后约一小时内显示。参考 [Apple 官方操作说明](https://support.apple.com/zh-cn/guide/mac-help/-mh40616/mac)。
 
 不要直接在 ZIP 预览窗口内运行 App，也不要移动或删除 App 内的 `Contents/Resources`。
 
@@ -167,6 +170,10 @@ Git，也不要直接共享整个目录。升级 App 时保留该目录可以继
 正常关闭；禁止使用 `wipe-data`、`pm clear` 或无确认卸载来处理普通故障。
 
 ## 9. 常见问题
+
+### Apple 无法验证“抓包工具”
+
+这表示当前下载的是未经 Apple 公证的内部预览包，不是 Android 环境或抓包后端故障。只有确认文件来自本项目 GitHub Releases 且 SHA-256 校验通过时才继续。点击“完成”后，到“系统设置 -> 隐私与安全性”点击“仍要打开”。不要关闭 Gatekeeper，不要执行删除 quarantine 属性的命令。
 
 ### 内部服务启动失败
 

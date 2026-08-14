@@ -18,6 +18,24 @@
 文件名不含 `development` 的正式分发包必须经过 Developer ID 签名和 Apple 公证。文件名包含
 `development-arm64` 的内部开发包使用 ad-hoc 签名，首次打开时可能需要用户在 macOS 安全界面手动允许。
 
+### 从 GitHub 手动安装
+
+1. 打开 [GitHub Releases](https://github.com/wanyujiang75-source/ai-capture-tool/releases)，展开最新 Release 的 `Assets`。
+2. 下载 Apple Silicon 版 `AI-Capture-Desktop-*-arm64.zip` 和同名 `.zip.sha256`。文件名含 `development-arm64` 表示它是未经 Apple 公证的内部预览包。
+3. 在终端校验下载文件：
+
+   ```bash
+   cd ~/Downloads
+   shasum -a 256 -c AI-Capture-Desktop-*.zip.sha256
+   ```
+
+   看到 `OK` 后再继续。
+4. 双击 ZIP 解压，将 `抓包工具.app` 拖入 Finder 的“应用程序”目录。不要在 ZIP 预览窗口中直接运行。
+5. 在“应用程序”中打开 `抓包工具`。正式公证包应可直接启动；内部预览包可能被 Gatekeeper 拦截。
+6. 如果弹窗显示“Apple 无法验证‘抓包工具’”，点击“完成”，**不要点击“移到废纸篓”**。随后进入“系统设置 -> 隐私与安全性”，在“安全性”区域点击“仍要打开”，完成 Mac 登录验证后再确认“打开”。该按钮通常只在尝试启动 App 后约一小时内出现。
+
+参考 [Apple 官方：打开来自未知开发者的 Mac App](https://support.apple.com/zh-cn/guide/mac-help/-mh40616/mac)。不要关闭 Gatekeeper，也不要通过 `xattr` 移除安全隔离属性。
+
 桌面 App 已内嵌 Python、FastAPI、mitmproxy 和 Frida 客户端运行时，不需要用户手动启动后端。
 新 Mac 仍需具备 Android Studio 或 Android SDK；首次准备环境时，工具会检查 SDK、安装或定位
 Google Play 系统镜像、创建模拟器并检查网络与 Frida。
@@ -27,12 +45,14 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 ### 首次抓包
 
 1. 打开桌面 App，等待“环境”页显示内部服务已就绪。
-2. 进入“抓包”，选择设备后点击“打开模拟器”，等待 Android 启动并手动解锁。
-3. 在“设备与应用”页选择本地 APK 或 Jenkins 测试包安装；已经通过 Android Studio、ADB 或其他工具安装的 App 可以跳过这一步。
-4. 在模拟器中打开需要分析的 App。桌面端会自动识别当前前台包名和 Activity，不需要从应用列表再次选择。
-5. 等待状态显示“可开始”或“可自动准备”，点击“一键开始抓包”。该操作会自动执行环境、网络和 Frida 准入检查。
-6. 状态显示“等待流量”后操作目标功能；捕获到接口后会自动变为“可抓包”，并可在“接口”页查看 Request、Response 和 cURL。
-7. 完成后回到“抓包”页点击“停止抓包”。停止后可对同一前台 App 立即开始下一次 Session。
+2. 进入“抓包”，选择设备后点击“打开模拟器”。新 Mac 首次使用时先点击“一键准备环境”，让桌面端检查 Android SDK、Google Play 镜像、网络和 Frida。
+3. 等待 Android 启动完成并手动解锁。如果目标 App 需要 Google 账号，先在模拟器中打开 Play Store 并手动登录。
+4. 在“设备与应用”页选择本地 APK 或 Jenkins 测试包安装；已经通过 Android Studio、ADB 或其他工具安装的 App 可以跳过这一步。
+5. 在模拟器中打开需要分析的 App。桌面端会自动识别当前前台包名和 Activity，不需要从应用列表再次选择。
+6. 等待状态显示“可开始”或“可自动准备”，点击“一键开始抓包”。该操作会自动执行环境、网络和 Frida 准入检查。
+7. 状态显示“等待流量”后操作目标功能；捕获到接口后会自动变为“可抓包”，并可在“接口”页查看 Request、Response 和 cURL。
+8. 必要时进入“日志”页查看当前 App 的 Android Logcat，用关键字、Tag 和级别过滤排查问题。
+9. 完成后回到“抓包”页点击“停止抓包”。停止后可对同一前台 App 立即开始下一次 Session。
 
 桌面端会自动启动 `.app` 内置的本机后端，不需要手动运行 `./start.sh`。源码构建步骤统一维护在 [安装指南](INSTALL.md#路径-c从源码构建) 中。
 
