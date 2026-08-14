@@ -76,7 +76,7 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 
 在 16 GB 及以上内存且至少 8 个逻辑核心的 Mac 上，默认使用 `4 核 / 4096 MB / GPU host / 8 GB 数据分区`；资源较低的 Mac 自动降为 `2 核 / 2048 MB`，避免模拟器挤占系统内存。如果缺少 Google Play system image，桌面端会尝试通过 `sdkmanager` 安装推荐镜像；如遇到 Android SDK license、网络或权限问题，界面会提示用户打开 Android Studio SDK Manager 手动处理。模拟器必须具备 Google Play 能力，但公司内部模式默认不强制设备预先登录 Google 账号；尚未登录时仍可安装 APK、打开 App 和启动抓包。需要严格准入时，可在启动桌面端前设置 `REQUIRE_GOOGLE_LOGIN=1`，此时未登录会阻止上述操作。
 
-如果同名 `AI_Capture_AVD_01` 已存在但不是 Google Play 原生架构镜像，工具会拒绝启动并给出修复建议，不会覆盖、wipe 或删除原 AVD。
+如果同名 `AI_Capture_AVD_01` 已存在但不是 Google Play 原生架构镜像，工具会保留原 AVD，自动创建或复用 `AI_Capture_AVD_01_GooglePlay` 合规替代设备，并把抓包设备绑定切换到新 AVD。该流程不会覆盖、wipe 或删除原 AVD。
 
 ## 浏览器模式
 

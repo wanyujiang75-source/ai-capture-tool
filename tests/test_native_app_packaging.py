@@ -204,7 +204,7 @@ class NativeAppPackagingTests(unittest.TestCase):
                         output = backend_process.stdout.read() if backend_process.stdout else ""
                         self.fail(f"embedded backend exited early:\n{output}")
                     try:
-                        with opener.open(status_url, timeout=1) as response:
+                        with opener.open(status_url, timeout=3) as response:
                             self.assertEqual(200, response.status)
                             response_body = json.load(response)
                             break

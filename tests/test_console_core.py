@@ -376,6 +376,14 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertIn("AddRCscripts", script)
         self.assertNotIn("-wipe-data", script)
 
+    def test_frida_bootstrap_uses_whitespace_safe_temporary_workdir(self):
+        script = Path("scripts/prepare_frida_avd.sh").read_text(encoding="utf-8")
+
+        self.assertNotIn('ROOTAVD_WORK="$TOOLS_ROOT/rootAVD-bootstrap"', script)
+        self.assertIn("mktemp -d", script)
+        self.assertIn("ROOTAVD_BOOTSTRAP_VERSION", script)
+        self.assertIn("bootstrap=$ROOTAVD_BOOTSTRAP_VERSION", script)
+
     def test_native_build_bundles_frida_bootstrap_assets(self):
         script = Path("macos-native/scripts/build-app.sh").read_text(encoding="utf-8")
 
@@ -1109,6 +1117,87 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             self.assertFalse(result["ok"])
             self.assertIn("Google Play", result["user_message"])
             self.assertEqual(config_path.read_text(encoding="utf-8"), original_config)
+
+    def test_runner_preserves_incompatible_avd_and_prepares_google_play_replacement(self):
+        from capture_console.runner import ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            avd_home = Path(tmp) / "avd"
+            original_dir = avd_home / "AI_Capture_AVD_01.avd"
+            original_dir.mkdir(parents=True)
+            original_config_path = original_dir / "config.ini"
+            original_config = (
+                "PlayStore.enabled=no\n"
+                "abi.type=arm64-v8a\n"
+                "image.sysdir.1=system-images/android-35/google_apis/arm64-v8a/\n"
+            )
+            original_config_path.write_text(original_config, encoding="utf-8")
+            (avd_home / "AI_Capture_AVD_01.ini").write_text(
+                f"path={original_dir}\ntarget=android-35\n",
+                encoding="utf-8",
+            )
+
+            class ReplacementRunner(ConsoleRunner):
+                def __init__(self, avd_name, created_names):
+                    super().__init__("/tmp", avd_name=avd_name, allow_non_retained=True)
+                    self.avd_home = avd_home
+                    self.created_names = created_names
+
+                def for_avd_name(self, avd_name):
+                    return ReplacementRunner(avd_name, self.created_names)
+
+                def avd_status(self):
+                    available = sorted(path.name.removesuffix(".avd") for path in self.avd_home.glob("*.avd"))
+                    return {
+                        "ok": self.avd_name in available,
+                        "avd_name": self.avd_name,
+                        "available_avds": available,
+                    }
+
+                def create_avd_if_possible(self):
+                    avd_dir = self.avd_home / f"{self.avd_name}.avd"
+                    avd_dir.mkdir(parents=True)
+                    (avd_dir / "config.ini").write_text(
+                        "PlayStore.enabled=true\n"
+                        "abi.type=arm64-v8a\n"
+                        "image.sysdir.1=system-images/android-36.1/google_apis_playstore/arm64-v8a/\n",
+                        encoding="utf-8",
+                    )
+                    (self.avd_home / f"{self.avd_name}.ini").write_text(
+                        f"path={avd_dir}\ntarget=android-36.1\n",
+                        encoding="utf-8",
+                    )
+                    self.created_names.append(self.avd_name)
+                    return {"ok": True, "created": True}
+
+                def emulator_acceleration_status(self):
+                    return {"ok": True, "detail": "Hypervisor.Framework is installed and usable."}
+
+                def emulator_status(self):
+                    return {"process_running": False, "adb_online": False}
+
+                def host_resource_status(self):
+                    return {
+                        "memory_mb": 32768,
+                        "cpu_count": 10,
+                        "system": "Darwin",
+                        "machine": "arm64",
+                    }
+
+            created_names = []
+            runner = ReplacementRunner("AI_Capture_AVD_01", created_names)
+
+            launch_runner, result = runner.prepare_launch_runner()
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(launch_runner.avd_name, "AI_Capture_AVD_01_GooglePlay")
+            self.assertEqual(result["selected_avd_name"], "AI_Capture_AVD_01_GooglePlay")
+            self.assertEqual(created_names, ["AI_Capture_AVD_01_GooglePlay"])
+            self.assertEqual(original_config_path.read_text(encoding="utf-8"), original_config)
+            replacement_config = (
+                avd_home / "AI_Capture_AVD_01_GooglePlay.avd" / "config.ini"
+            ).read_text(encoding="utf-8")
+            self.assertIn("google_apis_playstore", replacement_config)
 
     def test_runner_installs_missing_google_play_image_before_creating_performance_avd(self):
         from capture_console.runner import CommandResult, ConsoleRunner

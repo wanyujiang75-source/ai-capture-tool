@@ -12,7 +12,6 @@ RUNTIME_DIR="${RUNTIME_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)/runtime}"
 PYTHON_BIN="${FRIDA_PYTHON_BIN:-$(command -v python3 || true)}"
 ROOTAVD_SOURCE="$SCRIPT_DIR/../tools/rootAVD"
 TOOLS_ROOT="$(dirname "$RUNTIME_DIR")/tools"
-ROOTAVD_WORK="$TOOLS_ROOT/rootAVD-bootstrap"
 DOWNLOAD_DIR="$TOOLS_ROOT/downloads"
 AVD_CONFIG="$AVD_HOME/$AVD_NAME.avd/config.ini"
 SAFE_AVD_NAME="$(printf '%s' "$AVD_NAME" | tr -c 'A-Za-z0-9_.-' '_')"
@@ -23,6 +22,7 @@ MAGISK_VERSION="30.7"
 MAGISK_URL="https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
 MAGISK_SHA256="e0d32d2123532860f97123d927b1bb86c4e08e6fd8a48bfc6b5bee0afae9ebd5"
 MAGISK_APK="$DOWNLOAD_DIR/Magisk-v${MAGISK_VERSION}.apk"
+ROOTAVD_BOOTSTRAP_VERSION="2"
 
 require_command "$ADB_BIN"
 require_command curl
@@ -93,7 +93,7 @@ fi
 
 RC_SHA256="$(shasum -a 256 "$ROOTAVD_SOURCE/frida.rc" | awk '{print $1}')"
 ROOT_GRANT_SHA256="$(shasum -a 256 "$ROOTAVD_SOURCE/sbin/ai-capture-root-grant.sh" | awk '{print $1}')"
-EXPECTED_MARKER="rc=$RC_SHA256 root_grant=$ROOT_GRANT_SHA256 magisk=$MAGISK_VERSION"
+EXPECTED_MARKER="bootstrap=$ROOTAVD_BOOTSTRAP_VERSION rc=$RC_SHA256 root_grant=$ROOT_GRANT_SHA256 magisk=$MAGISK_VERSION"
 if [[ -f "$MARKER_FILE" ]] && grep -Fx "$EXPECTED_MARKER" "$MARKER_FILE" >/dev/null 2>&1; then
   write_image_sysdir
   echo "isolated Frida ramdisk already prepared: $OVERLAY_DIR/ramdisk.img"
@@ -107,7 +107,12 @@ if [[ ! -f "$MAGISK_APK" ]] || ! echo "$MAGISK_SHA256  $MAGISK_APK" | shasum -a 
   echo "$MAGISK_SHA256  $MAGISK_APK" | shasum -a 256 -c - >/dev/null
 fi
 
-rm -rf "$ROOTAVD_WORK"
+ROOTAVD_TEMP_ROOT="${TMPDIR:-/tmp}"
+case "$ROOTAVD_TEMP_ROOT" in
+  *[[:space:]]*) ROOTAVD_TEMP_ROOT="/tmp" ;;
+esac
+ROOTAVD_WORK="$(mktemp -d "$ROOTAVD_TEMP_ROOT/ai-capture-rootavd.XXXXXX")"
+trap 'rm -rf "$ROOTAVD_WORK"' EXIT
 mkdir -p "$ROOTAVD_WORK/Apps" "$ROOTAVD_WORK/sbin" "$ROOTAVD_WORK/bin"
 cp "$ROOTAVD_SOURCE/rootAVD.sh" "$ROOTAVD_WORK/rootAVD.sh"
 cp "$ROOTAVD_SOURCE/frida.rc" "$ROOTAVD_WORK/frida.rc"

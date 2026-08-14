@@ -106,6 +106,20 @@ class ConsoleRunner:
             runtime_dir=self.runtime_dir,
         )
 
+    def for_avd_name(self, avd_name: str) -> "ConsoleRunner":
+        return ConsoleRunner(
+            self.root_dir,
+            adb_serial=self.adb_serial,
+            avd_name=avd_name,
+            proxy_port=self.proxy_port,
+            web_port=self.web_port,
+            frida_port=self.frida_port,
+            mitm_password=self.mitm_password,
+            capture_instance=self.capture_instance,
+            allow_non_retained=self.allow_non_retained,
+            runtime_dir=self.runtime_dir,
+        )
+
     def emulator_port(self) -> str:
         match = re.fullmatch(r"emulator-(\d+)", self.adb_serial)
         return match.group(1) if match else ""
@@ -579,6 +593,50 @@ class ConsoleRunner:
             "user_message": "高性能抓包模拟器已就绪。" if profile["tier"] == "high" else "抓包模拟器已按当前 Mac 资源应用均衡性能档。",
             "fix": "",
         }
+
+    def prepare_launch_runner(self) -> tuple["ConsoleRunner", Dict[str, Any]]:
+        prepared = self.prepare_avd_for_launch()
+        prepared["selected_avd_name"] = self.avd_name
+        if prepared.get("ok"):
+            return self, prepared
+
+        compatibility = prepared.get("compatibility") or {}
+        checks = {
+            str(check.get("name")): bool(check.get("ok"))
+            for check in compatibility.get("checks", [])
+        }
+        replaceable = (
+            bool(prepared.get("avd", {}).get("ok"))
+            and checks.get("acceleration", False)
+            and any(not checks.get(name, False) for name in ("config", "google_play", "native_abi"))
+        )
+        if not replaceable:
+            return self, prepared
+
+        available_avds = set(prepared.get("avd", {}).get("available_avds", []))
+        base_name = f"{self.avd_name}_GooglePlay"
+        for suffix in range(1, 21):
+            replacement_name = base_name if suffix == 1 else f"{base_name}_{suffix}"
+            replacement_existed = replacement_name in available_avds
+            replacement_runner = self.for_avd_name(replacement_name)
+            replacement = replacement_runner.prepare_avd_for_launch()
+            replacement["selected_avd_name"] = replacement_name
+            replacement["migration"] = {
+                "from_avd_name": self.avd_name,
+                "to_avd_name": replacement_name,
+                "original_preserved": True,
+            }
+            if replacement.get("ok"):
+                replacement["user_message"] = (
+                    f"已保留原模拟器 {self.avd_name}，并自动切换到可 Google 登录的抓包模拟器 "
+                    f"{replacement_name}。"
+                )
+                return replacement_runner, replacement
+            if not replacement_existed:
+                return replacement_runner, replacement
+
+        prepared["fix"] = "已有同名替代 AVD 均不满足抓包条件，请在 Android Studio 中检查这些 AVD。"
+        return self, prepared
 
     def normalize_google_play_avd(self, image: Dict[str, Any]) -> Dict[str, Any]:
         avd_dir = self.avd_home / f"{self.avd_name}.avd"

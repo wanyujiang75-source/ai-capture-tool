@@ -158,6 +158,32 @@ def runner_for_device_id(device_id: str):
     return runner
 
 
+def prepare_device_runner_for_launch(device_id: str):
+    device = device_or_404(device_id)
+    device_runner = runner_for_device_id(device_id)
+    if hasattr(device_runner, "prepare_launch_runner"):
+        launch_runner, prepared = device_runner.prepare_launch_runner()
+    else:
+        launch_runner = device_runner
+        prepared = (
+            device_runner.prepare_avd_for_launch()
+            if hasattr(device_runner, "prepare_avd_for_launch")
+            else {"ok": True, "profile": {}, "user_message": "模拟器启动准入检查通过。", "fix": ""}
+        )
+
+    selected_avd_name = str(
+        prepared.get("selected_avd_name") or getattr(launch_runner, "avd_name", "") or device.get("avd_name", "")
+    )
+    if prepared.get("ok") and selected_avd_name and selected_avd_name != device.get("avd_name"):
+        store.update_device(device_id, avd_name=selected_avd_name)
+        prepared["device_binding"] = {
+            "device_id": device_id,
+            "previous_avd_name": device.get("avd_name", ""),
+            "avd_name": selected_avd_name,
+        }
+    return launch_runner, prepared
+
+
 def device_web_url(device: Dict[str, Any]) -> str:
     return f"http://127.0.0.1:{device['web_port']}/?token={LOCAL_CONFIG['capture']['mitmweb_token']}"
 
@@ -288,7 +314,12 @@ def ensure_resident_devices() -> list[Dict[str, Any]]:
             updated = store.update_device(device["device_id"], sleep_state="awake", error="")
             results.append({"device": {**updated, **device_runtime_policy(updated)}, "started": False, "ok": True})
             continue
-        result = device_runner.start_emulator()
+        device_runner, prepared = prepare_device_runner_for_launch(device["device_id"])
+        result = (
+            device_runner.start_emulator()
+            if prepared.get("ok")
+            else CommandResult(1, "", prepared.get("user_message", "模拟器准入失败。"))
+        )
         updated = store.update_device(
             device["device_id"],
             sleep_state="awake",
@@ -1125,11 +1156,7 @@ def api_system_prepare(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False
                     )
                 )
                 return api_prepare_blocked(device_id, steps, created_avd.get("fix") or avd.get("fix") or "请先创建默认 Android 模拟器后重试。")
-        launch_prepare = (
-            device_runner.prepare_avd_for_launch()
-            if hasattr(device_runner, "prepare_avd_for_launch")
-            else {"ok": True, "profile": {}, "user_message": "模拟器启动准入检查通过。", "fix": ""}
-        )
+        device_runner, launch_prepare = prepare_device_runner_for_launch(device_id)
         if not launch_prepare.get("ok"):
             steps.append(
                 prepare_step(
@@ -1461,12 +1488,7 @@ def api_emulator_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 @app.post("/api/emulator/start")
 def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False) -> Dict[str, Any]:
     store.set_system_state("waking")
-    device_runner = runner_for_device_id(device_id)
-    prepared = (
-        device_runner.prepare_avd_for_launch()
-        if hasattr(device_runner, "prepare_avd_for_launch")
-        else {"ok": True, "profile": {}, "user_message": "", "fix": ""}
-    )
+    device_runner, prepared = prepare_device_runner_for_launch(device_id)
     if not prepared.get("ok"):
         store.set_system_state("running")
         store.touch_device(device_id)
@@ -1518,22 +1540,39 @@ def api_start_device(device_id: str, visible: bool = False) -> Dict[str, Any]:
 
 @app.post("/api/devices/{device_id}/ensure-google-play-avd")
 def api_ensure_google_play_avd(device_id: str) -> Dict[str, Any]:
-    device_runner = runner_for_device_id(device_id)
-    if not hasattr(device_runner, "create_avd_if_possible"):
-        raise HTTPException(status_code=501, detail="runner does not support Google Play AVD creation")
-    created = device_runner.create_avd_if_possible()
+    initial_runner = runner_for_device_id(device_id)
+    if not hasattr(initial_runner, "prepare_launch_runner") and not hasattr(initial_runner, "prepare_avd_for_launch"):
+        if not hasattr(initial_runner, "create_avd_if_possible"):
+            raise HTTPException(status_code=501, detail="runner does not support Google Play AVD creation")
+        created = initial_runner.create_avd_if_possible()
+        device_runner = initial_runner
+        prepared = {
+            "ok": bool(created.get("ok")),
+            "created": created,
+            "user_message": created.get("user_message", "Google Play 抓包模拟器尚未就绪。"),
+            "fix": created.get("fix", ""),
+        }
+    else:
+        device_runner, prepared = prepare_device_runner_for_launch(device_id)
+        created = prepared.get("created") or {
+            "ok": bool(prepared.get("ok")),
+            "created": False,
+            "user_message": prepared.get("user_message", "Google Play 抓包模拟器已就绪。"),
+            "fix": prepared.get("fix", ""),
+        }
     avd = (
         device_runner.avd_status()
         if hasattr(device_runner, "avd_status")
-        else {"ok": bool(created.get("ok")), "avd_name": device_or_404(device_id).get("avd_name", "")}
+        else {"ok": bool(prepared.get("ok")), "avd_name": device_or_404(device_id).get("avd_name", "")}
     )
     return {
         "device_id": device_id,
-        "ok": bool(created.get("ok") and avd.get("ok")),
+        "ok": bool(prepared.get("ok") and avd.get("ok")),
         "create_avd": created,
+        "prepare": prepared,
         "avd": avd,
-        "user_message": "Google Play 抓包模拟器已就绪。" if created.get("ok") and avd.get("ok") else created.get("user_message", "Google Play 抓包模拟器尚未就绪。"),
-        "fix": "" if created.get("ok") and avd.get("ok") else created.get("fix", ""),
+        "user_message": "Google Play 抓包模拟器已就绪。" if prepared.get("ok") and avd.get("ok") else prepared.get("user_message", "Google Play 抓包模拟器尚未就绪。"),
+        "fix": "" if prepared.get("ok") and avd.get("ok") else prepared.get("fix", ""),
     }
 
 

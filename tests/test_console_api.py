@@ -1313,6 +1313,76 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_start_device_switches_to_prepared_google_play_replacement(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StartRunner:
+            def __init__(self, avd_name="AI_Capture_AVD_01", calls=None):
+                self.avd_name = avd_name
+                self.calls = calls if calls is not None else []
+
+            def for_device(self, device):
+                return StartRunner(device["avd_name"], self.calls)
+
+            def prepare_avd_for_launch(self):
+                self.calls.append(("prepare_old", self.avd_name))
+                return {
+                    "ok": False,
+                    "profile": {},
+                    "user_message": "当前 AVD 不是 Google Play 镜像。",
+                    "fix": "请准备替代 AVD。",
+                }
+
+            def prepare_launch_runner(self):
+                self.calls.append(("prepare_launch", self.avd_name))
+                replacement = StartRunner(f"{self.avd_name}_GooglePlay", self.calls)
+                return replacement, {
+                    "ok": True,
+                    "selected_avd_name": replacement.avd_name,
+                    "profile": {
+                        "tier": "high",
+                        "ram_mb": 4096,
+                        "cpu_cores": 4,
+                        "gpu_mode": "host",
+                    },
+                    "user_message": "已自动切换到 Google Play 抓包模拟器。",
+                    "fix": "",
+                }
+
+            def start_emulator(self, visible=False):
+                self.calls.append(("start", self.avd_name))
+                return CommandResult(0, "started", "")
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = StartRunner()
+                app_module.runner = runner
+                previous_avd_name = app_module.store.get_device("device-1")["avd_name"]
+
+                result = app_module.api_start_device("device-1", visible=True)
+
+                self.assertTrue(result["ok"])
+                self.assertEqual(
+                    app_module.store.get_device("device-1")["avd_name"],
+                    f"{previous_avd_name}_GooglePlay",
+                )
+                self.assertEqual(
+                    runner.calls,
+                    [
+                        ("prepare_launch", previous_avd_name),
+                        ("start", f"{previous_avd_name}_GooglePlay"),
+                    ],
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_start_device_does_not_launch_incompatible_avd(self):
         original_store = app_module.store
         original_runner = app_module.runner
