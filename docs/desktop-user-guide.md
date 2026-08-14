@@ -57,15 +57,21 @@ Android Studio，完成 SDK License 接受和基础组件下载。
 然后进入“抓包”：
 
 1. 在“设备”中选择 `device-1`。
-2. 点击“打开模拟器”。如果默认 AVD 尚不存在，后续“一键准备环境”会检查并创建
-   `AI_Capture_AVD_01`。
+2. 点击“打开模拟器”。桌面端会自动检查并准备 `AI_Capture_AVD_01`：只选择 Apple Silicon
+   原生 `arm64-v8a` 的 Google Play 镜像，检查 Hypervisor.Framework，并在缺少镜像时尝试安装。
+   首次下载 Android 镜像可能需要数分钟。
 3. 等待 Android 桌面出现并手动解锁。模拟器启动未完成或处于锁屏状态时，不允许安装 APK。
-4. 点击“一键准备环境”。工具依次检查 Android SDK、Google Play 镜像、设备启动状态、网络、
-   Android 代理、root/Magisk 和 Frida。
+4. 打开目标 App 后点击“一键开始抓包”。工具会继续自动检查设备状态、网络、Android 代理、
+   root/Magisk 和 Frida，不需要再逐项点击检测按钮。
 5. 如果 App 依赖 Google 登录，在模拟器中打开 Play Store 并手动登录。公司内部模式默认不强制
    Google 登录；启动 App 前设置 `REQUIRE_GOOGLE_LOGIN=1` 可启用严格准入。
 
-一键准备只操作本项目设备、端口和进程。发现端口被其他程序占用时只会报错，不会终止其他项目。
+自动准备只操作本项目设备、端口和进程。发现端口被其他程序占用时只会报错，不会终止其他项目。
+
+模拟器性能按宿主机自动选择：16 GB 及以上内存且至少 8 个逻辑核心时使用
+`4 核 / 4096 MB / GPU host / 8 GB 数据分区`，资源较低时使用 `2 核 / 2048 MB` 均衡档。
+如果同名 AVD 已存在但不是 Google Play 原生架构镜像，桌面端会阻止启动并显示修复建议，不会
+覆盖、wipe 或删除原 AVD，也不会随机调用用户的其他模拟器。
 
 ## 4. 安装 App
 

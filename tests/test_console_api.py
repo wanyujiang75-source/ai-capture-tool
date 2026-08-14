@@ -1218,6 +1218,204 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.runner = original_runner
                 app_module.system_port_preflight = original_preflight
 
+    def test_start_device_prepares_capture_avd_before_launch(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StartRunner:
+            def __init__(self):
+                self.calls = []
+
+            def for_device(self, device):
+                return self
+
+            def prepare_avd_for_launch(self):
+                self.calls.append("prepare_avd")
+                return {
+                    "ok": True,
+                    "profile": {
+                        "tier": "high",
+                        "ram_mb": 4096,
+                        "cpu_cores": 4,
+                        "gpu_mode": "host",
+                    },
+                    "user_message": "高性能抓包模拟器已就绪。",
+                    "fix": "",
+                }
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                return CommandResult(0, "started", "")
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = StartRunner()
+                app_module.runner = runner
+
+                result = app_module.api_start_device("device-1", visible=True)
+
+                self.assertTrue(result["ok"])
+                self.assertEqual(runner.calls, ["prepare_avd", "start_emulator"])
+                self.assertEqual(
+                    result["performance_profile"],
+                    {"tier": "high", "ram_mb": 4096, "cpu_cores": 4, "gpu_mode": "host"},
+                )
+                self.assertIn("4 核", result["user_message"])
+                self.assertIn("4096 MB", result["user_message"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_start_device_reports_balanced_profile_accurately(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StartRunner:
+            def for_device(self, device):
+                return self
+
+            def prepare_avd_for_launch(self):
+                return {
+                    "ok": True,
+                    "profile": {
+                        "tier": "balanced",
+                        "ram_mb": 2048,
+                        "cpu_cores": 2,
+                        "gpu_mode": "host",
+                    },
+                    "user_message": "均衡性能档已就绪。",
+                    "fix": "",
+                }
+
+            def start_emulator(self, visible=False):
+                return CommandResult(0, "started", "")
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                app_module.runner = StartRunner()
+
+                result = app_module.api_start_device("device-1", visible=True)
+
+                self.assertTrue(result["ok"])
+                self.assertIn("均衡性能", result["user_message"])
+                self.assertNotIn("高性能", result["user_message"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_start_device_does_not_launch_incompatible_avd(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StartRunner:
+            def __init__(self):
+                self.calls = []
+
+            def for_device(self, device):
+                return self
+
+            def prepare_avd_for_launch(self):
+                self.calls.append("prepare_avd")
+                return {
+                    "ok": False,
+                    "profile": {},
+                    "user_message": "当前 AVD 不是 Google Play 镜像。",
+                    "fix": "请执行一键准备环境。",
+                }
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                return CommandResult(0, "started", "")
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = StartRunner()
+                app_module.runner = runner
+
+                result = app_module.api_start_device("device-1", visible=True)
+
+                self.assertFalse(result["ok"])
+                self.assertEqual(runner.calls, ["prepare_avd"])
+                self.assertIn("Google Play", result["user_message"])
+                self.assertEqual(result["fix"], "请执行一键准备环境。")
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_system_prepare_does_not_launch_incompatible_existing_avd(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+        original_preflight = app_module.system_port_preflight
+        original_boot_wait = app_module.EMULATOR_BOOT_WAIT_SECONDS
+
+        class PrepareRunner:
+            def __init__(self):
+                self.calls = []
+
+            def for_device(self, device):
+                return self
+
+            def env_check(self):
+                return {"ok": True, "checks": []}
+
+            def emulator_status(self):
+                return {"adb_online": False, "boot_completed": False, "unlocked": False}
+
+            def avd_status(self):
+                return {"ok": True, "avd_name": "AI_Capture_AVD_01"}
+
+            def prepare_avd_for_launch(self):
+                self.calls.append("prepare_avd")
+                return {
+                    "ok": False,
+                    "profile": {},
+                    "user_message": "当前 AVD 不是可 Google 登录的 Google Play 镜像。",
+                    "fix": "请使用 google_apis_playstore system image。",
+                }
+
+            def start_emulator(self, visible=False):
+                self.calls.append("start_emulator")
+                return CommandResult(0, "started", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = PrepareRunner()
+                app_module.runner = runner
+                app_module.system_port_preflight = lambda: {"ok": True, "ports": []}
+                app_module.EMULATOR_BOOT_WAIT_SECONDS = 0
+
+                result = app_module.api_system_prepare(device_id="device-1", visible=False)
+
+                self.assertFalse(result["prepare"]["ok"])
+                self.assertEqual(runner.calls, ["prepare_avd"])
+                self.assertIn("Google Play", result["prepare"]["user_message"])
+                self.assertEqual(
+                    [step["key"] for step in result["prepare"]["steps"]],
+                    ["env", "ports", "emulator"],
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+                app_module.system_port_preflight = original_preflight
+                app_module.EMULATOR_BOOT_WAIT_SECONDS = original_boot_wait
+
     def test_system_prepare_blocks_with_clear_message_when_default_avd_cannot_be_created(self):
         original_store = app_module.store
         original_runner = app_module.runner

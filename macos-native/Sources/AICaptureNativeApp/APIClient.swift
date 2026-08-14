@@ -83,7 +83,8 @@ struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAP
     func startDevice(deviceId: String, visible: Bool = false) async throws -> BasicActionResponse {
         try await post(
             "api/devices/\(deviceId)/start",
-            queryItems: [URLQueryItem(name: "visible", value: visible ? "true" : "false")]
+            queryItems: [URLQueryItem(name: "visible", value: visible ? "true" : "false")],
+            timeoutInterval: 900
         )
     }
 
@@ -258,10 +259,14 @@ struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAP
 
     private func post<Response: Decodable>(
         _ path: String,
-        queryItems: [URLQueryItem] = []
+        queryItems: [URLQueryItem] = [],
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> Response {
         var request = URLRequest(url: url(path: path, queryItems: queryItems))
         request.httpMethod = "POST"
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
         return try await send(request)
     }
 

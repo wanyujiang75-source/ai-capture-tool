@@ -314,6 +314,14 @@ struct BasicActionResponse: Decodable {
     let ok: Bool?
     let stdout: String?
     let stderr: String?
+    let userMessage: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case stdout
+        case stderr
+        case userMessage = "user_message"
+    }
 }
 
 enum LogcatSource: String, Codable, CaseIterable, Identifiable, Sendable {

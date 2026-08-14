@@ -307,13 +307,18 @@ class ConsoleRunner:
             ),
         }
 
+    @staticmethod
+    def host_android_abi() -> str:
+        host_arch = platform.machine().lower()
+        return "arm64-v8a" if "arm" in host_arch or "aarch64" in host_arch else "x86_64"
+
     def available_system_images(self) -> List[Dict[str, Any]]:
         system_images_dir = self.sdk_root / "system-images"
         if not system_images_dir.exists():
             return []
 
-        host_arch = platform.machine().lower()
-        preferred_abis = ["arm64-v8a", "x86_64"] if "arm" in host_arch or "aarch64" in host_arch else ["x86_64", "arm64-v8a"]
+        native_abi = self.host_android_abi()
+        preferred_abis = [native_abi, "x86_64" if native_abi == "arm64-v8a" else "arm64-v8a"]
         tag_priority = {GOOGLE_PLAY_IMAGE_TAG: 0, "google_apis": 10, "default": 20}
 
         images: List[Dict[str, Any]] = []
@@ -343,12 +348,15 @@ class ConsoleRunner:
         return sorted(images, key=lambda image: int(image["score"]), reverse=True)
 
     def available_google_play_system_images(self) -> List[Dict[str, Any]]:
-        return [image for image in self.available_system_images() if image.get("tag") == GOOGLE_PLAY_IMAGE_TAG]
+        native_abi = self.host_android_abi()
+        return [
+            image
+            for image in self.available_system_images()
+            if image.get("tag") == GOOGLE_PLAY_IMAGE_TAG and image.get("abi") == native_abi
+        ]
 
     def recommended_google_play_system_image_package(self) -> str:
-        host_arch = platform.machine().lower()
-        abi = "arm64-v8a" if "arm" in host_arch or "aarch64" in host_arch else "x86_64"
-        return f"system-images;android-36.1;{GOOGLE_PLAY_IMAGE_TAG};{abi}"
+        return f"system-images;android-36.1;{GOOGLE_PLAY_IMAGE_TAG};{self.host_android_abi()}"
 
     def google_play_image_status(self) -> Dict[str, Any]:
         play_images = self.available_google_play_system_images()
@@ -416,6 +424,162 @@ class ConsoleRunner:
                 output.append(f"{key}={value}")
         path.write_text("\n".join(output) + "\n", encoding="utf-8")
 
+    @staticmethod
+    def _read_ini(path: Path) -> Dict[str, str]:
+        values: Dict[str, str] = {}
+        if not path.exists():
+            return values
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+        return values
+
+    def host_resource_status(self) -> Dict[str, Any]:
+        memory_mb = 0
+        try:
+            memory_mb = int(os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024))
+        except (AttributeError, OSError, TypeError, ValueError):
+            memory_mb = 0
+        return {
+            "memory_mb": memory_mb,
+            "cpu_count": os.cpu_count() or 2,
+            "system": platform.system(),
+            "machine": platform.machine().lower(),
+        }
+
+    def recommended_avd_performance_profile(self) -> Dict[str, Any]:
+        host = self.host_resource_status()
+        high_performance = int(host["memory_mb"]) >= 16384 and int(host["cpu_count"]) >= 8
+        return {
+            "tier": "high" if high_performance else "balanced",
+            "ram_mb": 4096 if high_performance else 2048,
+            "cpu_cores": 4 if high_performance else 2,
+            "gpu_mode": "host" if host["system"] == "Darwin" else "auto",
+            "data_partition_size": "8G",
+            "vm_heap_mb": 512 if high_performance else 336,
+        }
+
+    def emulator_acceleration_status(self) -> Dict[str, Any]:
+        emulator_bin = self.sdk_root / "emulator" / "emulator"
+        command = str(emulator_bin) if emulator_bin.exists() else "emulator"
+        result = self.run([command, "-accel-check"], timeout=20)
+        return {
+            "ok": result.ok,
+            "detail": result.text[-1000:],
+            "user_message": "Android Emulator 硬件加速可用。" if result.ok else "Android Emulator 硬件加速不可用。",
+            "fix": "" if result.ok else "请确认使用 Apple Silicon Mac，并在 Android Studio 中更新 Android Emulator。",
+        }
+
+    def avd_capture_compatibility(self) -> Dict[str, Any]:
+        config_path = self.avd_home / f"{self.avd_name}.avd" / "config.ini"
+        config = self._read_ini(config_path)
+        image_path = config.get("image.sysdir.1", "")
+        tag = config.get("tag.id", "")
+        abi = config.get("abi.type", "")
+        expected_abi = self.host_android_abi()
+        play_store_enabled = config.get("PlayStore.enabled", "").lower() == "true"
+        google_play_image = GOOGLE_PLAY_IMAGE_TAG in image_path or tag == GOOGLE_PLAY_IMAGE_TAG
+        native_abi = abi == expected_abi or image_path.rstrip("/").endswith(f"/{expected_abi}")
+        acceleration = self.emulator_acceleration_status()
+        checks = [
+            {"name": "config", "ok": bool(config), "detail": str(config_path)},
+            {"name": "google_play", "ok": play_store_enabled and google_play_image, "detail": image_path or tag},
+            {"name": "native_abi", "ok": native_abi, "detail": f"configured={abi or image_path} expected={expected_abi}"},
+            {"name": "acceleration", "ok": bool(acceleration.get("ok")), "detail": acceleration.get("detail", "")},
+        ]
+        ok = all(check["ok"] for check in checks)
+        if not config:
+            user_message = "默认 AVD 配置不完整。"
+            fix = "请执行一键准备环境，重新创建项目专用模拟器。"
+        elif not (play_store_enabled and google_play_image):
+            user_message = "当前 AVD 不是可 Google 登录的 Google Play 镜像。"
+            fix = "请执行一键准备环境，使用 google_apis_playstore system image。"
+        elif not native_abi:
+            user_message = "当前 AVD 架构与 Mac 不匹配，无法使用最佳硬件加速。"
+            fix = f"请使用 {expected_abi} Google Play system image 重新创建项目 AVD。"
+        elif not acceleration.get("ok"):
+            user_message = acceleration["user_message"]
+            fix = acceleration["fix"]
+        else:
+            user_message = "AVD 已通过 Google Play、原生 ABI 和硬件加速准入。"
+            fix = ""
+        return {
+            "ok": ok,
+            "checks": checks,
+            "config_path": str(config_path),
+            "image_path": image_path,
+            "abi": abi or expected_abi,
+            "expected_abi": expected_abi,
+            "acceleration": acceleration,
+            "user_message": user_message,
+            "fix": fix,
+        }
+
+    def prepare_avd_for_launch(self) -> Dict[str, Any]:
+        avd = self.avd_status()
+        created: Dict[str, Any] | None = None
+        installed_image: Dict[str, Any] | None = None
+        if not avd.get("ok"):
+            created = self.create_avd_if_possible()
+            if not created.get("ok"):
+                installed_image = self.install_google_play_system_image()
+                if installed_image.get("ok"):
+                    created = self.create_avd_if_possible()
+            if not created.get("ok"):
+                return {
+                    "ok": False,
+                    "avd": avd,
+                    "created": created,
+                    "installed_image": installed_image,
+                    "profile": {},
+                    "user_message": created.get("user_message", "无法准备项目专用 AVD。"),
+                    "fix": created.get("fix", "请先执行一键准备环境。"),
+                }
+            avd = self.avd_status()
+
+        compatibility = self.avd_capture_compatibility()
+        if not compatibility["ok"]:
+            return {
+                "ok": False,
+                "avd": avd,
+                "created": created,
+                "installed_image": installed_image,
+                "profile": {},
+                "compatibility": compatibility,
+                "user_message": compatibility["user_message"],
+                "fix": compatibility["fix"],
+            }
+
+        profile = self.recommended_avd_performance_profile()
+        emulator = self.emulator_status()
+        config_path = self.avd_home / f"{self.avd_name}.avd" / "config.ini"
+        if not emulator.get("process_running") and not emulator.get("adb_online"):
+            self._rewrite_ini(
+                config_path,
+                {
+                    "disk.dataPartition.size": str(profile["data_partition_size"]),
+                    "hw.cpu.ncore": str(profile["cpu_cores"]),
+                    "hw.gpu.enabled": "yes",
+                    "hw.gpu.mode": str(profile["gpu_mode"]),
+                    "hw.keyboard": "yes",
+                    "hw.ramSize": str(profile["ram_mb"]),
+                    "vm.heapSize": str(profile["vm_heap_mb"]),
+                },
+                set(),
+            )
+        return {
+            "ok": True,
+            "avd": avd,
+            "created": created,
+            "installed_image": installed_image,
+            "profile": profile,
+            "compatibility": compatibility,
+            "user_message": "高性能抓包模拟器已就绪。" if profile["tier"] == "high" else "抓包模拟器已按当前 Mac 资源应用均衡性能档。",
+            "fix": "",
+        }
+
     def normalize_google_play_avd(self, image: Dict[str, Any]) -> Dict[str, Any]:
         avd_dir = self.avd_home / f"{self.avd_name}.avd"
         config_path = avd_dir / "config.ini"
@@ -429,24 +593,27 @@ class ConsoleRunner:
 
         package_parts = str(image.get("package") or "").split(";")
         target = package_parts[1] if len(package_parts) > 1 else f"android-{image.get('api_level', '')}"
+        profile = self.recommended_avd_performance_profile()
+        abi = str(image.get("abi") or "")
         self._rewrite_ini(
             config_path,
             {
                 "AvdId": self.avd_name,
                 "PlayStore.enabled": "true",
+                "abi.type": abi,
                 "avd.ini.displayname": self.avd_name,
                 "avd.ini.encoding": "UTF-8",
-                "disk.dataPartition.size": "6G",
-                "hw.cpu.ncore": "4",
+                "disk.dataPartition.size": str(profile["data_partition_size"]),
+                "hw.cpu.ncore": str(profile["cpu_cores"]),
                 "hw.gpu.enabled": "yes",
-                "hw.gpu.mode": "auto",
+                "hw.gpu.mode": str(profile["gpu_mode"]),
                 "hw.keyboard": "yes",
-                "hw.ramSize": "2048",
+                "hw.ramSize": str(profile["ram_mb"]),
                 "skin.dynamic": "yes",
                 "skin.name": "1080x2400",
                 "skin.path": "1080x2400",
                 "target": target,
-                "vm.heapSize": "336",
+                "vm.heapSize": str(profile["vm_heap_mb"]),
             },
             {
                 "avd.id",
@@ -467,6 +634,7 @@ class ConsoleRunner:
         return {
             "ok": True,
             "target": target,
+            "profile": profile,
             "config_path": str(config_path),
             "metadata_path": str(metadata_path),
             "user_message": "Google Play AVD 配置已规范化。",

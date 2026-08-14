@@ -45,7 +45,7 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 ### 首次抓包
 
 1. 打开桌面 App，等待“环境”页显示内部服务已就绪。
-2. 进入“抓包”，选择设备后点击“打开模拟器”。新 Mac 首次使用时先点击“一键准备环境”，让桌面端检查 Android SDK、Google Play 镜像、网络和 Frida。
+2. 进入“抓包”，选择设备后点击“打开模拟器”。桌面端会自动检查 Android SDK、安装或选择宿主机原生架构的 Google Play 镜像、创建项目专用 AVD，并按 Mac 资源应用性能配置后再启动。
 3. 等待 Android 启动完成并手动解锁。如果目标 App 需要 Google 账号，先在模拟器中打开 Play Store 并手动登录。
 4. 在“设备与应用”页选择本地 APK 或 Jenkins 测试包安装；已经通过 Android Studio、ADB 或其他工具安装的 App 可以跳过这一步。
 5. 在模拟器中打开需要分析的 App。桌面端会自动识别当前前台包名和 Activity，不需要从应用列表再次选择。
@@ -71,9 +71,12 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 - 默认 AVD：`AI_Capture_AVD_01`
 - 默认 serial：`emulator-5554`
 - 必须使用 `google_apis_playstore` system image
+- Apple Silicon 必须使用原生 `arm64-v8a` ABI，并通过 Hypervisor.Framework 硬件加速检查
 - 普通 AOSP 或仅 `google_apis` 镜像不会作为默认抓包模拟器
 
-如果缺少 Google Play system image，桌面端会尝试通过 `sdkmanager` 安装推荐镜像；如遇到 Android SDK license、网络或权限问题，界面会提示用户打开 Android Studio SDK Manager 手动处理。模拟器必须具备 Google Play 能力，但公司内部模式默认不强制设备预先登录 Google 账号；尚未登录时仍可安装 APK、打开 App 和启动抓包。需要严格准入时，可在启动桌面端前设置 `REQUIRE_GOOGLE_LOGIN=1`，此时未登录会阻止上述操作。
+在 16 GB 及以上内存且至少 8 个逻辑核心的 Mac 上，默认使用 `4 核 / 4096 MB / GPU host / 8 GB 数据分区`；资源较低的 Mac 自动降为 `2 核 / 2048 MB`，避免模拟器挤占系统内存。如果缺少 Google Play system image，桌面端会尝试通过 `sdkmanager` 安装推荐镜像；如遇到 Android SDK license、网络或权限问题，界面会提示用户打开 Android Studio SDK Manager 手动处理。模拟器必须具备 Google Play 能力，但公司内部模式默认不强制设备预先登录 Google 账号；尚未登录时仍可安装 APK、打开 App 和启动抓包。需要严格准入时，可在启动桌面端前设置 `REQUIRE_GOOGLE_LOGIN=1`，此时未登录会阻止上述操作。
+
+如果同名 `AI_Capture_AVD_01` 已存在但不是 Google Play 原生架构镜像，工具会拒绝启动并给出修复建议，不会覆盖、wipe 或删除原 AVD。
 
 ## 浏览器模式
 

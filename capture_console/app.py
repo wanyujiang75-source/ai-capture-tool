@@ -1125,6 +1125,29 @@ def api_system_prepare(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False
                     )
                 )
                 return api_prepare_blocked(device_id, steps, created_avd.get("fix") or avd.get("fix") or "请先创建默认 Android 模拟器后重试。")
+        launch_prepare = (
+            device_runner.prepare_avd_for_launch()
+            if hasattr(device_runner, "prepare_avd_for_launch")
+            else {"ok": True, "profile": {}, "user_message": "模拟器启动准入检查通过。", "fix": ""}
+        )
+        if not launch_prepare.get("ok"):
+            steps.append(
+                prepare_step(
+                    "emulator",
+                    "模拟器准备",
+                    False,
+                    launch_prepare.get("user_message", "模拟器未通过抓包准入检查。"),
+                    avd=avd,
+                    create_avd=created_avd,
+                    install_google_play_image=installed_google_play_image,
+                    launch_prepare=launch_prepare,
+                )
+            )
+            return api_prepare_blocked(
+                device_id,
+                steps,
+                launch_prepare.get("user_message", "模拟器未通过抓包准入检查。"),
+            )
         start = device_runner.start_emulator(visible=visible)
         if start.ok:
             mark_device_interactive(device_id)
@@ -1149,6 +1172,7 @@ def api_system_prepare(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False
                 avd=avd,
                 create_avd=created_avd,
                 install_google_play_image=installed_google_play_image,
+                launch_prepare=launch_prepare,
                 emulator=emulator,
             )
         )
@@ -1438,16 +1462,51 @@ def api_emulator_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 def api_start_emulator(device_id: str = DEFAULT_DEVICE_ID, visible: bool = False) -> Dict[str, Any]:
     store.set_system_state("waking")
     device_runner = runner_for_device_id(device_id)
+    prepared = (
+        device_runner.prepare_avd_for_launch()
+        if hasattr(device_runner, "prepare_avd_for_launch")
+        else {"ok": True, "profile": {}, "user_message": "", "fix": ""}
+    )
+    if not prepared.get("ok"):
+        store.set_system_state("running")
+        store.touch_device(device_id)
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": prepared.get("user_message", "模拟器准入失败。"),
+            "prepare": prepared,
+            "performance_profile": prepared.get("profile", {}),
+            "user_message": prepared.get("user_message", "模拟器准入失败。"),
+            "fix": prepared.get("fix", "请执行一键准备环境后重试。"),
+            "status": device_runner.emulator_status(),
+        }
     result = device_runner.start_emulator(visible=visible)
     store.set_system_state("running")
     if result.ok:
         mark_device_interactive(device_id)
     else:
         store.touch_device(device_id)
+    profile = prepared.get("profile", {})
+    profile_summary = ""
+    profile_label = ""
+    if profile:
+        profile_label = "高性能" if profile.get("tier") == "high" else "均衡性能"
+        profile_summary = (
+            f"{profile.get('cpu_cores', '-')} 核 / {profile.get('ram_mb', '-')} MB / "
+            f"GPU {profile.get('gpu_mode', 'auto')}"
+        )
     return {
         "ok": result.ok,
         "stdout": result.stdout,
         "stderr": result.stderr,
+        "prepare": prepared,
+        "performance_profile": profile,
+        "user_message": (
+            f"已启动{profile_label}抓包模拟器（{profile_summary}）。"
+            if result.ok and profile_summary
+            else ("模拟器启动命令已发送。" if result.ok else "模拟器启动失败。")
+        ),
+        "fix": "" if result.ok else "请查看模拟器日志，并重新执行一键准备环境。",
         "status": device_runner.emulator_status(),
     }
 

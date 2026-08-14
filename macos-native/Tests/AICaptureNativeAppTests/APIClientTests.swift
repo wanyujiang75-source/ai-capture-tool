@@ -60,6 +60,34 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 @Suite(.serialized)
 struct APIClientTests {
     @Test
+    func startDeviceDecodesPreparedPerformanceProfileMessage() async throws {
+        CapturingURLProtocol.reset(
+            responseData: Data(
+                """
+                {
+                  "ok": true,
+                  "stdout": "started",
+                  "stderr": "",
+                  "user_message": "已启动高性能抓包模拟器（4 核 / 4096 MB / GPU host）。"
+                }
+                """.utf8
+            )
+        )
+        let client = makeClient()
+
+        let response = try await client.startDevice(deviceId: "device-1", visible: true)
+
+        let request = try #require(CapturingURLProtocol.observedRequests.last)
+        let requestURL = try #require(request.url)
+        let components = try #require(URLComponents(url: requestURL, resolvingAgainstBaseURL: false))
+        #expect(request.httpMethod == "POST")
+        #expect(components.path == "/api/devices/device-1/start")
+        #expect(components.queryItems == [URLQueryItem(name: "visible", value: "true")])
+        #expect(request.timeoutInterval == 900)
+        #expect(response.userMessage == "已启动高性能抓包模拟器（4 核 / 4096 MB / GPU host）。")
+    }
+
+    @Test
     func readsAndResolvesForegroundTargetUsingDedicatedEndpoints() async throws {
         CapturingURLProtocol.reset(
             responseData: Data(

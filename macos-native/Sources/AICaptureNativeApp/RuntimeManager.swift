@@ -116,8 +116,12 @@ final class RuntimeManager {
         backendProcess = process
     }
 
-    func backendEnvironment(projectRoot: URL) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+    func backendEnvironment(
+        projectRoot: URL,
+        inheriting inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var environment = inheritedEnvironment
+        environment.removeValue(forKey: "CAPTURE_DEVICES_CONFIG")
         environment["TRACEDECK_DESKTOP"] = "1"
         environment["CAPTURE_RUNTIME_DIR"] = runtimeDirectory.path
         environment["CONSOLE_HOST"] = backendURL.host ?? "127.0.0.1"
@@ -238,8 +242,10 @@ final class RuntimeManager {
         }
     }
 
-    private static func defaultRuntimeDirectory() -> URL {
-        if let configuredRuntime = ProcessInfo.processInfo.environment["CAPTURE_RUNTIME_DIR"],
+    static func defaultRuntimeDirectory(
+        inheriting environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let configuredRuntime = environment["AI_CAPTURE_NATIVE_RUNTIME_DIR"],
            !configuredRuntime.isEmpty {
             return URL(fileURLWithPath: configuredRuntime, isDirectory: true)
         }

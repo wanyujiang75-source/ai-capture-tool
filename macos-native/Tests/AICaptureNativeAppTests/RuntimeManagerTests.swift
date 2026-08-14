@@ -85,6 +85,41 @@ struct RuntimeManagerTests {
     }
 
     @Test
+    func backendEnvironmentDropsInheritedDeviceConfigOverride() {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = temporaryDirectory.appendingPathComponent("backend", isDirectory: true)
+        let runtimeDirectory = temporaryDirectory.appendingPathComponent("runtime", isDirectory: true)
+        let manager = RuntimeManager(
+            backendURL: URL(string: "http://127.0.0.1:65527")!,
+            runtimeDirectory: runtimeDirectory,
+            projectRootOverride: projectRoot
+        )
+
+        let environment = manager.backendEnvironment(
+            projectRoot: projectRoot,
+            inheriting: [
+                "CAPTURE_DEVICES_CONFIG": "/tmp/deleted-test-devices.json",
+                "CAPTURE_RUNTIME_DIR": "/tmp/deleted-test-runtime",
+                "PATH": "/usr/bin:/bin",
+            ]
+        )
+
+        #expect(environment["CAPTURE_DEVICES_CONFIG"] == nil)
+        #expect(environment["CAPTURE_RUNTIME_DIR"] == runtimeDirectory.path)
+    }
+
+    @Test
+    func nativeRuntimeDirectoryIgnoresBackendRuntimeOverride() {
+        let runtimeDirectory = RuntimeManager.defaultRuntimeDirectory(
+            inheriting: ["CAPTURE_RUNTIME_DIR": "/tmp/deleted-test-runtime"]
+        )
+
+        #expect(runtimeDirectory.path.hasSuffix("/Library/Application Support/AI抓包工具/runtime-native"))
+        #expect(runtimeDirectory.path != "/tmp/deleted-test-runtime")
+    }
+
+    @Test
     func appDelegateReopensAnExistingHiddenWindow() {
         let application = NSApplication.shared
         let window = NSWindow(

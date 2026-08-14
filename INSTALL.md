@@ -111,10 +111,11 @@ open "macos-native/build/抓包工具.app"
 1. 从 [Android 官方网站](https://developer.android.com/studio) 安装 Android Studio。
 2. 至少启动一次 Android Studio，完成 SDK 组件安装和 License 接受。
 3. 打开抓包工具，在“环境”页确认内部服务已就绪。
-4. 在“抓包”页执行“一键准备环境”。工具会定位 SDK、准备 Google Play 系统镜像、创建模拟器并检查网络和 Frida。
+4. 在“抓包”页点击“打开模拟器”。工具会定位 SDK、安装或选择 Apple Silicon 原生 `arm64-v8a` Google Play 系统镜像、创建项目 AVD、应用自适应性能配置并完成启动准入。
 5. 模拟器启动后手动解锁；目标 App 需要 Google 登录时，再手动登录。
 
 默认模拟器必须使用 `google_apis_playstore` 系统镜像。普通 AOSP 或仅 `google_apis` 的镜像不能作为默认抓包模拟器。
+16 GB 及以上内存且至少 8 个逻辑核心时使用 `4 核 / 4096 MB / GPU host` 高性能档；较低配置自动使用 `2 核 / 2048 MB` 均衡档。已经运行的 AVD 不会被热修改，现有同名但不合规的 AVD 也不会被覆盖或删除。
 
 ## 安装后验收
 
@@ -126,14 +127,14 @@ open "macos-native/build/抓包工具.app"
    curl -fsS http://127.0.0.1:7001/api/status
    ```
 
-4. 进入“抓包”页，执行一键准备环境并启动模拟器。
+4. 进入“抓包”页点击“打开模拟器”，确认界面显示高性能档或均衡性能档，并等待设备启动。
 5. 解锁模拟器，安装一个 Jenkins 测试包，打开应用并启动抓包。
 6. 操作 App 后，“接口”页应实时出现请求；“日志”页应显示当前 App 的 Android Logcat。
 
 ## 日常操作流程
 
 1. 打开 `抓包工具.app`，等待“环境”页显示“内部服务已就绪”。
-2. 进入“抓包”页，选择设备并点击“打开模拟器”。新机首次使用先执行“一键准备环境”。
+2. 进入“抓包”页，选择设备并点击“打开模拟器”。新机首次使用时，这一步会自动准备合规 Google Play AVD，首次下载镜像可能需要较长时间。
 3. 等待 Android 启动后手动解锁。目标 App 依赖 Google 登录时，先在 Play Store 中手动登录。
 4. 从“设备与应用”安装 Jenkins 测试包或本地 APK；已安装的 App 可直接使用。
 5. 在模拟器中打开目标 App，桌面端会自动识别当前前台包名和 Activity。

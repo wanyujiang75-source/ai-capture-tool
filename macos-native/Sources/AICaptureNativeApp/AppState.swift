@@ -234,9 +234,13 @@ final class AppState: ObservableObject {
         captureMessage = "正在打开模拟器：\(selectedDeviceID)。"
         do {
             let response = try await apiClient.startDevice(deviceId: selectedDeviceID, visible: true)
-            let resultText = response.ok == false ? "模拟器启动命令已返回异常，请查看日志。" : "模拟器启动命令已发送，正在刷新设备状态。"
+            let resultText = response.userMessage ?? (
+                response.ok == false
+                    ? "模拟器启动命令已返回异常，请查看日志。"
+                    : "模拟器启动命令已发送，正在刷新设备状态。"
+            )
             captureMessage = resultText
-            captureActionState = .loaded
+            captureActionState = response.ok == false ? .failed(resultText) : .loaded
             await refreshDevices()
         } catch {
             setCaptureFailure(error.localizedDescription)

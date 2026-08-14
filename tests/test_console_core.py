@@ -968,6 +968,14 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                 def avd_status(self):
                     return {"ok": self.created, "avd_name": self.avd_name, "available_avds": [self.avd_name] if self.created else []}
 
+                def host_resource_status(self):
+                    return {
+                        "memory_mb": 32768,
+                        "cpu_count": 10,
+                        "system": "Darwin",
+                        "machine": "arm64",
+                    }
+
                 def run(self, args, *, timeout=30, env=None, input_text=None):
                     if args[:3] == ["avdmanager", "create", "avd"]:
                         self.created_package = args[args.index("--package") + 1]
@@ -1002,8 +1010,172 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             self.assertIn("PlayStore.enabled=true", config)
             self.assertIn("AvdId=AI_Capture_AVD_01", config)
             self.assertIn("target=android-35", config)
+            self.assertIn("disk.dataPartition.size=8G", config)
+            self.assertIn("hw.cpu.ncore=4", config)
+            self.assertIn("hw.gpu.mode=host", config)
+            self.assertIn("hw.ramSize=4096", config)
+            self.assertIn("vm.heapSize=512", config)
             self.assertNotIn("disk.dataPartition.path", config)
             self.assertIn("target=android-35", metadata)
+
+    def test_runner_selects_high_performance_avd_profile_for_capable_mac(self):
+        from capture_console.runner import ConsoleRunner
+
+        class HighPerformanceHostRunner(ConsoleRunner):
+            def host_resource_status(self):
+                return {
+                    "memory_mb": 32768,
+                    "cpu_count": 10,
+                    "system": "Darwin",
+                    "machine": "arm64",
+                }
+
+        profile = HighPerformanceHostRunner("/tmp").recommended_avd_performance_profile()
+
+        self.assertEqual(
+            profile,
+            {
+                "tier": "high",
+                "ram_mb": 4096,
+                "cpu_cores": 4,
+                "gpu_mode": "host",
+                "data_partition_size": "8G",
+                "vm_heap_mb": 512,
+            },
+        )
+
+    def test_google_play_image_selection_ignores_non_native_host_abi(self):
+        from capture_console.runner import ConsoleRunner
+
+        class MixedArchitectureRunner(ConsoleRunner):
+            def available_system_images(self):
+                return [
+                    {
+                        "package": "system-images;android-37;google_apis_playstore;x86_64",
+                        "tag": "google_apis_playstore",
+                        "abi": "x86_64",
+                        "score": 3700,
+                    },
+                    {
+                        "package": "system-images;android-36.1;google_apis_playstore;arm64-v8a",
+                        "tag": "google_apis_playstore",
+                        "abi": "arm64-v8a",
+                        "score": 3600,
+                    },
+                ]
+
+        with patch("capture_console.runner.platform.machine", return_value="arm64"):
+            status = MixedArchitectureRunner("/tmp").google_play_image_status()
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["selected"]["abi"], "arm64-v8a")
+        self.assertEqual(len(status["google_play_images"]), 1)
+
+    def test_runner_rejects_non_google_play_avd_before_performance_rewrite(self):
+        from capture_console.runner import ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            avd_home = Path(tmp) / "avd"
+            avd_dir = avd_home / "AI_Capture_AVD_01.avd"
+            avd_dir.mkdir(parents=True)
+            config_path = avd_dir / "config.ini"
+            original_config = (
+                "PlayStore.enabled=no\n"
+                "abi.type=arm64-v8a\n"
+                "image.sysdir.1=system-images/android-36.1/google_apis/arm64-v8a/\n"
+                "hw.ramSize=2048\n"
+            )
+            config_path.write_text(original_config, encoding="utf-8")
+            (avd_home / "AI_Capture_AVD_01.ini").write_text(
+                f"path={avd_dir}\ntarget=android-36.1\n",
+                encoding="utf-8",
+            )
+
+            class IncompatibleAvdRunner(ConsoleRunner):
+                def avd_status(self):
+                    return {"ok": True, "avd_name": self.avd_name, "available_avds": [self.avd_name]}
+
+                def emulator_status(self):
+                    return {"process_running": False, "adb_online": False}
+
+                def emulator_acceleration_status(self):
+                    return {"ok": True, "detail": "Hypervisor.Framework is installed and usable."}
+
+            runner = IncompatibleAvdRunner("/tmp", avd_name="AI_Capture_AVD_01", allow_non_retained=True)
+            runner.avd_home = avd_home
+
+            result = runner.prepare_avd_for_launch()
+
+            self.assertFalse(result["ok"])
+            self.assertIn("Google Play", result["user_message"])
+            self.assertEqual(config_path.read_text(encoding="utf-8"), original_config)
+
+    def test_runner_installs_missing_google_play_image_before_creating_performance_avd(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            avd_home = Path(tmp) / "avd"
+
+            class BootstrapAvdRunner(ConsoleRunner):
+                def __init__(self):
+                    super().__init__("/tmp", avd_name="AI_Capture_AVD_01", allow_non_retained=True)
+                    self.avd_home = avd_home
+                    self.image_installed = False
+                    self.avd_exists = False
+                    self.calls = []
+
+                def avd_status(self):
+                    return {"ok": self.avd_exists, "avd_name": self.avd_name, "available_avds": []}
+
+                def create_avd_if_possible(self):
+                    self.calls.append("create_avd")
+                    if not self.image_installed:
+                        return {
+                            "ok": False,
+                            "user_message": "缺少 Google Play system image。",
+                            "fix": "install image",
+                        }
+                    avd_dir = self.avd_home / f"{self.avd_name}.avd"
+                    avd_dir.mkdir(parents=True)
+                    (avd_dir / "config.ini").write_text(
+                        "PlayStore.enabled=true\n"
+                        "abi.type=arm64-v8a\n"
+                        "image.sysdir.1=system-images/android-36.1/google_apis_playstore/arm64-v8a/\n",
+                        encoding="utf-8",
+                    )
+                    (self.avd_home / f"{self.avd_name}.ini").write_text(
+                        f"path={avd_dir}\ntarget=android-36.1\n",
+                        encoding="utf-8",
+                    )
+                    self.avd_exists = True
+                    return {"ok": True, "created": True}
+
+                def install_google_play_system_image(self):
+                    self.calls.append("install_image")
+                    self.image_installed = True
+                    return {"ok": True, "installed": True}
+
+                def emulator_acceleration_status(self):
+                    return {"ok": True, "detail": "Hypervisor.Framework is installed and usable."}
+
+                def emulator_status(self):
+                    return {"process_running": False, "adb_online": False}
+
+                def host_resource_status(self):
+                    return {
+                        "memory_mb": 32768,
+                        "cpu_count": 10,
+                        "system": "Darwin",
+                        "machine": "arm64",
+                    }
+
+            runner = BootstrapAvdRunner()
+
+            result = runner.prepare_avd_for_launch()
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(runner.calls, ["create_avd", "install_image", "create_avd"])
+            self.assertEqual(result["profile"]["tier"], "high")
 
     def test_runner_refuses_default_avd_creation_without_google_play_system_image(self):
         from capture_console.runner import CommandResult, ConsoleRunner
