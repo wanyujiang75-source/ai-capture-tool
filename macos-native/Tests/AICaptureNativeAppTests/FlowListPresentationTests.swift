@@ -3,7 +3,7 @@ import Testing
 @testable import AICaptureNativeApp
 
 private actor FlowAPISpy: FlowAPI {
-    let flows: [FlowSummary]
+    private var flows: [FlowSummary]
 
     init(flows: [FlowSummary]) {
         self.flows = flows
@@ -20,11 +20,70 @@ private actor FlowAPISpy: FlowAPI {
     func getFlowCurl(sessionID: Int, flowID: String) async throws -> String {
         throw FlowAPISpyError.unexpectedCurlRequest
     }
+
+    func setFlows(_ flows: [FlowSummary]) {
+        self.flows = flows
+    }
 }
 
 private enum FlowAPISpyError: Error {
     case unexpectedDetailRequest
     case unexpectedCurlRequest
+}
+
+private actor DelayedFlowAPI: FlowAPI {
+    private var flowContinuation: CheckedContinuation<[FlowSummary], any Error>?
+    private var flowStartWaiter: CheckedContinuation<Void, Never>?
+    private var detailContinuation: CheckedContinuation<FlowDetail, any Error>?
+    private var detailStartWaiter: CheckedContinuation<Void, Never>?
+
+    func getFlows(sessionID: Int) async throws -> [FlowSummary] {
+        try await withCheckedThrowingContinuation { continuation in
+            flowContinuation = continuation
+            flowStartWaiter?.resume()
+            flowStartWaiter = nil
+        }
+    }
+
+    func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail {
+        try await withCheckedThrowingContinuation { continuation in
+            detailContinuation = continuation
+            detailStartWaiter?.resume()
+            detailStartWaiter = nil
+        }
+    }
+
+    func getFlowCurl(sessionID: Int, flowID: String) async throws -> String {
+        "curl https://api.example.test/delayed"
+    }
+
+    func waitForFlowRequest() async {
+        guard flowContinuation == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            flowStartWaiter = continuation
+        }
+    }
+
+    func waitForDetailRequest() async {
+        guard detailContinuation == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            detailStartWaiter = continuation
+        }
+    }
+
+    func completeFlowRequest(with flows: [FlowSummary]) {
+        flowContinuation?.resume(returning: flows)
+        flowContinuation = nil
+    }
+
+    func completeDetailRequest(with detail: FlowDetail) {
+        detailContinuation?.resume(returning: detail)
+        detailContinuation = nil
+    }
 }
 
 @MainActor
@@ -87,6 +146,94 @@ struct FlowListPresentationTests {
         }
     }
 
+    @Test
+    func clearingCurrentFlowsKeepsPollingAndShowsOnlyNewFlows() async throws {
+        let currentFlows = try makeFlows()
+        let api = FlowAPISpy(flows: currentFlows)
+        let state = AppState(flowAPI: api)
+        state.activeSessionID = 22
+        state.flows = currentFlows
+        state.selectedFlowID = currentFlows[0].id
+        state.selectedFlowDetail = try makeFlowDetail(id: currentFlows[0].id)
+        state.selectedFlowCurl = "curl https://api.example.test/rest/v1/profile"
+
+        state.clearCurrentFlows()
+
+        #expect(state.visibleFlows.isEmpty)
+        #expect(state.selectedFlowID == nil)
+        #expect(state.selectedFlowDetail == nil)
+        #expect(state.selectedFlowCurl.isEmpty)
+
+        let newFlow = try makeFlow(id: "flow-3", path: "/v1/new-request")
+        await api.setFlows(currentFlows + [newFlow])
+        await state.refreshFlows()
+
+        #expect(state.visibleFlows.map(\.id) == ["flow-3"])
+        #expect(state.activeSessionID == 22)
+    }
+
+    @Test
+    func staleFlowRefreshCannotOverwriteAnotherSession() async throws {
+        let oldFlows = try makeFlows()
+        let api = DelayedFlowAPI()
+        let state = AppState(flowAPI: api)
+        state.activeSessionID = 22
+
+        let refreshTask = Task {
+            await state.refreshFlows()
+        }
+        await api.waitForFlowRequest()
+        state.activeSessionID = 23
+        state.flows = []
+        await api.completeFlowRequest(with: oldFlows)
+        await refreshTask.value
+
+        #expect(state.activeSessionID == 23)
+        #expect(state.flows.isEmpty)
+    }
+
+    @Test
+    func clearingWhileDetailLoadsCannotRestoreClearedDetail() async throws {
+        let flow = try makeFlow(id: "flow-delayed", path: "/v1/delayed")
+        let detail = try makeFlowDetail(id: flow.id)
+        let api = DelayedFlowAPI()
+        let state = AppState(flowAPI: api)
+        state.activeSessionID = 22
+        state.flows = [flow]
+
+        let detailTask = Task {
+            await state.loadFlowDetail(flow)
+        }
+        await api.waitForDetailRequest()
+        state.clearCurrentFlows()
+        await api.completeDetailRequest(with: detail)
+        await detailTask.value
+
+        #expect(state.selectedFlowID == nil)
+        #expect(state.selectedFlowDetail == nil)
+        #expect(state.selectedFlowCurl.isEmpty)
+        #expect(state.flowDetailLoadState == .idle)
+    }
+
+    @Test
+    func stoppingCaptureResetsClearedFlowBaseline() throws {
+        let flows = try makeFlows()
+        let state = AppState(flowAPI: FlowAPISpy(flows: flows))
+        state.activeSessionID = 22
+        state.flows = flows
+        state.clearCurrentFlows()
+
+        #expect(state.hasClearedFlows)
+
+        state.didStopCapture()
+
+        #expect(state.activeSessionID == nil)
+        #expect(state.flows.isEmpty)
+        #expect(state.clearedFlowIDs.isEmpty)
+        #expect(state.flowLoadState == .idle)
+        #expect(state.flowDetailLoadState == .idle)
+    }
+
     private func makeFlows() throws -> [FlowSummary] {
         try JSONDecoder().decode(
             [FlowSummary].self,
@@ -124,6 +271,24 @@ struct FlowListPresentationTests {
                   "method": "GET",
                   "status": "200",
                   "url": "https://api.example.test/rest/v1/profile"
+                }
+                """.utf8
+            )
+        )
+    }
+
+    private func makeFlow(id: String, path: String) throws -> FlowSummary {
+        try JSONDecoder().decode(
+            FlowSummary.self,
+            from: Data(
+                """
+                {
+                  "id": "\(id)",
+                  "method": "GET",
+                  "status": "200",
+                  "host": "api.example.test",
+                  "path": "\(path)",
+                  "url": "https://api.example.test\(path)"
                 }
                 """.utf8
             )

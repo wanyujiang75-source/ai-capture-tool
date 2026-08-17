@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     @Published var selectedFlowDetail: FlowDetail?
     @Published var selectedFlowCurl = ""
     @Published var flowDetailLoadState: LoadState = .idle
+    @Published private(set) var clearedFlowIDs: Set<String> = []
     @Published var foregroundTarget: ForegroundTargetResponse?
     @Published var foregroundTargetLoadState: LoadState = .idle
     @Published var localInstallState: LoadState = .idle
@@ -44,6 +45,16 @@ final class AppState: ObservableObject {
     private let flowAPI: any FlowAPI
     private var lastForegroundComponent: String?
     private var lastForegroundDeviceID: String?
+    private var flowRefreshRequestID: UUID?
+    private var flowDetailRequestID: UUID?
+
+    var visibleFlows: [FlowSummary] {
+        flows.filter { !clearedFlowIDs.contains($0.id) }
+    }
+
+    var hasClearedFlows: Bool {
+        !clearedFlowIDs.isEmpty
+    }
 
     init(
         runtimeManager: RuntimeManager = .shared,
@@ -318,6 +329,11 @@ final class AppState: ObservableObject {
             selectedFlowDetail = nil
             selectedFlowCurl = ""
             flows = []
+            flowLoadState = .idle
+            flowDetailLoadState = .idle
+            clearedFlowIDs = []
+            flowRefreshRequestID = nil
+            flowDetailRequestID = nil
             let sessionText = response.session?.id.map { "#\($0)" } ?? ""
             let modeText = response.session?.mode ?? targetApp.defaultMode ?? "auto"
             captureMessage = "抓包已启动 \(sessionText)，模式 \(modeText)。"
@@ -356,6 +372,11 @@ final class AppState: ObservableObject {
         selectedFlowID = nil
         selectedFlowDetail = nil
         selectedFlowCurl = ""
+        flowLoadState = .idle
+        flowDetailLoadState = .idle
+        clearedFlowIDs = []
+        flowRefreshRequestID = nil
+        flowDetailRequestID = nil
         if let foregroundTarget {
             self.foregroundTarget = foregroundTarget.updating(captureState: "ready", readiness: nil)
         }
@@ -516,7 +537,11 @@ final class AppState: ObservableObject {
                 selectedFlowID = nil
                 selectedFlowDetail = nil
                 selectedFlowCurl = ""
+                flowLoadState = .idle
                 flowDetailLoadState = .idle
+                clearedFlowIDs = []
+                flowRefreshRequestID = nil
+                flowDetailRequestID = nil
             }
             return sessionID
         }
@@ -526,7 +551,11 @@ final class AppState: ObservableObject {
             selectedFlowID = nil
             selectedFlowDetail = nil
             selectedFlowCurl = ""
+            flowLoadState = .idle
             flowDetailLoadState = .idle
+            clearedFlowIDs = []
+            flowRefreshRequestID = nil
+            flowDetailRequestID = nil
         }
         return nil
     }
@@ -554,43 +583,88 @@ final class AppState: ObservableObject {
     }
 
     func refreshFlows() async {
-        guard let activeSessionID else {
+        guard let requestedSessionID = activeSessionID else {
             flowLoadState = .idle
             flows = []
+            clearedFlowIDs = []
+            flowRefreshRequestID = nil
+            flowDetailRequestID = nil
             return
         }
+        let requestID = UUID()
+        flowRefreshRequestID = requestID
         flowLoadState = .loading
         do {
-            let refreshedFlows = try await flowAPI.getFlows(sessionID: activeSessionID)
+            let refreshedFlows = try await flowAPI.getFlows(sessionID: requestedSessionID)
+            guard activeSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
+                return
+            }
             flows = refreshedFlows
             if let selectedFlowID, !refreshedFlows.contains(where: { $0.id == selectedFlowID }) {
                 self.selectedFlowID = nil
                 selectedFlowDetail = nil
                 selectedFlowCurl = ""
                 flowDetailLoadState = .idle
+                flowDetailRequestID = nil
             }
             flowLoadState = .loaded
+            flowRefreshRequestID = nil
         } catch {
+            guard activeSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
+                return
+            }
             flowLoadState = .failed(error.localizedDescription)
+            flowRefreshRequestID = nil
         }
     }
 
+    func clearCurrentFlows() {
+        clearedFlowIDs.formUnion(flows.map(\.id))
+        selectedFlowID = nil
+        selectedFlowDetail = nil
+        selectedFlowCurl = ""
+        flowDetailLoadState = .idle
+        flowDetailRequestID = nil
+    }
+
     func loadFlowDetail(_ flow: FlowSummary) async {
-        guard let activeSessionID else {
+        guard let requestedSessionID = activeSessionID else {
             flowDetailLoadState = .failed("当前没有 active session。")
             return
         }
+        let requestID = UUID()
+        flowDetailRequestID = requestID
         selectedFlowID = flow.id
         selectedFlowDetail = nil
         selectedFlowCurl = ""
         flowDetailLoadState = .loading
         do {
-            selectedFlowDetail = try await flowAPI.getFlowDetail(sessionID: activeSessionID, flowID: flow.id)
-            selectedFlowCurl = try await flowAPI.getFlowCurl(sessionID: activeSessionID, flowID: flow.id)
+            let detail = try await flowAPI.getFlowDetail(sessionID: requestedSessionID, flowID: flow.id)
+            guard isCurrentDetailRequest(requestID, sessionID: requestedSessionID, flowID: flow.id) else {
+                return
+            }
+            selectedFlowDetail = detail
+            let curl = try await flowAPI.getFlowCurl(sessionID: requestedSessionID, flowID: flow.id)
+            guard isCurrentDetailRequest(requestID, sessionID: requestedSessionID, flowID: flow.id) else {
+                return
+            }
+            selectedFlowCurl = curl
             flowDetailLoadState = .loaded
+            flowDetailRequestID = nil
         } catch {
+            guard isCurrentDetailRequest(requestID, sessionID: requestedSessionID, flowID: flow.id) else {
+                return
+            }
             flowDetailLoadState = .failed(error.localizedDescription)
+            flowDetailRequestID = nil
         }
+    }
+
+    private func isCurrentDetailRequest(_ requestID: UUID, sessionID: Int, flowID: String) -> Bool {
+        activeSessionID == sessionID
+            && selectedFlowID == flowID
+            && flowDetailRequestID == requestID
+            && !clearedFlowIDs.contains(flowID)
     }
 }
 

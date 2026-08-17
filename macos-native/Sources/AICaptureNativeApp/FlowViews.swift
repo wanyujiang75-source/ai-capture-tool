@@ -31,6 +31,13 @@ struct FlowViews: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button(role: .destructive) {
+                appState.clearCurrentFlows()
+            } label: {
+                Label("清除当前接口", systemImage: "trash")
+            }
+            .disabled(appState.visibleFlows.isEmpty)
+            .help("清除当前 Session 已显示的接口；抓包不会停止，新请求仍会实时出现。")
             Button {
                 Task {
                     await appState.refreshFlows()
@@ -70,7 +77,7 @@ struct FlowViews: View {
             HStack {
                 Text("Session #\(appState.activeSessionID ?? 0)")
                     .font(.title2.bold())
-                Text("\(filteredFlows.count) / \(appState.flows.count) 条")
+                Text("\(filteredFlows.count) / \(appState.visibleFlows.count) 条")
                     .foregroundStyle(.secondary)
                 Spacer()
                 stateText(appState.flowLoadState)
@@ -99,8 +106,10 @@ struct FlowViews: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(.separator, lineWidth: 1)
             }
-            if appState.flows.isEmpty {
-                Text("暂无接口。操作 App 后会自动刷新。")
+            if appState.visibleFlows.isEmpty {
+                Text(appState.hasClearedFlows
+                    ? "当前接口已清除。继续操作 App 后，新请求会实时显示。"
+                    : "暂无接口。操作 App 后会自动刷新。")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
@@ -131,7 +140,7 @@ struct FlowViews: View {
     }
 
     private var filteredFlows: [FlowSummary] {
-        FlowListPresentation.filtered(appState.flows, query: searchText)
+        FlowListPresentation.filtered(appState.visibleFlows, query: searchText)
     }
 
     private var flowDetail: some View {
