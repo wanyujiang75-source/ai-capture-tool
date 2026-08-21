@@ -159,6 +159,33 @@ struct CaptureWorkflowTests {
     }
 
     @Test
+    func startDeviceActionPollsUntilAndroidIsReady() async throws {
+        let offline = try device(adbOnline: false, bootCompleted: false, unlocked: false)
+        let booting = try device(adbOnline: true, bootCompleted: false, unlocked: false)
+        let locked = try device(adbOnline: true, bootCompleted: true, unlocked: false)
+        let ready = try device(adbOnline: true, bootCompleted: true, unlocked: true)
+        let captureAPI = CaptureWorkflowAPISpy(
+            deviceResponses: [[offline], [booting], [locked], [ready]],
+            captureResponse: try captureResponse(packageName: "com.example.music")
+        )
+        let state = AppState(
+            captureWorkflowAPI: captureAPI,
+            workflowPollInterval: .milliseconds(1)
+        )
+        state.devices = [offline]
+        state.selectedDeviceID = "device-1"
+
+        await state.startSelectedDevice()
+
+        #expect(state.captureWorkflowState == .ready)
+        #expect(state.selectedDevice?.emulator?.adbOnline == true)
+        #expect(state.selectedDevice?.emulator?.bootCompleted == true)
+        #expect(state.selectedDevice?.emulator?.unlocked == true)
+        let calls = await captureAPI.callCounts()
+        #expect(calls.startDevice == 1)
+    }
+
+    @Test
     func activeCaptureForAnotherForegroundAppBecomesRecoverableConflict() async throws {
         let activeDevice = try device(
             adbOnline: true,

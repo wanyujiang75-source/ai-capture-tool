@@ -52,6 +52,7 @@ final class AppState: ObservableObject {
     private var flowRefreshRequestID: UUID?
     private var flowDetailRequestID: UUID?
     private var captureWorkflowRunID: UUID?
+    private var deviceStartRunID: UUID?
     private var noticeDismissTask: Task<Void, Never>?
 
     var visibleFlows: [FlowSummary] {
@@ -269,10 +270,17 @@ final class AppState: ObservableObject {
             setCaptureFailure("请先选择设备。")
             return
         }
+        let runID = UUID()
+        deviceStartRunID = runID
+        captureActionState = .loading
         setWorkflowState(.startingEmulator)
         do {
             let response = try await captureWorkflowAPI.startDevice(deviceId: selectedDeviceID, visible: true)
+            guard deviceStartRunID == runID else {
+                return
+            }
             guard response.ok != false else {
+                deviceStartRunID = nil
                 setWorkflowFailure(
                     code: "emulator_start_failed",
                     title: "模拟器启动失败",
@@ -281,9 +289,45 @@ final class AppState: ObservableObject {
                 )
                 return
             }
-            await refreshDevices()
-            setWorkflowState(selectedDevice?.emulator?.adbOnline == true ? .ready : .startingEmulator)
+            for _ in 0..<150 {
+                await refreshDevices()
+                guard deviceStartRunID == runID else {
+                    return
+                }
+                guard let emulator = selectedDevice?.emulator else {
+                    deviceStartRunID = nil
+                    setWorkflowFailure(
+                        code: "emulator_disconnected",
+                        title: "模拟器连接中断",
+                        message: "请打开运行检查，恢复模拟器连接后重试。"
+                    )
+                    return
+                }
+                if emulator.adbOnline != true {
+                    setWorkflowState(.startingEmulator)
+                } else if emulator.bootCompleted != true {
+                    setWorkflowState(.bootingAndroid)
+                } else if emulator.unlocked != true {
+                    setWorkflowState(.waitingForUnlock)
+                } else {
+                    deviceStartRunID = nil
+                    captureActionState = .loaded
+                    setWorkflowState(.ready)
+                    return
+                }
+                await waitForNextWorkflowCheck()
+            }
+            deviceStartRunID = nil
+            setWorkflowFailure(
+                code: "emulator_start_timeout",
+                title: "模拟器启动超时",
+                message: "Android 未在预期时间内就绪，请打开运行检查后重试。"
+            )
         } catch {
+            guard deviceStartRunID == runID else {
+                return
+            }
+            deviceStartRunID = nil
             setWorkflowFailure(
                 code: "emulator_start_failed",
                 title: "模拟器启动失败",
