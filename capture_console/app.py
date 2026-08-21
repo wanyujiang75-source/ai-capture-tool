@@ -414,10 +414,15 @@ def reconcile_active_session(device_id: str = DEFAULT_DEVICE_ID) -> None:
     active = store.active_session(device_id=device_id)
     device_runner = runner_for_device_id(device_id)
     status = device_runner.capture_status()
+    if active and active.get("status") == "starting":
+        return
+    if status.get("health") == "dirty":
+        stop_capture_and_clear_proxy(device_runner)
+        if active:
+            store.update_session_status(active["id"], "stopped")
+        return
     if not active:
         recover_running_session(status, device_id=device_id)
-        return
-    if active.get("status") == "starting":
         return
     if status.get("exporter") != "running" and status.get("frida_hook") != "running":
         store.update_session_status(active["id"], "stopped")

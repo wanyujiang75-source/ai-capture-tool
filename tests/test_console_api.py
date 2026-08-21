@@ -711,6 +711,111 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_reconcile_stops_and_cleans_dirty_active_session_after_emulator_restart(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DirtyRunner:
+            def __init__(self):
+                self.stop_calls = 0
+                self.clear_proxy_calls = 0
+
+            def for_device(self, device):
+                return self
+
+            def capture_status(self):
+                return {
+                    "health": "dirty",
+                    "exporter": "running",
+                    "frida_hook": "stopped",
+                    "outdir": "/tmp/previous-capture",
+                    "package": "com.example.app",
+                    "mode": "flutter-socks",
+                }
+
+            def stop_capture(self):
+                self.stop_calls += 1
+                return CommandResult(0, "stopped stale capture", "")
+
+            def clear_android_proxy(self):
+                self.clear_proxy_calls += 1
+                return CommandResult(0, "cleared proxy", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = DirtyRunner()
+                app_module.runner = runner
+                app = app_module.store.create_app(
+                    name="Example",
+                    package_name="com.example.app",
+                    default_mode="flutter-socks",
+                )
+                active = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="flutter-socks",
+                    outdir="/tmp/previous-capture",
+                    status="running",
+                )
+
+                app_module.reconcile_active_session("device-1")
+
+                self.assertEqual(app_module.store.get_session(active["id"])["status"], "stopped")
+                self.assertIsNone(app_module.store.active_session("device-1"))
+                self.assertEqual(runner.stop_calls, 1)
+                self.assertEqual(runner.clear_proxy_calls, 1)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_reconcile_cleans_dirty_runtime_without_database_session(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DirtyRunner:
+            def __init__(self):
+                self.stop_calls = 0
+                self.clear_proxy_calls = 0
+
+            def for_device(self, device):
+                return self
+
+            def capture_status(self):
+                return {
+                    "health": "dirty",
+                    "exporter": "running",
+                    "frida_hook": "stopped",
+                    "outdir": "/tmp/previous-capture",
+                    "package": "com.example.app",
+                    "mode": "flutter-socks",
+                }
+
+            def stop_capture(self):
+                self.stop_calls += 1
+                return CommandResult(0, "stopped stale capture", "")
+
+            def clear_android_proxy(self):
+                self.clear_proxy_calls += 1
+                return CommandResult(0, "cleared proxy", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                runner = DirtyRunner()
+                app_module.runner = runner
+
+                app_module.reconcile_active_session("device-1")
+
+                self.assertIsNone(app_module.store.active_session("device-1"))
+                self.assertEqual(runner.stop_calls, 1)
+                self.assertEqual(runner.clear_proxy_calls, 1)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_system_preflight_api_reports_port_conflicts(self):
         original_store = app_module.store
         original_collect = app_module.collect_port_listeners
