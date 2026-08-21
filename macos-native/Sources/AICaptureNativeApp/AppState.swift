@@ -11,7 +11,7 @@ final class AppState: ObservableObject {
     @Published var runtimeStatus: RuntimeStatus = .starting
     @Published var runtimeDirectory: URL?
     @Published var lastRuntimeCheckAt: Date?
-    @Published var selectedSection: SidebarSection = .devices
+    @Published var selectedSection: SidebarSection = .capture
     @Published var devices: [CaptureDevice] = []
     @Published var apps: [CaptureApp] = []
     @Published var deviceLoadState: LoadState = .idle
@@ -37,16 +37,22 @@ final class AppState: ObservableObject {
     @Published var foregroundTargetLoadState: LoadState = .idle
     @Published var localInstallState: LoadState = .idle
     @Published var localInstallMessage = ""
+    @Published var captureWorkflowState: CaptureWorkflowState = .ready
+    @Published var notice: UserNotice?
 
     private let runtimeManager: RuntimeManager
     private let apiClient: APIClient
     private let foregroundAPI: any ForegroundTargetAPI
     private let packageInstallAPI: any LocalPackageInstallAPI
     private let flowAPI: any FlowAPI
+    private let captureWorkflowAPI: any CaptureWorkflowAPI
+    private let workflowPollInterval: Duration
     private var lastForegroundComponent: String?
     private var lastForegroundDeviceID: String?
     private var flowRefreshRequestID: UUID?
     private var flowDetailRequestID: UUID?
+    private var captureWorkflowRunID: UUID?
+    private var noticeDismissTask: Task<Void, Never>?
 
     var visibleFlows: [FlowSummary] {
         flows.filter { !clearedFlowIDs.contains($0.id) }
@@ -61,13 +67,17 @@ final class AppState: ObservableObject {
         apiClient: APIClient = APIClient(),
         foregroundAPI: (any ForegroundTargetAPI)? = nil,
         packageInstallAPI: (any LocalPackageInstallAPI)? = nil,
-        flowAPI: (any FlowAPI)? = nil
+        flowAPI: (any FlowAPI)? = nil,
+        captureWorkflowAPI: (any CaptureWorkflowAPI)? = nil,
+        workflowPollInterval: Duration = .seconds(2)
     ) {
         self.runtimeManager = runtimeManager
         self.apiClient = apiClient
         self.foregroundAPI = foregroundAPI ?? apiClient
         self.packageInstallAPI = packageInstallAPI ?? apiClient
         self.flowAPI = flowAPI ?? apiClient
+        self.captureWorkflowAPI = captureWorkflowAPI ?? apiClient
+        self.workflowPollInterval = workflowPollInterval
         self.runtimeDirectory = runtimeManager.runtimeDirectory
     }
 
@@ -111,7 +121,7 @@ final class AppState: ObservableObject {
     func refreshDevices() async {
         deviceLoadState = .loading
         do {
-            devices = try await apiClient.getDevices()
+            devices = try await captureWorkflowAPI.getDevices()
             reconcileSelections()
             syncActiveSessionFromSelectedDevice()
             deviceLoadState = .loaded
@@ -127,7 +137,7 @@ final class AppState: ObservableObject {
             reconcileSelections()
             jenkinsLoadState = .loaded
         } catch {
-            jenkinsLoadState = .failed(error.localizedDescription)
+            jenkinsLoadState = .failed(AppCopy.Install.jenkinsUnavailable)
         }
     }
 
@@ -143,6 +153,17 @@ final class AppState: ObservableObject {
             return nil
         }
         return apps.first { $0.id == selectedAppID }
+    }
+
+    var showsDeviceSelector: Bool {
+        devices.count > 1
+    }
+
+    var displayedCaptureWorkflowState: CaptureWorkflowState {
+        if captureWorkflowState == .ready, selectedDevice?.emulator?.adbOnline != true {
+            return .emulatorOffline
+        }
+        return captureWorkflowState
     }
 
     var hasForegroundSessionMismatch: Bool {
@@ -220,8 +241,15 @@ final class AppState: ObservableObject {
                 }
             } else if activeSessionID != nil, let appID = foregroundTarget?.app?.id {
                 let response = try await foregroundAPI.getAppReadiness(appID: appID, deviceID: selectedDeviceID)
-                let state = (response.readiness.flowCount ?? 0) > 0 ? "capturable" : "waiting_traffic"
+                let flowCount = response.readiness.flowCount ?? 0
+                let state = flowCount > 0 ? "capturable" : "waiting_traffic"
                 foregroundTarget = foregroundTarget?.updating(captureState: state, readiness: response.readiness)
+                switch captureWorkflowState {
+                case let .capturing(name, _), let .restored(name):
+                    setWorkflowState(.capturing(name: name, flowCount: flowCount))
+                default:
+                    break
+                }
             }
             foregroundTargetLoadState = .loaded
         } catch {
@@ -241,20 +269,27 @@ final class AppState: ObservableObject {
             setCaptureFailure("请先选择设备。")
             return
         }
-        captureActionState = .loading
-        captureMessage = "正在打开模拟器：\(selectedDeviceID)。"
+        setWorkflowState(.startingEmulator)
         do {
-            let response = try await apiClient.startDevice(deviceId: selectedDeviceID, visible: true)
-            let resultText = response.userMessage ?? (
-                response.ok == false
-                    ? "模拟器启动命令已返回异常，请查看日志。"
-                    : "模拟器启动命令已发送，正在刷新设备状态。"
-            )
-            captureMessage = resultText
-            captureActionState = response.ok == false ? .failed(resultText) : .loaded
+            let response = try await captureWorkflowAPI.startDevice(deviceId: selectedDeviceID, visible: true)
+            guard response.ok != false else {
+                setWorkflowFailure(
+                    code: "emulator_start_failed",
+                    title: "模拟器启动失败",
+                    message: "请打开运行检查并根据修复建议重试。",
+                    technicalDetail: response.stderr ?? response.userMessage
+                )
+                return
+            }
             await refreshDevices()
+            setWorkflowState(selectedDevice?.emulator?.adbOnline == true ? .ready : .startingEmulator)
         } catch {
-            setCaptureFailure(error.localizedDescription)
+            setWorkflowFailure(
+                code: "emulator_start_failed",
+                title: "模拟器启动失败",
+                message: "请打开运行检查并根据修复建议重试。",
+                technicalDetail: error.localizedDescription
+            )
         }
     }
 
@@ -279,124 +314,275 @@ final class AppState: ObservableObject {
             setCaptureFailure("请先选择设备。")
             return false
         }
-        captureActionState = .loading
-        captureMessage = "正在一键准备环境：检查依赖、Google Play 镜像、模拟器、Google 登录、网络模式和 Frida 准入。"
+        let appName = foregroundTarget?.app?.name ?? "当前应用"
+        setWorkflowState(.preparing(name: appName))
         do {
-            let response = try await apiClient.prepareSystem(deviceId: selectedDeviceID, visible: visible)
-            let message = response.prepare.userMessage ?? "环境准备流程已完成。"
-            captureMessage = message
+            let response = try await captureWorkflowAPI.prepareSystem(deviceId: selectedDeviceID, visible: visible)
             await refreshDevices()
             if response.prepare.ok == true {
                 captureActionState = .loaded
                 return true
             }
-            captureActionState = .failed(message)
+            setWorkflowFailure(
+                code: "capture_prepare_failed",
+                title: "抓包环境准备失败",
+                message: "请打开运行检查并完成未通过的项目。",
+                technicalDetail: response.prepare.userMessage
+            )
             return false
         } catch {
-            setCaptureFailure(error.localizedDescription)
+            setWorkflowFailure(
+                code: "capture_prepare_failed",
+                title: "抓包环境准备失败",
+                message: "请打开运行检查并完成未通过的项目。",
+                technicalDetail: error.localizedDescription
+            )
             return false
         }
     }
 
     func startSelectedCapture() async {
-        guard let selectedDeviceID else {
-            setCaptureFailure("请先选择设备。")
-            return
-        }
-        if hasForegroundSessionMismatch {
-            setCaptureFailure(foregroundCaptureGuidance)
-            return
-        }
-        await refreshForegroundTarget(forceResolve: true)
-        guard let targetApp = foregroundTarget?.app, canStartForegroundCapture else {
-            setCaptureFailure(foregroundCaptureGuidance)
-            return
-        }
+        await startCaptureWorkflow()
+    }
+
+    func startCaptureWorkflow() async {
+        let runID = UUID()
+        captureWorkflowRunID = runID
         captureActionState = .loading
-        do {
-            let prepared = await prepareSelectedEnvironment()
-            guard prepared else {
-                return
-            }
-            captureActionState = .loading
-            let response = try await apiClient.startCapture(
-                appId: targetApp.id,
-                deviceId: selectedDeviceID,
-                mode: nil
+        await refreshDevices()
+
+        guard captureWorkflowRunID == runID else {
+            return
+        }
+        guard let selectedDeviceID, let initialDevice = selectedDevice else {
+            setWorkflowFailure(
+                code: "emulator_missing",
+                title: "未找到可用模拟器",
+                message: "请打开运行检查，创建或修复抓包模拟器后重试。"
             )
-            activeSessionID = response.session?.id
-            selectedFlowID = nil
-            selectedFlowDetail = nil
-            selectedFlowCurl = ""
-            flows = []
-            flowLoadState = .idle
-            flowDetailLoadState = .idle
-            clearedFlowIDs = []
-            flowRefreshRequestID = nil
-            flowDetailRequestID = nil
-            let sessionText = response.session?.id.map { "#\($0)" } ?? ""
-            let modeText = response.session?.mode ?? targetApp.defaultMode ?? "auto"
-            captureMessage = "抓包已启动 \(sessionText)，模式 \(modeText)。"
-            captureActionState = .loaded
-            await refreshDevices()
-        } catch {
-            if await recoverExistingCaptureIfNeeded(error) {
+            return
+        }
+
+        if initialDevice.emulator?.adbOnline != true {
+            setWorkflowState(.startingEmulator)
+            do {
+                let response = try await captureWorkflowAPI.startDevice(deviceId: selectedDeviceID, visible: true)
+                guard response.ok != false else {
+                    setWorkflowFailure(
+                        code: "emulator_start_failed",
+                        title: "模拟器启动失败",
+                        message: "请打开运行检查并根据修复建议重试。",
+                        technicalDetail: response.stderr ?? response.userMessage
+                    )
+                    return
+                }
+            } catch {
+                setWorkflowFailure(
+                    code: "emulator_start_failed",
+                    title: "模拟器启动失败",
+                    message: "请打开运行检查并根据修复建议重试。",
+                    technicalDetail: error.localizedDescription
+                )
                 return
             }
-            setCaptureFailure(error.localizedDescription)
+        }
+
+        while captureWorkflowRunID == runID, !Task.isCancelled {
+            await refreshDevices()
+            guard captureWorkflowRunID == runID else {
+                return
+            }
+            guard let device = selectedDevice else {
+                setWorkflowFailure(
+                    code: "emulator_disconnected",
+                    title: "模拟器连接中断",
+                    message: "请打开运行检查，恢复模拟器连接后重试。"
+                )
+                return
+            }
+            guard device.emulator?.adbOnline == true else {
+                setWorkflowState(.startingEmulator)
+                await waitForNextWorkflowCheck()
+                continue
+            }
+            guard device.emulator?.bootCompleted == true else {
+                setWorkflowState(.bootingAndroid)
+                await waitForNextWorkflowCheck()
+                continue
+            }
+            guard device.emulator?.unlocked == true else {
+                setWorkflowState(.waitingForUnlock)
+                await waitForNextWorkflowCheck()
+                continue
+            }
+
+            await refreshForegroundTarget(forceResolve: foregroundTarget == nil)
+            guard captureWorkflowRunID == runID else {
+                return
+            }
+
+            if let activeSession = device.activeSession, let activePackage = activeSession.packageName {
+                activeSessionID = activeSession.id
+                if let targetPackage = foregroundTarget?.app?.packageName, targetPackage != activePackage {
+                    setWorkflowState(.conflict(currentApp: displayName(forPackage: activePackage)))
+                    captureWorkflowRunID = nil
+                    return
+                }
+                let currentName = foregroundTarget?.app?.name ?? displayName(forPackage: activePackage)
+                setWorkflowState(.restored(name: currentName))
+                captureWorkflowRunID = nil
+                return
+            }
+
+            guard let targetApp = foregroundTarget?.app else {
+                setWorkflowState(.waitingForApp)
+                await waitForNextWorkflowCheck()
+                continue
+            }
+
+            let appName = targetApp.name ?? targetApp.packageName ?? "当前应用"
+            setWorkflowState(.appDetected(name: appName))
+            setWorkflowState(.preparing(name: appName))
+            do {
+                let prepare = try await captureWorkflowAPI.prepareSystem(
+                    deviceId: selectedDeviceID,
+                    visible: false
+                )
+                guard prepare.prepare.ok == true else {
+                    setWorkflowFailure(
+                        code: "capture_prepare_failed",
+                        title: "抓包环境准备失败",
+                        message: "请打开运行检查并完成未通过的项目。",
+                        technicalDetail: prepare.prepare.userMessage
+                    )
+                    return
+                }
+
+                setWorkflowState(.startingCapture(name: appName))
+                let response = try await captureWorkflowAPI.startCapture(
+                    appId: targetApp.id,
+                    deviceId: selectedDeviceID,
+                    mode: nil
+                )
+                guard let sessionID = response.session?.id else {
+                    setWorkflowFailure(
+                        code: "capture_start_failed",
+                        title: "抓包启动失败",
+                        message: "工具没有创建抓包任务，请运行检查后重试。",
+                        technicalDetail: response.output
+                    )
+                    return
+                }
+                activeSessionID = sessionID
+                resetFlowPresentation()
+                setWorkflowState(.capturing(name: appName, flowCount: 0))
+                showNotice(
+                    .success(
+                        title: "抓包已开始",
+                        message: "正在记录“\(appName)”的接口。"
+                    )
+                )
+                captureWorkflowRunID = nil
+                return
+            } catch {
+                if await recoverExistingCaptureIfNeeded(error) {
+                    captureWorkflowRunID = nil
+                    return
+                }
+                setWorkflowFailure(
+                    code: "capture_start_failed",
+                    title: "抓包启动失败",
+                    message: "请打开运行检查，修复未通过的项目后重试。",
+                    technicalDetail: error.localizedDescription
+                )
+                return
+            }
         }
     }
 
     func stopSelectedCapture() async {
+        captureWorkflowRunID = nil
         guard let selectedDeviceID else {
             setCaptureFailure("请先选择设备。")
             return
         }
         captureActionState = .loading
         do {
-            let response = try await apiClient.stopCapture(deviceId: selectedDeviceID)
+            let response = try await captureWorkflowAPI.stopCapture(deviceId: selectedDeviceID)
+            if response.ok == false {
+                captureMessage = "请打开运行检查并重试停止操作。"
+                captureActionState = .failed(captureMessage)
+                showNotice(
+                    .failure(
+                        title: "抓包停止失败",
+                        message: captureMessage
+                    )
+                )
+                return
+            }
             didStopCapture()
-            let okText = response.ok == false ? "停止结果异常" : "抓包已停止"
-            captureMessage = okText
-            captureActionState = .loaded
+            setWorkflowState(.stopped)
+            showNotice(.success(title: "抓包已停止", message: "已保留本次抓包结果。"))
             await refreshDevices()
             await refreshForegroundTarget(forceResolve: true)
         } catch {
-            setCaptureFailure(error.localizedDescription)
+            captureMessage = "请打开运行检查并重试停止操作。"
+            captureActionState = .failed(captureMessage)
+            showNotice(
+                .failure(
+                    title: "抓包停止失败",
+                    message: captureMessage
+                )
+            )
         }
+    }
+
+    func stopAndSwitchCapture() async {
+        await stopSelectedCapture()
+        guard case .stopped = captureWorkflowState else {
+            return
+        }
+        await startCaptureWorkflow()
+    }
+
+    func continueCurrentCapture() {
+        guard let activePackage = selectedDevice?.activeSession?.packageName else {
+            return
+        }
+        setWorkflowState(.restored(name: displayName(forPackage: activePackage)))
     }
 
     func didStopCapture() {
         activeSessionID = nil
-        flows = []
-        selectedFlowID = nil
-        selectedFlowDetail = nil
-        selectedFlowCurl = ""
-        flowLoadState = .idle
-        flowDetailLoadState = .idle
-        clearedFlowIDs = []
-        flowRefreshRequestID = nil
-        flowDetailRequestID = nil
+        resetFlowPresentation()
         if let foregroundTarget {
             self.foregroundTarget = foregroundTarget.updating(captureState: "ready", readiness: nil)
         }
+        captureWorkflowState = .stopped
     }
 
     func installJenkinsPackage(_ package: JenkinsPackage) async {
         jenkinsInstallState = .loading
         installingJenkinsPackageID = package.id
-        jenkinsMessage = "正在安装 \(package.artifactFileName)：正在从 Jenkins 下载构建产物并执行 Android 包安装，请保持模拟器在线且不要关闭窗口。"
+        jenkinsMessage = AppCopy.Install.installingJenkins(
+            jobName: package.jobName,
+            buildNumber: package.buildNumber
+        )
         do {
             if let installedApp = try await installJenkinsPackageOnSelectedDevice(package) {
-                jenkinsMessage = "已安装 \(installedApp.name ?? package.artifactFileName)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
+                jenkinsMessage = AppCopy.Install.installed(
+                    appName: installedApp.name ?? package.jobName
+                )
             } else {
-                jenkinsMessage = "已安装 \(package.artifactFileName)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
+                jenkinsMessage = AppCopy.Install.installed(appName: package.jobName)
             }
             jenkinsInstallState = .loaded
+            showNotice(.success(title: "应用安装完成", message: jenkinsMessage))
         } catch {
-            let message = friendlyJenkinsInstallError(error)
-            jenkinsMessage = message
-            jenkinsInstallState = .failed(message)
+            let issue = friendlyInstallIssue(error)
+            jenkinsMessage = issue.message
+            jenkinsInstallState = .failed(issue.message)
+            showNotice(.failure(title: issue.title, message: issue.message))
         }
         installingJenkinsPackageID = nil
     }
@@ -406,22 +592,25 @@ final class AppState: ObservableObject {
             let message = "请选择扩展名为 .apk 的 Android 安装包。"
             localInstallMessage = message
             localInstallState = .failed(message)
+            showNotice(.failure(title: "无法安装应用", message: message))
             return
         }
         if let readinessMessage = selectedDeviceInstallReadinessMessage() {
             localInstallMessage = readinessMessage
             localInstallState = .failed(readinessMessage)
+            showNotice(.failure(title: "暂时无法安装应用", message: readinessMessage))
             return
         }
         guard let selectedDeviceID else {
             let message = "未选择安装目标：请先选择一台已启动的 Android 模拟器后再安装。"
             localInstallMessage = message
             localInstallState = .failed(message)
+            showNotice(.failure(title: "暂时无法安装应用", message: message))
             return
         }
 
         localInstallState = .loading
-        localInstallMessage = "正在安装 \(fileURL.lastPathComponent)：正在校验 APK 并安装到 \(selectedDeviceID)，请保持模拟器在线。"
+        localInstallMessage = AppCopy.Install.installingLocal(fileName: fileURL.lastPathComponent)
         let accessing = fileURL.startAccessingSecurityScopedResource()
         defer {
             if accessing {
@@ -439,12 +628,14 @@ final class AppState: ObservableObject {
             }
             didInstallPackage()
             let name = installedApp?.name ?? fileURL.lastPathComponent
-            localInstallMessage = "已安装 \(name)。请在模拟器中打开该应用，工具会自动识别并检查抓包能力。"
+            localInstallMessage = AppCopy.Install.installed(appName: name)
             localInstallState = .loaded
+            showNotice(.success(title: "应用安装完成", message: localInstallMessage))
         } catch {
-            let message = friendlyJenkinsInstallError(error)
-            localInstallMessage = message
-            localInstallState = .failed(message)
+            let issue = friendlyInstallIssue(error)
+            localInstallMessage = issue.message
+            localInstallState = .failed(issue.message)
+            showNotice(.failure(title: issue.title, message: issue.message))
         }
     }
 
@@ -457,19 +648,19 @@ final class AppState: ObservableObject {
 
     private func selectedDeviceInstallReadinessMessage() -> String? {
         guard selectedDeviceID != nil else {
-            return "未选择安装目标：请先选择一台已启动的 Android 模拟器后再安装。"
+            return AppCopy.Install.emulatorOffline
         }
         guard let selectedDevice else {
-            return "未发现安装目标：请先启动模拟器，待设备在线后再安装。"
+            return AppCopy.Install.emulatorOffline
         }
         guard selectedDevice.emulator?.adbOnline == true else {
-            return "模拟器未在线：请先启动 Android 模拟器，待设备进入在线状态后再安装。"
+            return AppCopy.Install.emulatorOffline
         }
         guard selectedDevice.emulator?.bootCompleted == true else {
-            return "模拟器启动中：请等待 Android 系统启动完成后再安装。"
+            return AppCopy.Install.emulatorBooting
         }
         guard selectedDevice.emulator?.unlocked == true else {
-            return "模拟器已锁定：请先解锁模拟器后再安装。"
+            return AppCopy.Install.emulatorLocked
         }
         return nil
     }
@@ -499,21 +690,48 @@ final class AppState: ObservableObject {
         return response.app
     }
 
-    private func friendlyJenkinsInstallError(_ error: Error) -> String {
-        let message = error.localizedDescription
-        if message.contains("emulator is not ready for package install") {
-            return "模拟器未就绪：请先启动 Android 模拟器，待系统启动完成后再安装。"
+    private func friendlyInstallIssue(_ error: Error) -> UserFacingIssue {
+        let apiIssue = (error as? APIClientError)?.userFacingIssue
+        let technicalDetail = apiIssue?.technicalDetail ?? error.localizedDescription
+        if technicalDetail.contains("emulator is not ready for package install") {
+            return .init(
+                code: "emulator_not_ready",
+                title: "暂时无法安装应用",
+                message: AppCopy.Install.emulatorOffline,
+                technicalDetail: technicalDetail
+            )
         }
-        if message.contains("emulator is locked") {
-            return "模拟器已锁定：请先解锁模拟器后再安装。"
+        if technicalDetail.contains("emulator is locked") {
+            return .init(
+                code: "emulator_locked",
+                title: "暂时无法安装应用",
+                message: AppCopy.Install.emulatorLocked,
+                technicalDetail: technicalDetail
+            )
         }
-        if message.contains("another capture session is active") {
-            return "当前设备正在抓包：请先停止抓包任务后再安装。"
+        if technicalDetail.contains("another capture session is active") {
+            return .init(
+                code: "capture_active",
+                title: "暂时无法安装应用",
+                message: AppCopy.Install.captureConflict,
+                technicalDetail: technicalDetail
+            )
         }
-        if message.contains("dirty capture process state") {
-            return "当前设备存在未清理的抓包进程：请先停止或清理抓包后再安装。"
+        if technicalDetail.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE")
+            || technicalDetail.localizedCaseInsensitiveContains("signature") {
+            return .init(
+                code: "signature_conflict",
+                title: "应用签名不一致",
+                message: AppCopy.Install.signatureConflict,
+                technicalDetail: technicalDetail
+            )
         }
-        return message
+        return apiIssue ?? .init(
+            code: "app_install_failed",
+            title: "应用安装失败",
+            message: "请确认安装包有效，并在运行检查中确认模拟器状态后重试。",
+            technicalDetail: technicalDetail
+        )
     }
 
     private func reconcileSelections() {
@@ -561,20 +779,89 @@ final class AppState: ObservableObject {
     }
 
     private func recoverExistingCaptureIfNeeded(_ error: Error) async -> Bool {
-        let message = error.localizedDescription
-        guard message.contains("another capture session is active") || message.contains("已有抓包任务") else {
+        let apiIssue = (error as? APIClientError)?.userFacingIssue
+        let technicalDetail = apiIssue?.technicalDetail ?? error.localizedDescription
+        let isCaptureConflict = apiIssue?.code == "capture_active"
+            || technicalDetail.contains("another capture session is active")
+            || technicalDetail.contains("已有抓包任务")
+        guard isCaptureConflict else {
             return false
         }
         await refreshDevices()
         guard let sessionID = syncActiveSessionFromSelectedDevice() else {
-            setCaptureFailure("当前设备已有抓包任务运行中，但未能读取 Session；请先停止抓包后再重新开始。")
+            setWorkflowFailure(
+                code: "capture_recovery_failed",
+                title: "无法恢复正在运行的抓包",
+                message: "请在运行检查中停止旧任务后重试。",
+                technicalDetail: technicalDetail
+            )
             return true
         }
-        captureMessage = "当前设备已有抓包任务 #\(sessionID)，已自动接入现有 Session；接口页会继续实时刷新。"
-        captureActionState = .loaded
-        selectedSection = .flows
+        activeSessionID = sessionID
+        let packageName = selectedDevice?.activeSession?.packageName ?? foregroundTarget?.packageName ?? "当前应用"
+        let appName = foregroundTarget?.app?.packageName == packageName
+            ? foregroundTarget?.app?.name
+            : nil
+        setWorkflowState(.restored(name: appName ?? displayName(forPackage: packageName)))
         await refreshFlows()
         return true
+    }
+
+    private func waitForNextWorkflowCheck() async {
+        try? await Task.sleep(for: workflowPollInterval)
+    }
+
+    private func displayName(forPackage packageName: String) -> String {
+        apps.first(where: { $0.packageName == packageName })?.name ?? packageName
+    }
+
+    private func setWorkflowState(_ state: CaptureWorkflowState) {
+        captureWorkflowState = state
+        let presentation = state.presentation
+        captureMessage = presentation.message
+        switch state.tone {
+        case .progress:
+            captureActionState = .loading
+        case .error:
+            captureActionState = .failed(presentation.message)
+        case .neutral:
+            captureActionState = state == .ready || state == .emulatorOffline ? .idle : .loaded
+        case .warning, .success:
+            captureActionState = .loaded
+        }
+    }
+
+    private func setWorkflowFailure(
+        code: String,
+        title: String,
+        message: String,
+        technicalDetail: String? = nil
+    ) {
+        captureWorkflowRunID = nil
+        setWorkflowState(
+            .failed(
+                UserFacingIssue(
+                    code: code,
+                    title: title,
+                    message: message,
+                    recoveryAction: AppCopy.Navigation.runtimeCheck,
+                    technicalDetail: technicalDetail
+                )
+            )
+        )
+        showNotice(.failure(title: title, message: message))
+    }
+
+    private func resetFlowPresentation() {
+        flows = []
+        selectedFlowID = nil
+        selectedFlowDetail = nil
+        selectedFlowCurl = ""
+        flowLoadState = .idle
+        flowDetailLoadState = .idle
+        clearedFlowIDs = []
+        flowRefreshRequestID = nil
+        flowDetailRequestID = nil
     }
 
     private func setCaptureFailure(_ message: String) {
@@ -600,6 +887,12 @@ final class AppState: ObservableObject {
                 return
             }
             flows = refreshedFlows
+            switch captureWorkflowState {
+            case let .capturing(name, _), let .restored(name):
+                setWorkflowState(.capturing(name: name, flowCount: visibleFlows.count))
+            default:
+                break
+            }
             if let selectedFlowID, !refreshedFlows.contains(where: { $0.id == selectedFlowID }) {
                 self.selectedFlowID = nil
                 selectedFlowDetail = nil
@@ -625,11 +918,12 @@ final class AppState: ObservableObject {
         selectedFlowCurl = ""
         flowDetailLoadState = .idle
         flowDetailRequestID = nil
+        showNotice(.success(title: "列表已清空", message: AppCopy.Flow.cleared))
     }
 
     func loadFlowDetail(_ flow: FlowSummary) async {
         guard let requestedSessionID = activeSessionID else {
-            flowDetailLoadState = .failed("当前没有 active session。")
+            flowDetailLoadState = .failed(AppCopy.Flow.notStarted)
             return
         }
         let requestID = UUID()
@@ -666,6 +960,18 @@ final class AppState: ObservableObject {
             && flowDetailRequestID == requestID
             && !clearedFlowIDs.contains(flowID)
     }
+
+    func showNotice(_ notice: UserNotice) {
+        noticeDismissTask?.cancel()
+        self.notice = notice
+        noticeDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: notice.duration)
+            guard !Task.isCancelled, self?.notice?.id == notice.id else {
+                return
+            }
+            self?.notice = nil
+        }
+    }
 }
 
 private struct UserVisibleError: LocalizedError {
@@ -688,9 +994,8 @@ enum LoadState: Equatable {
 }
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case setup = "环境"
-    case devices = "设备与应用"
     case capture = "抓包"
+    case install = "安装应用"
     case flows = "接口"
     case logs = "日志"
 
@@ -698,12 +1003,10 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .setup:
-            "checklist"
-        case .devices:
-            "iphone.gen3.radiowaves.left.and.right"
         case .capture:
             "record.circle"
+        case .install:
+            "square.and.arrow.down"
         case .flows:
             "list.bullet.rectangle"
         case .logs:

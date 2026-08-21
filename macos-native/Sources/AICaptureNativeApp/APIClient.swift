@@ -31,7 +31,15 @@ protocol FlowAPI: Sendable {
     func getFlowCurl(sessionID: Int, flowID: String) async throws -> String
 }
 
-struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, @unchecked Sendable {
+protocol CaptureWorkflowAPI: Sendable {
+    func getDevices() async throws -> [CaptureDevice]
+    func startDevice(deviceId: String, visible: Bool) async throws -> BasicActionResponse
+    func prepareSystem(deviceId: String, visible: Bool) async throws -> SystemPrepareResponse
+    func startCapture(appId: Int, deviceId: String, mode: String?) async throws -> CaptureStartResponse
+    func stopCapture(deviceId: String) async throws -> CaptureStopResponse
+}
+
+struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -320,30 +328,89 @@ enum APIClientError: LocalizedError {
     case decoding(String)
 
     var errorDescription: String? {
+        userFacingIssue.message
+    }
+
+    var userFacingIssue: UserFacingIssue {
         switch self {
         case .invalidResponse:
-            "后端响应无效"
-        case .httpStatus(let statusCode, let body):
-            if let message = Self.userMessage(from: body) {
-                "后端返回 HTTP \(statusCode)：\(message)"
-            } else {
-                body.isEmpty ? "后端返回 HTTP \(statusCode)" : "后端返回 HTTP \(statusCode)：\(body)"
-            }
-        case .decoding(let message):
-            "数据解析失败：\(message)"
+            return UserFacingIssue(
+                code: "invalid_response",
+                title: "本机服务响应异常",
+                message: "请重新检查本机服务后重试。"
+            )
+        case let .decoding(message):
+            return UserFacingIssue(
+                code: "response_decoding_failed",
+                title: "数据读取失败",
+                message: "返回的数据无法读取，请刷新后重试。",
+                technicalDetail: message
+            )
+        case let .httpStatus(statusCode, body):
+            return Self.issue(statusCode: statusCode, body: body)
         }
     }
 
-    private static func userMessage(from body: String) -> String? {
+    private static func issue(statusCode: Int, body: String) -> UserFacingIssue {
+        let detail = detailDictionary(from: body)
+        let detailText = detailString(from: body)
+        let code = detail?["code"] as? String ?? "http_status_\(statusCode)"
+        let title = detail?["title"] as? String ?? defaultTitle(statusCode: statusCode)
+        let message = detail?["user_message"] as? String ?? defaultMessage(statusCode: statusCode)
+        let recoveryAction = detail?["recovery_action"] as? String
+            ?? detail?["fix"] as? String
+        let technicalDetail = detail?["technical_detail"] as? String
+            ?? detail?["message"] as? String
+            ?? detailText
+            ?? (body.isEmpty ? nil : body)
+        return UserFacingIssue(
+            code: code,
+            title: title,
+            message: message,
+            recoveryAction: recoveryAction,
+            technicalDetail: technicalDetail
+        )
+    }
+
+    private static func detailDictionary(from body: String) -> [String: Any]? {
         guard let data = body.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        if let detail = object["detail"] as? [String: Any] {
-            return detail["user_message"] as? String
-                ?? detail["message"] as? String
-                ?? detail["fix"] as? String
+        return object["detail"] as? [String: Any] ?? object
+    }
+
+    private static func detailString(from body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
         }
-        return object["user_message"] as? String ?? object["message"] as? String
+        return object["detail"] as? String
+    }
+
+    private static func defaultTitle(statusCode: Int) -> String {
+        switch statusCode {
+        case 404:
+            "内容不可用"
+        case 409:
+            "当前操作暂时无法完成"
+        case 500...599:
+            "本机服务暂时不可用"
+        default:
+            "操作未完成"
+        }
+    }
+
+    private static func defaultMessage(statusCode: Int) -> String {
+        switch statusCode {
+        case 404:
+            "请求的内容不存在或已失效，请刷新后重试。"
+        case 409:
+            "当前操作与正在进行的任务冲突，请结束当前任务后重试。"
+        case 500...599:
+            "请打开运行检查，确认本机服务正常后重试。"
+        default:
+            "请稍后重试；如果问题持续，请打开运行检查。"
+        }
     }
 }

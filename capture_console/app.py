@@ -15,12 +15,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .device_discovery import build_discovered_devices
 from .foreground import capture_state
+from .http_errors import structured_http_error_body
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
 from .local_config import load_local_config
 from .logcat import LogcatService
@@ -68,6 +69,19 @@ logcat_service = LogcatService()
 logcat_reaper_stop_event = threading.Event()
 logcat_reaper_thread: Optional[threading.Thread] = None
 app = FastAPI(title="TraceDeck API", version="1.0.0")
+
+
+@app.exception_handler(HTTPException)
+async def structured_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=structured_http_error_body(
+            path=request.url.path,
+            status_code=exc.status_code,
+            detail=exc.detail,
+        ),
+        headers=exc.headers,
+    )
 
 
 class AppPayload(BaseModel):

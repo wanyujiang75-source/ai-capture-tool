@@ -2,6 +2,14 @@
 
 验证当前 `codex/desktop-one-click-ready` 工作树可以交付为 macOS 本机桌面应用，并形成以下闭环：桌面端自启动本机后端、一键环境准备、Google Play 模拟器准入、网络与 Frida 检查、Jenkins/本地 APK 安装、应用启动、实时抓包、请求与响应查看、停止后的资源清理，以及可下载发行包完整性。
 
+## 当前增量目标：桌面端交互与精准文案 V1.1
+
+将原生 macOS 桌面端收敛为 `抓包 / 安装应用 / 接口 / 日志` 四个主导航，并把默认入口改为“抓包”。普通用户只需点击“开始抓包”，工具自动启动模拟器、等待 Android 和屏幕解锁、识别前台应用、准备抓包环境并开始记录接口。
+
+所有普通界面状态必须说明“正在处理什么、当前结果是什么、用户下一步做什么”。Frida、AVD、HTTP 状态冲突、Session、端口及后端原始 JSON 仅允许出现在“运行检查”的技术详情中。业务文案统一集中到 `AppCopy`，抓包页面由 `CaptureWorkflowState` 驱动，错误由 `UserFacingIssue` 映射为可恢复的用户提示。
+
+接口页继续实时更新，支持“清空列表”但不停止抓包；安装应用页保留 Jenkins 与本地 APK；日志页使用面向用户的中文操作文案。成功提示 3 秒自动消失，失败提示 4 秒自动消失，阻塞状态保留在页面中。
+
 ## 当前增量目标：Android 运行日志控制台
 
 将桌面端左侧现有“日志”入口从占位页升级为实时 Android Logcat 控制台。用户选择设备和应用后，默认自动查看目标应用进程日志，并可切换系统日志与崩溃日志；页面支持暂停、继续、清空当前视图、关键字搜索、日志级别过滤和自动滚动。
@@ -23,6 +31,8 @@
 - 不执行 `wipe-data`、`pm clear`，不删除 Google/App 登录态。
 - 不停止或修改不属于本项目的模拟器、端口或进程。
 - Google 密码和登录动作由用户自行完成；验收只检查准入状态。
+- 不修改 `flutter-socks + Frida + mitmproxy/exporter` 底层抓包协议。
+- 不在普通页面直接显示后端原始错误、实现术语或设备技术标识。
 
 ## 验收命令与证据
 
@@ -32,6 +42,8 @@
 - `release/package.sh`
 - `python -m unittest -v tests.test_logcat_service tests.test_console_api`
 - `swift test --package-path macos-native`
+- `rg -n "Session|active session|执行中|未就绪|HTTP 409" macos-native/Sources/AICaptureNativeApp --glob '*.swift'`
 - 真实启动 `AI抓包工具.app`，检查 `127.0.0.1:7001`、Environment Doctor、Google Play 镜像、设备 Doctor、Frida、Jenkins、抓包 session、flow detail/cURL。
+- 真实启动 `抓包工具.app`，逐页检查四个主导航、自动抓包状态、安装错误、接口空/清空/实时恢复和日志断线提示。
 - 在真实模拟器中启动一个测试 App，确认“日志”页能显示应用日志、系统日志和崩溃缓冲区，切换设备或离开页面后无孤儿 `adb logcat` 进程。
 - 检查发行包包含桌面 App 与内嵌后端，且不包含开发 runtime、数据库、账号和抓包历史。

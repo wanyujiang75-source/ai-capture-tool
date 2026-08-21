@@ -41,6 +41,154 @@ class CaptureConsoleApiTests(unittest.TestCase):
             idle_release_minutes=idle_release_minutes,
         )
 
+    def test_structured_error_keeps_legacy_string_detail_for_capture_conflict(self):
+        detail = "another capture session is active; stop or cleanup first"
+
+        body = app_module.structured_http_error_body(
+            path="/api/captures/start",
+            status_code=409,
+            detail=detail,
+        )
+
+        self.assertEqual(body["detail"], detail)
+        self.assertEqual(body["code"], "capture_active")
+        self.assertEqual(body["title"], "其他应用正在抓包")
+        self.assertEqual(body["user_message"], "当前模拟器正在抓包，请停止后重试。")
+        self.assertEqual(body["recovery_action"], "停止抓包")
+        self.assertEqual(body["technical_detail"], detail)
+
+    def test_structured_error_enriches_existing_detail_without_removing_fields(self):
+        detail = {
+            "message": "emulator is not ready for package install",
+            "user_message": "请先启动模拟器，等待系统启动完成后再上传更新包。",
+            "emulator": {"adb_online": False, "boot_completed": False},
+        }
+
+        body = app_module.structured_http_error_body(
+            path="/api/apps/install",
+            status_code=400,
+            detail=detail,
+        )
+
+        self.assertEqual(body["detail"]["message"], detail["message"])
+        self.assertEqual(body["detail"]["emulator"], detail["emulator"])
+        self.assertEqual(body["detail"]["code"], "emulator_not_ready")
+        self.assertEqual(body["detail"]["title"], "模拟器尚未启动")
+        self.assertEqual(body["detail"]["recovery_action"], "启动模拟器")
+        self.assertIn("emulator is not ready", body["detail"]["technical_detail"])
+
+    def test_structured_error_preserves_legacy_user_copy_and_fix(self):
+        detail = {
+            "message": "invalid logcat source",
+            "user_message": "日志来源无效。",
+            "fix": "请选择应用、系统或崩溃日志。",
+        }
+
+        body = app_module.structured_http_error_body(
+            path="/api/devices/device-1/logcat/start",
+            status_code=422,
+            detail=detail,
+        )
+
+        self.assertEqual(body["detail"]["user_message"], detail["user_message"])
+        self.assertEqual(body["detail"]["fix"], detail["fix"])
+        self.assertEqual(body["detail"]["recovery_action"], detail["fix"])
+        self.assertEqual(body["user_message"], detail["user_message"])
+        self.assertEqual(body["recovery_action"], detail["fix"])
+
+    def test_structured_error_uses_precise_jenkins_recovery_copy(self):
+        body = app_module.structured_http_error_body(
+            path="/api/package-sources/jenkins/packages",
+            status_code=502,
+            detail={"message": "connection timed out"},
+        )
+
+        self.assertEqual(body["detail"]["code"], "jenkins_unavailable")
+        self.assertEqual(body["detail"]["title"], "无法连接 Jenkins")
+        self.assertEqual(
+            body["detail"]["user_message"],
+            "无法连接 Jenkins，请确认已连接公司网络后重试。",
+        )
+        self.assertEqual(body["detail"]["recovery_action"], "检查公司网络")
+
+    def test_structured_error_lists_occupied_capture_ports_without_killing_processes(self):
+        body = app_module.structured_http_error_body(
+            path="/api/captures/start",
+            status_code=409,
+            detail={
+                "message": "capture device ports are occupied by another project",
+                "blocking_ports": [
+                    {"port": 9091, "state": "occupied_by_other"},
+                    {"port": 9090, "state": "occupied_by_other"},
+                ],
+            },
+        )
+
+        self.assertEqual(body["detail"]["code"], "capture_port_conflict")
+        self.assertEqual(body["detail"]["title"], "抓包端口被占用")
+        self.assertEqual(
+            body["detail"]["user_message"],
+            "抓包端口 9090、9091 正被其他程序使用，工具不会自动结束该程序。",
+        )
+        self.assertEqual(body["detail"]["recovery_action"], "关闭占用端口的程序或更换端口")
+
+    def test_structured_error_distinguishes_google_play_and_login_recovery(self):
+        missing_play = app_module.structured_http_error_body(
+            path="/api/apps/install",
+            status_code=409,
+            detail={
+                "message": "google login required",
+                "state": "missing_play_store",
+                "user_message": "legacy copy",
+            },
+        )
+        not_logged_in = app_module.structured_http_error_body(
+            path="/api/apps/install",
+            status_code=409,
+            detail={
+                "message": "google login required",
+                "state": "not_logged_in",
+                "user_message": "legacy copy",
+            },
+        )
+
+        self.assertEqual(missing_play["detail"]["code"], "google_play_missing")
+        self.assertEqual(missing_play["detail"]["title"], "缺少 Google Play")
+        self.assertEqual(missing_play["detail"]["recovery_action"], "准备 Google Play 模拟器")
+        self.assertEqual(not_logged_in["detail"]["code"], "google_login_required")
+        self.assertEqual(not_logged_in["detail"]["title"], "尚未登录 Google")
+        self.assertEqual(not_logged_in["detail"]["recovery_action"], "打开 Google 登录")
+
+    def test_http_exception_handler_returns_structured_fields_and_legacy_detail(self):
+        request = app_module.Request(
+            {
+                "type": "http",
+                "http_version": "1.1",
+                "method": "POST",
+                "scheme": "http",
+                "path": "/api/captures/start",
+                "raw_path": b"/api/captures/start",
+                "query_string": b"",
+                "headers": [],
+                "client": ("127.0.0.1", 12345),
+                "server": ("127.0.0.1", 7001),
+            }
+        )
+        detail = "another capture session is active; stop or cleanup first"
+
+        response = asyncio.run(
+            app_module.structured_http_exception_handler(
+                request,
+                HTTPException(status_code=409, detail=detail),
+            )
+        )
+        body = json.loads(response.body)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(body["detail"], detail)
+        self.assertEqual(body["code"], "capture_active")
+        self.assertEqual(body["recovery_action"], "停止抓包")
+
     def test_foreground_target_resolve_registers_unknown_installed_app(self):
         original_store = app_module.store
         original_runner = app_module.runner

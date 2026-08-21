@@ -13,7 +13,7 @@ enum LogcatMinimumLevel: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .verbose:
-            "Verbose 及以上"
+            AppCopy.Log.allLevels
         case .debug:
             "Debug 及以上"
         case .info:
@@ -57,7 +57,8 @@ final class LogcatController: ObservableObject {
     @Published private(set) var isPaused = false
     @Published var autoScroll = true
     @Published private(set) var truncated = false
-    @Published private(set) var message = "请选择在线设备和应用。"
+    @Published private(set) var message = AppCopy.Log.emulatorOffline
+    @Published private(set) var lastIssue: UserFacingIssue?
 
     private struct StreamKey: Equatable {
         let deviceID: String
@@ -120,7 +121,8 @@ final class LogcatController: ObservableObject {
         guard let deviceID, !deviceID.isEmpty else {
             cancelPolling()
             state = "offline"
-            message = "请选择一台在线模拟器。"
+            message = AppCopy.Log.emulatorOffline
+            lastIssue = nil
             return
         }
 
@@ -128,7 +130,8 @@ final class LogcatController: ObservableObject {
         guard source != .app || !selectedPackage.isEmpty else {
             cancelPolling()
             state = "waiting_app"
-            message = "请选择要读取日志的应用。"
+            message = AppCopy.Log.waitingForApp
+            lastIssue = nil
             return
         }
 
@@ -157,7 +160,8 @@ final class LogcatController: ObservableObject {
         } catch {
             currentStream = nil
             state = "error"
-            message = error.localizedDescription
+            lastIssue = issue(from: error)
+            message = AppCopy.Log.disconnected
         }
     }
 
@@ -174,7 +178,8 @@ final class LogcatController: ObservableObject {
             apply(response, buffering: isPaused)
         } catch {
             state = "error"
-            message = error.localizedDescription
+            lastIssue = issue(from: error)
+            message = AppCopy.Log.disconnected
         }
     }
 
@@ -206,7 +211,8 @@ final class LogcatController: ObservableObject {
             message = "日志已清空，新的日志仍会实时显示。"
         } catch {
             state = "error"
-            message = error.localizedDescription
+            lastIssue = issue(from: error)
+            message = AppCopy.Log.disconnected
         }
     }
 
@@ -224,7 +230,8 @@ final class LogcatController: ObservableObject {
             message = "日志读取已停止。"
         } catch {
             state = "error"
-            message = error.localizedDescription
+            lastIssue = issue(from: error)
+            message = AppCopy.Log.disconnected
         }
     }
 
@@ -269,7 +276,8 @@ final class LogcatController: ObservableObject {
         cursor = 0
         truncated = false
         state = "starting"
-        message = "正在连接 Android Logcat..."
+        lastIssue = nil
+        message = "正在连接日志…"
     }
 
     private func apply(_ response: LogcatActionResponse, buffering: Bool) {
@@ -315,16 +323,28 @@ final class LogcatController: ObservableObject {
         case "streaming":
             "日志已连接，正在实时读取。"
         case "waiting_app":
-            "应用尚未运行；打开目标应用后会自动连接。"
+            AppCopy.Log.waitingForApp
         case "starting":
-            "正在连接 Android Logcat..."
+            "正在连接日志…"
         case "stopped":
             "日志读取已停止。"
         case "error":
-            "日志读取异常，请检查设备连接。"
+            AppCopy.Log.disconnected
         default:
             "日志状态：\(state)"
         }
+    }
+
+    private func issue(from error: Error) -> UserFacingIssue {
+        if let apiError = error as? APIClientError {
+            return apiError.userFacingIssue
+        }
+        return UserFacingIssue(
+            code: "log_connection_failed",
+            title: "日志连接中断",
+            message: AppCopy.Log.disconnected,
+            technicalDetail: error.localizedDescription
+        )
     }
 
     private static func rank(for level: String) -> Int {

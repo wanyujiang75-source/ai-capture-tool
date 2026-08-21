@@ -63,7 +63,7 @@ struct LocalAPKInstallTests {
         #expect(call.deviceID == "device-1")
         #expect(call.environment == "production")
         #expect(state.localInstallState == .loaded)
-        #expect(state.localInstallMessage.contains("请在模拟器中打开"))
+        #expect(state.localInstallMessage == "“Installed Local App”已安装，请在模拟器中打开应用。")
         #expect(state.selectedAppID == nil)
     }
 

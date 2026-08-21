@@ -23,6 +23,33 @@ enum FlowListPresentation {
         return nonempty(flow.path) ?? nonempty(flow.host) ?? "-"
     }
 
+    static func statusLabel(_ status: String?) -> String {
+        status == "NO_RESPONSE" ? AppCopy.Flow.noResponse : nonempty(status) ?? "-"
+    }
+
+    static func requestBodyText(_ detail: FlowDetail) -> String {
+        if let requestJSON = detail.requestJSON {
+            return requestJSON.description
+        }
+        if let requestText = nonempty(detail.requestText) {
+            return requestText
+        }
+        return AppCopy.Flow.noRequestBody
+    }
+
+    static func responseBodyText(_ detail: FlowDetail) -> String {
+        if let responseJSON = detail.responseJSON {
+            return responseJSON.description
+        }
+        if let responseText = nonempty(detail.responseText) {
+            return responseText
+        }
+        if detail.status == "NO_RESPONSE" {
+            return AppCopy.Flow.responsePending
+        }
+        return AppCopy.Flow.responseWithoutBody(statusCode: nonempty(detail.status) ?? "-")
+    }
+
     private static func nonempty(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil

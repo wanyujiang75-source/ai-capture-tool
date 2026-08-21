@@ -35,9 +35,9 @@ struct LogsView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Android 日志")
+                Text(AppCopy.Navigation.logs)
                     .font(.largeTitle.bold())
-                Text("实时读取应用、系统与崩溃 Logcat，不依赖 Frida。")
+                Text(AppCopy.Log.pageDescription)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -49,23 +49,25 @@ struct LogsView: View {
 
     private var targetBar: some View {
         HStack(spacing: 14) {
-            Picker("设备", selection: selectedDeviceBinding) {
-                if appState.devices.isEmpty {
-                    Text("暂无在线设备").tag("")
-                } else {
-                    ForEach(appState.devices) { device in
-                        Text("\(device.id) · \(device.adbSerial ?? "-")").tag(device.id)
+            if appState.showsDeviceSelector {
+                Picker("使用设备", selection: selectedDeviceBinding) {
+                    if appState.devices.isEmpty {
+                        Text("暂无可用设备").tag("")
+                    } else {
+                        ForEach(appState.devices) { device in
+                            Text(device.name ?? "模拟器").tag(device.id)
+                        }
                     }
                 }
+                .frame(minWidth: 220, maxWidth: 320)
             }
-            .frame(minWidth: 250, maxWidth: 340)
 
             Picker("应用", selection: selectedAppBinding) {
                 if appState.apps.isEmpty {
                     Text("暂无已安装应用").tag(0)
                 } else {
                     ForEach(appState.apps) { app in
-                        Text("\(app.name ?? app.packageName ?? "应用") · \(app.packageName ?? "-")")
+                        Text(app.name ?? "应用")
                             .tag(app.id)
                     }
                 }
@@ -100,7 +102,7 @@ struct LogsView: View {
                 }
             } label: {
                 Label(
-                    controller.isPaused ? "继续" : "暂停",
+                    controller.isPaused ? AppCopy.Log.resumeDisplay : AppCopy.Log.pauseDisplay,
                     systemImage: controller.isPaused ? "play.fill" : "pause.fill"
                 )
             }
@@ -110,12 +112,12 @@ struct LogsView: View {
                     await controller.clear()
                 }
             } label: {
-                Label("清空", systemImage: "trash")
+                Label(AppCopy.Log.clear, systemImage: "trash")
             }
 
             Button(action: copyFilteredLogs) {
                 Label(
-                    copySucceeded ? "已复制" : "复制当前结果",
+                    copySucceeded ? "已复制" : AppCopy.Log.copyAll,
                     systemImage: copySucceeded ? "checkmark" : "doc.on.doc"
                 )
             }
@@ -125,7 +127,7 @@ struct LogsView: View {
             Divider()
                 .frame(height: 22)
 
-            TextField("搜索 Tag 或消息", text: $controller.searchText)
+            TextField("搜索标签或消息", text: $controller.searchText)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 220, maxWidth: 380)
 
@@ -209,7 +211,7 @@ struct LogsView: View {
                 .frame(width: 150, alignment: .leading)
             Text("级别")
                 .frame(width: 42, alignment: .leading)
-            Text("Tag")
+            Text(AppCopy.Log.tag)
                 .frame(width: 180, alignment: .leading)
             Text("消息")
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,17 +302,17 @@ struct LogsView: View {
     private var statusTitle: String {
         switch controller.state {
         case "streaming":
-            "实时读取"
+            "日志实时读取中"
         case "waiting_app":
             "等待应用"
         case "starting":
             "正在连接"
         case "error":
-            "连接异常"
+            "日志连接中断"
         case "offline":
-            "设备离线"
+            "模拟器未连接"
         default:
-            "未连接"
+            "等待连接"
         }
     }
 
@@ -335,7 +337,7 @@ struct LogsView: View {
         if !controller.searchText.isEmpty {
             return "没有匹配的日志"
         }
-        return controller.state == "waiting_app" ? "等待目标应用启动" : "暂无日志"
+        return controller.state == "waiting_app" ? "等待应用运行" : "暂无日志"
     }
 
     private var emptyDetail: String {

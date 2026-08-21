@@ -9,7 +9,7 @@ struct FlowViews: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             if appState.activeSessionID == nil {
-                emptySession
+                emptyCapture
             } else {
                 flowContent
             }
@@ -23,9 +23,9 @@ struct FlowViews: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("接口")
+                Text(AppCopy.Navigation.flows)
                     .font(.largeTitle.bold())
                 Text("抓包运行后实时展示最新接口，点击行查看 Request、Response 和 cURL。")
                     .foregroundStyle(.secondary)
@@ -34,25 +34,18 @@ struct FlowViews: View {
             Button(role: .destructive) {
                 appState.clearCurrentFlows()
             } label: {
-                Label("清除当前接口", systemImage: "trash")
+                Label(AppCopy.Flow.clearList, systemImage: "trash")
             }
             .disabled(appState.visibleFlows.isEmpty)
-            .help("清除当前 Session 已显示的接口；抓包不会停止，新请求仍会实时出现。")
-            Button {
-                Task {
-                    await appState.refreshFlows()
-                }
-            } label: {
-                Label("刷新接口", systemImage: "arrow.clockwise")
-            }
+            .help(AppCopy.Flow.clearExplanation)
         }
     }
 
-    private var emptySession: some View {
+    private var emptyCapture: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("当前没有 active session。")
+            Text(AppCopy.Flow.notStarted)
                 .font(.headline)
-            Text("先在“抓包”页启动抓包；操作 App 后，这里会自动显示接口。")
+            Text("请先在“抓包”页开始抓包。")
                 .foregroundStyle(.secondary)
         }
         .padding(18)
@@ -75,60 +68,15 @@ struct FlowViews: View {
     private var flowList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Session #\(appState.activeSessionID ?? 0)")
+                Text(AppCopy.Flow.captureNumber(appState.activeSessionID ?? 0))
                     .font(.title2.bold())
                 Text("\(filteredFlows.count) / \(appState.visibleFlows.count) 条")
                     .foregroundStyle(.secondary)
                 Spacer()
                 stateText(appState.flowLoadState)
             }
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索 URL、Host、Path、方法或状态码", text: $searchText)
-                    .textFieldStyle(.plain)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("清除搜索")
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(.separator, lineWidth: 1)
-            }
-            if appState.visibleFlows.isEmpty {
-                Text(appState.hasClearedFlows
-                    ? "当前接口已清除。继续操作 App 后，新请求会实时显示。"
-                    : "暂无接口。操作 App 后会自动刷新。")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            } else if filteredFlows.isEmpty {
-                Text("没有匹配的接口，请调整搜索内容。")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            } else {
-                List(filteredFlows) { flow in
-                    FlowRow(flow: flow)
-                        .contentShape(Rectangle())
-                        .listRowBackground(rowBackground(for: flow))
-                        .onTapGesture {
-                            selectFlow(flow)
-                        }
-                }
-                .listStyle(.plain)
-            }
+            searchField
+            listContent
         }
         .padding(16)
         .background(.background)
@@ -136,6 +84,58 @@ struct FlowViews: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.separator, lineWidth: 1)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("搜索 URL、Host、Path、方法或状态码", text: $searchText)
+                .textFieldStyle(.plain)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("清空搜索")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.separator, lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var listContent: some View {
+        if appState.visibleFlows.isEmpty {
+            Text(AppCopy.Flow.waiting)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        } else if filteredFlows.isEmpty {
+            Text(AppCopy.Flow.noSearchResults)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        } else {
+            List(filteredFlows) { flow in
+                FlowRow(flow: flow)
+                    .contentShape(Rectangle())
+                    .listRowBackground(rowBackground(for: flow))
+                    .onTapGesture {
+                        selectFlow(flow)
+                    }
+            }
+            .listStyle(.plain)
         }
     }
 
@@ -148,7 +148,7 @@ struct FlowViews: View {
             if let detail = appState.selectedFlowDetail {
                 Text(detail.url ?? detail.id)
                     .font(.headline.monospaced())
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 Picker("", selection: $detailTab) {
                     Text("Request").tag("request")
@@ -176,68 +176,48 @@ struct FlowViews: View {
     private func detailBody(_ detail: FlowDetail) -> some View {
         switch appState.flowDetailLoadState {
         case .loading:
-            ProgressView("正在加载详情...")
+            ProgressView("正在加载接口详情…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .failed(let message):
+        case let .failed(message):
             Text(message)
                 .foregroundStyle(.red)
         case .idle, .loaded:
             switch detailTab {
             case "request":
-                CodeBlock(title: "Request Body (\(detail.requestBodyKind ?? "unknown"))", text: requestText(detail))
+                CodeBlock(
+                    title: "Request Body (\(detail.requestBodyKind ?? "text"))",
+                    text: FlowListPresentation.requestBodyText(detail)
+                )
             case "response":
-                CodeBlock(title: "Response Body (\(detail.responseBodyKind ?? "unknown"))", text: responseText(detail))
+                CodeBlock(
+                    title: "Response Body (\(detail.responseBodyKind ?? "text"))",
+                    text: FlowListPresentation.responseBodyText(detail)
+                )
             default:
-                CodeBlock(title: "cURL", text: appState.selectedFlowCurl.isEmpty ? "暂无 cURL" : appState.selectedFlowCurl)
+                CodeBlock(
+                    title: "cURL",
+                    text: appState.selectedFlowCurl.isEmpty ? "尚未生成 cURL" : appState.selectedFlowCurl
+                )
             }
         }
     }
 
-    private func requestText(_ detail: FlowDetail) -> String {
-        if let requestJSON = detail.requestJSON {
-            return requestJSON.description
-        }
-        if let requestText = detail.requestText, !requestText.isEmpty {
-            return requestText
-        }
-        return "No request body"
-    }
-
-    private func responseText(_ detail: FlowDetail) -> String {
-        if let responseJSON = detail.responseJSON {
-            return responseJSON.description
-        }
-        if let responseText = detail.responseText, !responseText.isEmpty {
-            return responseText
-        }
-        return "No response body"
-    }
-
     private func preferredDetailTab(for detail: FlowDetail) -> String {
-        if !hasRequestBody(detail), hasResponseBody(detail) {
-            return "response"
-        }
-        return "request"
-    }
-
-    private func hasRequestBody(_ detail: FlowDetail) -> Bool {
-        detail.requestJSON != nil || !(detail.requestText ?? "").isEmpty
-    }
-
-    private func hasResponseBody(_ detail: FlowDetail) -> Bool {
-        detail.responseJSON != nil || !(detail.responseText ?? "").isEmpty
+        let requestIsEmpty = detail.requestJSON == nil && (detail.requestText ?? "").isEmpty
+        let responseExists = detail.responseJSON != nil || !(detail.responseText ?? "").isEmpty
+        return requestIsEmpty && responseExists ? "response" : "request"
     }
 
     private func stateText(_ state: LoadState) -> some View {
         switch state {
         case .idle:
-            return Text("待刷新").foregroundStyle(.secondary)
+            return Text(AppCopy.Flow.waitingSync).foregroundStyle(.secondary)
         case .loading:
-            return Text("刷新中").foregroundStyle(.orange)
+            return Text(AppCopy.Flow.syncing).foregroundStyle(.orange)
         case .loaded:
-            return Text("已同步").foregroundStyle(.green)
+            return Text(AppCopy.Flow.live).foregroundStyle(.green)
         case .failed:
-            return Text("失败").foregroundStyle(.red)
+            return Text("同步中断").foregroundStyle(.red)
         }
     }
 
@@ -275,7 +255,7 @@ private struct FlowRow: View {
                 Text(flow.method ?? "-")
                     .font(.caption.bold())
                     .frame(width: 52)
-                Text(flow.status ?? "-")
+                Text(FlowListPresentation.statusLabel(flow.status))
                     .font(.caption.bold())
                     .foregroundStyle(statusColor)
                     .frame(width: 82)
@@ -288,6 +268,7 @@ private struct FlowRow: View {
             Text(FlowListPresentation.endpoint(for: flow))
                 .font(.callout.monospaced())
                 .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 8)

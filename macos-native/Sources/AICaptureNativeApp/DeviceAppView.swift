@@ -4,17 +4,13 @@ import UniformTypeIdentifiers
 struct DeviceAppView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showingAPKPicker = false
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 320), spacing: 14, alignment: .top)
-    ]
+    @State private var searchText = ""
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
-                loadSummary
-                deviceSection
+                installationTarget
                 localPackageSection
                 jenkinsSection
             }
@@ -28,27 +24,33 @@ struct DeviceAppView: View {
             allowsMultipleSelection: false
         ) { result in
             switch result {
-            case .success(let urls):
-                guard let fileURL = urls.first else { return }
-                Task { await appState.installLocalAPK(fileURL) }
-            case .failure(let error):
-                appState.localInstallMessage = "无法读取所选 APK：\(error.localizedDescription)"
-                appState.localInstallState = .failed(appState.localInstallMessage)
+            case let .success(urls):
+                guard let fileURL = urls.first else {
+                    return
+                }
+                Task {
+                    await appState.installLocalAPK(fileURL)
+                }
+            case .failure:
+                let message = "无法读取所选 APK，请重新选择文件。"
+                appState.localInstallMessage = message
+                appState.localInstallState = .failed(message)
+                appState.showNotice(.failure(title: "无法读取安装包", message: message))
             }
         }
         .task {
-            if appState.deviceLoadState == .idle, appState.appLoadState == .idle {
+            if appState.deviceLoadState == .idle || appState.jenkinsLoadState == .idle {
                 await appState.refreshWorkspaceData()
             }
         }
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("设备与应用")
+                Text(AppCopy.Navigation.installApps)
                     .font(.largeTitle.bold())
-                Text("选择设备后，可安装本地 APK 或 Jenkins 测试包；打开任一 App 后会自动识别抓包目标。")
+                Text(AppCopy.Install.pageDescription)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -57,105 +59,87 @@ struct DeviceAppView: View {
                     await appState.refreshWorkspaceData()
                 }
             } label: {
-                Label("刷新列表", systemImage: "arrow.clockwise")
+                Label("刷新安装包", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    @ViewBuilder
+    private var installationTarget: some View {
+        if appState.showsDeviceSelector {
+            SectionPanel(title: "安装目标") {
+                Picker("使用设备", selection: selectedDeviceBinding) {
+                    ForEach(appState.devices) { device in
+                        Text(device.name ?? "模拟器").tag(device.id)
+                    }
+                }
+                .frame(maxWidth: 420)
+            }
+        } else if let readinessMessage {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+                Text(readinessMessage)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
 
     private var localPackageSection: some View {
-        SectionPanel(title: "自主安装", subtitle: "本地 APK") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Text("安装设备：\(appState.selectedDeviceID ?? "未选择")")
+        SectionPanel(title: "安装本地 APK") {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("选择 Mac 中的 APK 安装到当前模拟器。")
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        showingAPKPicker = true
-                    } label: {
-                        Label("选择本地 APK", systemImage: "folder.badge.plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(appState.localInstallState == .loading)
-                    if appState.localInstallState == .loading {
-                        ProgressView()
-                            .controlSize(.small)
+                    if !appState.localInstallMessage.isEmpty {
+                        Text(appState.localInstallMessage)
+                            .font(.callout)
+                            .foregroundStyle(localInstallMessageColor)
                     }
                 }
-                Text(appState.localInstallMessage.isEmpty
-                     ? "本地 APK 默认作为生产包安装；安装完成后请在模拟器中手动打开。"
-                     : appState.localInstallMessage)
-                    .font(.callout)
-                    .foregroundStyle(localInstallMessageColor)
-            }
-        }
-    }
-
-    private var loadSummary: some View {
-        HStack(spacing: 10) {
-            LoadStateBadge(title: "设备", count: appState.devices.count, state: appState.deviceLoadState)
-            LoadStateBadge(title: "Jenkins", count: appState.jenkinsPackages.count, state: appState.jenkinsLoadState)
-        }
-    }
-
-    private var deviceSection: some View {
-        SectionPanel(title: "设备池", subtitle: "\(appState.devices.count) 台") {
-            switch appState.deviceLoadState {
-            case .idle:
-                EmptyStateView(text: "尚未加载设备。")
-            case .loading:
-                ProgressView("正在读取设备状态...")
-                    .padding(.vertical, 12)
-            case .failed(let message):
-                EmptyStateView(text: "设备读取失败：\(message)")
-            case .loaded:
-                if appState.devices.isEmpty {
-                    EmptyStateView(text: "暂无设备。")
-                } else {
-                    LazyVGrid(columns: columns, spacing: 14) {
-                        ForEach(appState.devices) { device in
-                            DeviceCard(
-                                device: device,
-                                selected: appState.selectedDeviceID == device.id
-                            )
-                            .onTapGesture {
-                                appState.selectedDeviceID = device.id
-                            }
-                        }
-                    }
+                Spacer()
+                if appState.localInstallState == .loading {
+                    ProgressView()
+                        .controlSize(.small)
                 }
+                Button {
+                    showingAPKPicker = true
+                } label: {
+                    Label(AppCopy.Install.chooseAPK, systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(appState.localInstallState == .loading)
             }
         }
     }
 
     private var jenkinsSection: some View {
-        SectionPanel(title: "Jenkins 测试包", subtitle: "\(appState.jenkinsPackages.count) 个最新包") {
+        SectionPanel(title: "Jenkins 测试包") {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Picker("安装设备", selection: selectedDeviceBinding) {
-                        if appState.devices.isEmpty {
-                            Text("暂无设备").tag("")
-                        } else {
-                            ForEach(appState.devices) { device in
-                                Text("\(device.id) · \(device.adbSerial ?? "-")").tag(device.id)
-                            }
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField(AppCopy.Install.searchPlaceholder, text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
                         }
-                    }
-                    .frame(maxWidth: 420)
-
-                    Button {
-                        Task {
-                            await appState.refreshJenkinsPackages()
-                        }
-                    } label: {
-                        Label("刷新 Jenkins", systemImage: "arrow.clockwise")
-                    }
-
-                    if appState.jenkinsInstallState == .loading {
-                        ProgressView()
-                            .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .help("清空搜索")
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 if !appState.jenkinsMessage.isEmpty {
                     Text(appState.jenkinsMessage)
@@ -163,34 +147,53 @@ struct DeviceAppView: View {
                         .foregroundStyle(jenkinsMessageColor)
                 }
 
-                switch appState.jenkinsLoadState {
-                case .idle:
-                    EmptyStateView(text: "尚未加载 Jenkins 安装包。")
-                case .loading:
-                    ProgressView("正在读取 Jenkins 最新安装包...")
-                        .padding(.vertical, 12)
-                case .failed(let message):
-                    EmptyStateView(text: "Jenkins 读取失败：\(message)")
-                case .loaded:
-                    if appState.jenkinsPackages.isEmpty {
-                        EmptyStateView(text: "没有找到最新可安装包。")
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(appState.jenkinsPackages) { package in
-                                JenkinsPackageRow(
-                                    package: package,
-                                    installing: appState.installingJenkinsPackageID == package.id,
-                                    disabled: appState.jenkinsInstallState == .loading
-                                ) {
-                                    Task {
-                                        await appState.installJenkinsPackage(package)
-                                    }
-                                }
+                jenkinsContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var jenkinsContent: some View {
+        switch appState.jenkinsLoadState {
+        case .idle, .loading:
+            ProgressView("正在获取 Jenkins 最新安装包…")
+                .padding(.vertical, 12)
+        case .failed:
+            EmptyStateView(text: AppCopy.Install.jenkinsUnavailable)
+        case .loaded:
+            if appState.jenkinsPackages.isEmpty {
+                EmptyStateView(text: AppCopy.Install.missingArtifact)
+            } else if filteredPackages.isEmpty {
+                EmptyStateView(text: "没有匹配的安装包，请更换搜索关键词。")
+            } else {
+                LazyVStack(spacing: 10) {
+                    ForEach(filteredPackages) { package in
+                        JenkinsPackageRow(
+                            package: package,
+                            installing: appState.installingJenkinsPackageID == package.id,
+                            disabled: appState.jenkinsInstallState == .loading
+                        ) {
+                            Task {
+                                await appState.installJenkinsPackage(package)
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private var filteredPackages: [JenkinsPackage] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return appState.jenkinsPackages
+        }
+        return appState.jenkinsPackages.filter { package in
+            [
+                package.jobName,
+                package.artifactFileName,
+                String(package.buildNumber),
+            ].contains { $0.lowercased().contains(query) }
         }
     }
 
@@ -200,6 +203,20 @@ struct DeviceAppView: View {
         } set: { value in
             appState.selectedDeviceID = value.isEmpty ? nil : value
         }
+    }
+
+    private var readinessMessage: String? {
+        guard let device = appState.selectedDevice,
+              device.emulator?.adbOnline == true else {
+            return AppCopy.Install.emulatorOffline
+        }
+        guard device.emulator?.bootCompleted == true else {
+            return AppCopy.Install.emulatorBooting
+        }
+        guard device.emulator?.unlocked == true else {
+            return AppCopy.Install.emulatorLocked
+        }
+        return nil
     }
 
     private var jenkinsMessageColor: Color {
@@ -227,19 +244,12 @@ struct DeviceAppView: View {
 
 private struct SectionPanel<Content: View>: View {
     let title: String
-    let subtitle: String
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(title)
-                    .font(.title2.bold())
-                Text(subtitle)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
+            Text(title)
+                .font(.title2.bold())
             content
         }
         .padding(18)
@@ -249,124 +259,6 @@ private struct SectionPanel<Content: View>: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(.separator, lineWidth: 1)
         }
-    }
-}
-
-private struct LoadStateBadge: View {
-    let title: String
-    let count: Int
-    let state: LoadState
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(color)
-                .frame(width: 9, height: 9)
-            Text(title)
-                .fontWeight(.semibold)
-            Text(label)
-                .foregroundStyle(.secondary)
-        }
-        .font(.callout)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.thinMaterial)
-        .clipShape(Capsule())
-    }
-
-    private var label: String {
-        switch state {
-        case .idle:
-            "待加载"
-        case .loading:
-            "加载中"
-        case .loaded:
-            "\(count)"
-        case .failed:
-            "失败"
-        }
-    }
-
-    private var color: Color {
-        switch state {
-        case .idle:
-            .gray
-        case .loading:
-            .orange
-        case .loaded:
-            .green
-        case .failed:
-            .red
-        }
-    }
-}
-
-private struct DeviceCard: View {
-    let device: CaptureDevice
-    let selected: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(device.name ?? device.id)
-                        .font(.headline)
-                    Text("\(device.id) · \(device.adbSerial ?? "-")")
-                        .font(.callout.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                StatusPill(text: deviceStatus, color: deviceStatusColor)
-            }
-            HStack {
-                InfoChip(text: "AVD \(device.avdName ?? "-")")
-                InfoChip(text: "代理 \(device.proxyPort ?? "-")")
-                InfoChip(text: "Frida \(device.fridaPort ?? "-")")
-            }
-            HStack {
-                InfoChip(text: device.runtimePolicy ?? "unknown")
-                InfoChip(text: device.capture?.health ?? "idle")
-                InfoChip(text: googleText)
-            }
-            if let foreground = device.emulator?.foreground, !foreground.isEmpty {
-                Text(foreground)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1.5)
-        }
-    }
-
-    private var deviceStatus: String {
-        if device.emulator?.adbOnline == true {
-            "在线"
-        } else if device.emulator?.processRunning == true {
-            "启动中"
-        } else {
-            "离线"
-        }
-    }
-
-    private var deviceStatusColor: Color {
-        if device.emulator?.adbOnline == true {
-            .green
-        } else if device.emulator?.processRunning == true {
-            .orange
-        } else {
-            .gray
-        }
-    }
-
-    private var googleText: String {
-        device.googleState?.ok == true ? "Google 已登录" : "Google 未就绪"
     }
 }
 
@@ -383,21 +275,27 @@ private struct JenkinsPackageRow: View {
                     Text(package.jobName)
                         .font(.headline)
                     StatusPill(text: "#\(package.buildNumber)", color: .blue)
-                    StatusPill(text: package.environment == "production" ? "生产包" : "测试包", color: .orange)
+                    StatusPill(
+                        text: package.environment == "production" ? "生产包" : "测试包",
+                        color: .orange
+                    )
                 }
                 Text(package.artifactFileName)
                     .font(.callout.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text(package.buildTime ?? "-")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let buildTime = package.buildTime, !buildTime.isEmpty {
+                    Text(buildTime)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            Button {
-                install()
-            } label: {
-                Label(installing ? "安装中" : "安装", systemImage: installing ? "hourglass" : "square.and.arrow.down")
+            Button(action: install) {
+                Label(
+                    installing ? "正在安装…" : "安装应用",
+                    systemImage: installing ? "hourglass" : "square.and.arrow.down"
+                )
             }
             .buttonStyle(.borderedProminent)
             .disabled(disabled)
@@ -420,21 +318,6 @@ private struct StatusPill: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(color.opacity(0.12))
-            .clipShape(Capsule())
-    }
-}
-
-private struct InfoChip: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.thinMaterial)
             .clipShape(Capsule())
     }
 }

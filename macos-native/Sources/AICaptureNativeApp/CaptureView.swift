@@ -2,13 +2,13 @@ import SwiftUI
 
 struct CaptureView: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var showsRuntimeCheck: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             header
-            selectionPanel
-            actionPanel
-            messagePanel
+            targetPanel
+            workflowPanel
             Spacer()
         }
         .padding(28)
@@ -23,37 +23,47 @@ struct CaptureView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("抓包")
-                .font(.largeTitle.bold())
-            Text("打开设备中的目标 App 后自动识别并检查抓包能力。")
-                .foregroundStyle(.secondary)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppCopy.Navigation.capture)
+                    .font(.largeTitle.bold())
+                Text("打开模拟器中的应用，工具会自动识别并抓取接口。")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                Task {
+                    await appState.startSelectedDevice()
+                }
+            } label: {
+                Label(emulatorButtonTitle, systemImage: "iphone.gen3.radiowaves.left.and.right")
+            }
         }
     }
 
-    private var selectionPanel: some View {
+    private var targetPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("目标选择")
-                .font(.title2.bold())
-            HStack(spacing: 12) {
-                Picker("设备", selection: selectedDeviceBinding) {
-                    if appState.devices.isEmpty {
-                        Text("暂无设备").tag("")
-                    } else {
-                        ForEach(appState.devices) { device in
-                            Text("\(device.id) · \(device.adbSerial ?? "-")").tag(device.id)
-                        }
+            if appState.showsDeviceSelector {
+                Picker("使用设备", selection: selectedDeviceBinding) {
+                    ForEach(appState.devices) { device in
+                        Text(device.name ?? "Android 模拟器").tag(device.id)
                     }
                 }
-                Button {
-                    Task {
-                        await appState.startSelectedDevice()
-                    }
-                } label: {
-                    Label("打开模拟器", systemImage: "iphone.gen3.radiowaves.left.and.right")
-                }
+                .frame(maxWidth: 360)
             }
-            foregroundTargetCard
+
+            HStack(spacing: 14) {
+                Image(systemName: appState.foregroundTarget?.app == nil ? "app.dashed" : "app.fill")
+                    .font(.title2)
+                    .foregroundStyle(appState.foregroundTarget?.app == nil ? .orange : .blue)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(appState.foregroundTarget?.app?.name.map { "已识别“\($0)”" } ?? "等待应用")
+                        .font(.headline)
+                    Text(targetGuidance)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
         }
         .padding(18)
         .background(.background)
@@ -64,114 +74,54 @@ struct CaptureView: View {
         }
     }
 
-    private var actionPanel: some View {
-        HStack(spacing: 12) {
-            Button {
-                Task {
-                    await appState.refreshDevices()
-                    await appState.refreshForegroundTarget(forceResolve: true)
-                }
-            } label: {
-                Label("刷新", systemImage: "arrow.clockwise")
-            }
-            Button {
-                Task {
-                    _ = await appState.prepareSelectedEnvironment(visible: true)
-                }
-            } label: {
-                Label("一键准备环境", systemImage: "checklist.checked")
-            }
-            Button {
-                Task {
-                    await appState.startSelectedCapture()
-                }
-            } label: {
-                Label("一键开始抓包", systemImage: "record.circle")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!appState.canStartForegroundCapture)
-            Button(role: .destructive) {
-                Task {
-                    await appState.stopSelectedCapture()
-                }
-            } label: {
-                Label("停止抓包", systemImage: "stop.circle")
-            }
-        }
-        .disabled(isBusy)
-    }
-
-    private var foregroundTargetCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: appState.foregroundTarget?.app == nil ? "app.dashed" : "app.fill")
-                    .foregroundStyle(foregroundTargetColor)
-                Text(appState.foregroundTarget?.app?.name ?? "等待前台应用")
-                    .font(.headline)
-                Spacer()
-                Text(foregroundStateLabel)
-                    .font(.caption.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.thinMaterial)
-                    .clipShape(Capsule())
-            }
-            Text(appState.foregroundTarget?.packageName ?? "请在模拟器中打开需要分析的 App")
-                .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
-            if let activity = appState.foregroundTarget?.activity, !activity.isEmpty {
-                Text(activity)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            Text(appState.foregroundCaptureGuidance)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        }
-        .padding(14)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var foregroundStateLabel: String {
-        switch appState.foregroundTarget?.captureState {
-        case "ready": "可开始"
-        case "waiting_traffic": "等待流量"
-        case "capturable": "可抓包"
-        case "blocked": "可自动准备"
-        default: "自动检测"
-        }
-    }
-
-    private var foregroundTargetColor: Color {
-        switch appState.foregroundTarget?.captureState {
-        case "ready", "capturable": .green
-        case "blocked": .blue
-        default: .orange
-        }
-    }
-
-    private var messagePanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+    private var workflowPanel: some View {
+        let state = appState.displayedCaptureWorkflowState
+        let presentation = state.presentation
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
                 Circle()
-                    .fill(messageColor)
-                    .frame(width: 9, height: 9)
-                Text(messageTitle)
-                    .font(.headline)
+                    .fill(color(for: state.tone))
+                    .frame(width: 11, height: 11)
+                    .padding(.top, 7)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(presentation.title)
+                        .font(.title2.bold())
+                    Text(presentation.message)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if state.tone == .progress {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
-            Text(appState.captureMessage.isEmpty ? "等待操作。" : appState.captureMessage)
-                .foregroundStyle(.secondary)
-            if let activeSessionID = appState.activeSessionID {
-                Text("当前 Session：#\(activeSessionID)")
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                if let action = presentation.primaryAction,
+                   let title = presentation.primaryButtonTitle {
+                    Button {
+                        perform(action)
+                    } label: {
+                        Label(title, systemImage: primaryIcon(for: action))
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if let action = presentation.secondaryAction,
+                   let title = presentation.secondaryButtonTitle {
+                    Button(title) {
+                        perform(action)
+                    }
+                }
             }
         }
-        .padding(16)
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(color(for: state.tone).opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(color(for: state.tone).opacity(0.28), lineWidth: 1)
+        }
     }
 
     private var selectedDeviceBinding: Binding<String> {
@@ -182,32 +132,70 @@ struct CaptureView: View {
         }
     }
 
-    private var isBusy: Bool {
-        appState.captureActionState == .loading
+    private var emulatorButtonTitle: String {
+        appState.selectedDevice?.emulator?.adbOnline == true
+            ? AppCopy.Capture.showEmulator
+            : AppCopy.Capture.startEmulator
     }
 
-    private var messageTitle: String {
-        switch appState.captureActionState {
-        case .idle:
-            "待操作"
-        case .loading:
-            "执行中"
-        case .loaded:
-            "已完成"
-        case .failed:
-            "执行失败"
+    private var targetGuidance: String {
+        if appState.foregroundTarget?.app != nil {
+            return "工具会自动检查该应用的抓包环境。"
+        }
+        return "请在模拟器中打开需要分析的应用。"
+    }
+
+    private func perform(_ action: CaptureWorkflowAction) {
+        switch action {
+        case .startCapture:
+            Task {
+                await appState.startCaptureWorkflow()
+            }
+        case .stopCapture:
+            Task {
+                await appState.stopSelectedCapture()
+            }
+        case .showEmulator:
+            Task {
+                await appState.startSelectedDevice()
+            }
+        case .stopAndSwitch:
+            Task {
+                await appState.stopAndSwitchCapture()
+            }
+        case .continueCurrent:
+            appState.continueCurrentCapture()
+        case .openRuntimeCheck:
+            showsRuntimeCheck = true
         }
     }
 
-    private var messageColor: Color {
-        switch appState.captureActionState {
-        case .idle:
+    private func primaryIcon(for action: CaptureWorkflowAction) -> String {
+        switch action {
+        case .startCapture:
+            "record.circle"
+        case .stopCapture, .stopAndSwitch:
+            "stop.circle"
+        case .showEmulator:
+            "iphone.gen3.radiowaves.left.and.right"
+        case .continueCurrent:
+            "arrow.forward.circle"
+        case .openRuntimeCheck:
+            "stethoscope"
+        }
+    }
+
+    private func color(for tone: CaptureWorkflowTone) -> Color {
+        switch tone {
+        case .neutral:
             .gray
-        case .loading:
+        case .progress:
+            .blue
+        case .warning:
             .orange
-        case .loaded:
+        case .success:
             .green
-        case .failed:
+        case .error:
             .red
         }
     }
