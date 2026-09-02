@@ -236,6 +236,7 @@ def list_active_sessions() -> list[Dict[str, Any]]:
 def desktop_runtime_metadata() -> Dict[str, Any]:
     return {
         "enabled": os.environ.get("TRACEDECK_DESKTOP", "0").lower() in {"1", "true", "yes", "on"},
+        "build_id": os.environ.get("TRACEDECK_DESKTOP_BUILD_ID", ""),
         "runtime_dir": str(RUNTIME_DIR),
         "config_path": os.environ.get("TRACEDECK_CONFIG", ""),
     }

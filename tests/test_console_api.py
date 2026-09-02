@@ -447,6 +447,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
                     os.environ,
                     {
                         "TRACEDECK_DESKTOP": "1",
+                        "TRACEDECK_DESKTOP_BUILD_ID": "desktop-build-test",
                         "TRACEDECK_CONFIG": str(runtime_dir.parent / "config" / "local.json"),
                     },
                 ):
@@ -458,6 +459,7 @@ class CaptureConsoleApiTests(unittest.TestCase):
                     result["desktop"]["config_path"],
                     str(runtime_dir.parent / "config" / "local.json"),
                 )
+                self.assertEqual(result["desktop"]["build_id"], "desktop-build-test")
             finally:
                 app_module.RUNTIME_DIR = original_runtime_dir
                 app_module.store = original_store

@@ -12,9 +12,14 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 BACKEND_DIR="$RESOURCES_DIR/backend"
 EMBED_RUNTIME="${EMBED_RUNTIME:-1}"
+BUILD_ID="${AI_CAPTURE_BUILD_ID:-}"
 ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.png"
 ICONSET_DIR="$ROOT_DIR/build/AppIcon.iconset"
 ICON_OUTPUT="$RESOURCES_DIR/AppIcon.icns"
+
+if [[ -z "$BUILD_ID" ]]; then
+  BUILD_ID="$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
+fi
 
 cd "$ROOT_DIR"
 swift build -c "$CONFIGURATION" >/dev/null
@@ -32,6 +37,7 @@ if [[ "$APP_NAME" == "抓包工具" ]]; then
 fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
+printf '%s\n' "$BUILD_ID" >"$RESOURCES_DIR/backend-build-id.txt"
 
 if [[ ! -f "$ICON_SOURCE" ]]; then
   echo "macOS app icon source not found: $ICON_SOURCE" >&2

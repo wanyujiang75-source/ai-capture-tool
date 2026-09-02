@@ -77,6 +77,7 @@ class NativeAppPackagingTests(unittest.TestCase):
         )
         info_plist = APP_PATH / "Contents" / "Info.plist"
         icon_path = APP_PATH / "Contents" / "Resources" / "AppIcon.icns"
+        build_id_path = APP_PATH / "Contents" / "Resources" / "backend-build-id.txt"
 
         with info_plist.open("rb") as plist_file:
             bundle_properties = plistlib.load(plist_file)
@@ -85,6 +86,8 @@ class NativeAppPackagingTests(unittest.TestCase):
         self.assertEqual("抓包工具", bundle_properties["CFBundleDisplayName"])
         self.assertEqual("AppIcon", bundle_properties["CFBundleIconFile"])
         self.assertTrue(icon_path.is_file(), icon_path)
+        self.assertTrue(build_id_path.is_file(), build_id_path)
+        self.assertRegex(build_id_path.read_text(encoding="utf-8").strip(), r"^[0-9a-f]{7,40}$")
         self.assertFalse(LEGACY_APP_PATH.exists(), LEGACY_APP_PATH)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
