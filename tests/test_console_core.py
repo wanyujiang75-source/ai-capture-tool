@@ -336,6 +336,16 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertNotIn("adb_root_wait", script)
         self.assertIn("no root-capable Frida launch path", script)
 
+    def test_frida_start_script_preserves_android_library_path_by_default(self):
+        script = Path("scripts/start_frida_server.sh").read_text(encoding="utf-8")
+
+        self.assertIn('FRIDA_LD_LIBRARY_PATH="${FRIDA_LD_LIBRARY_PATH:-}"', script)
+        self.assertIn('if [[ -n "$FRIDA_LD_LIBRARY_PATH" ]]; then', script)
+        self.assertNotIn(
+            'FRIDA_LD_LIBRARY_PATH="${FRIDA_LD_LIBRARY_PATH:-/apex/',
+            script,
+        )
+
     def test_frida_bootstrap_grants_shell_root_without_starting_frida_from_init(self):
         service = Path("tools/rootAVD/frida.rc").read_text(encoding="utf-8")
         grant_path = Path("tools/rootAVD/sbin/ai-capture-root-grant.sh")

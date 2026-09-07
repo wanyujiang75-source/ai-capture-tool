@@ -20,7 +20,7 @@ CAPTURE_INSTANCE_SAFE="$(printf '%s' "$CAPTURE_INSTANCE" | tr -c 'A-Za-z0-9_.-' 
 SCREEN_SESSION="frida-server-$CAPTURE_INSTANCE_SAFE"
 LOG_FILE="$RUNTIME_DIR/frida-server-${FORWARD_PORT}.log"
 LAUNCHER_FILE="$RUNTIME_DIR/launch-frida-server-${FORWARD_PORT}.sh"
-FRIDA_LD_LIBRARY_PATH="${FRIDA_LD_LIBRARY_PATH:-/apex/com.android.os.statsd/lib64:/apex/com.android.art/lib64:/apex/com.android.runtime/lib64}"
+FRIDA_LD_LIBRARY_PATH="${FRIDA_LD_LIBRARY_PATH:-}"
 
 require_command "$ADB_BIN"
 require_command curl
@@ -91,7 +91,10 @@ fi
 
 adb_cmd push "$FRIDA_BIN" "$DEVICE_BIN" >/dev/null
 adb_cmd shell "chmod 755 '$DEVICE_BIN'"
-REMOTE_CMD="env LD_LIBRARY_PATH=$FRIDA_LD_LIBRARY_PATH $DEVICE_BIN"
+REMOTE_CMD="$DEVICE_BIN"
+if [[ -n "$FRIDA_LD_LIBRARY_PATH" ]]; then
+  REMOTE_CMD="env LD_LIBRARY_PATH=$FRIDA_LD_LIBRARY_PATH $DEVICE_BIN"
+fi
 
 if [[ "$USE_SU" == "1" ]]; then
   adb_cmd shell "$ROOT_SHELL_PREFIX -c \"pkill -f '/data/local/tmp/[f]rida-server' >/dev/null 2>&1 || true; pidof frida-server >/dev/null 2>&1 && kill \$(pidof frida-server) >/dev/null 2>&1 || true\""
