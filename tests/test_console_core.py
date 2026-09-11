@@ -199,19 +199,50 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             self.assertEqual(config["capture"]["proxy_port_start"], 9090)
             self.assertEqual(config["capture"]["mitmweb_token"], "android-capture")
 
-    def test_adb_device_discovery_parses_online_devices_only(self):
+    def test_adb_device_discovery_preserves_state_connection_and_model(self):
         from capture_console.device_discovery import parse_adb_devices
 
         devices = parse_adb_devices(
             "List of devices attached\n"
             "emulator-5554\tdevice product:sdk_gphone model:sdk_gphone\n"
             "192.168.1.50:5555\toffline\n"
-            "R5CT123ABC\tdevice usb:336592896X\n"
+            "R5CT123ABC\tunauthorized usb:336592896X model:Pixel_8\n"
+            "adb-R3CN30ABC._adb-tls-connect._tcp\tdevice model:Pixel_9\n"
         )
 
-        self.assertEqual([device["serial"] for device in devices], ["emulator-5554", "R5CT123ABC"])
-        self.assertEqual(devices[0]["kind"], "emulator")
-        self.assertEqual(devices[1]["kind"], "physical")
+        self.assertEqual(
+            devices,
+            [
+                {
+                    "serial": "emulator-5554",
+                    "status": "device",
+                    "kind": "emulator",
+                    "connection_type": "emulator",
+                    "model": "sdk_gphone",
+                },
+                {
+                    "serial": "192.168.1.50:5555",
+                    "status": "offline",
+                    "kind": "physical",
+                    "connection_type": "wireless",
+                    "model": "",
+                },
+                {
+                    "serial": "R5CT123ABC",
+                    "status": "unauthorized",
+                    "kind": "physical",
+                    "connection_type": "usb",
+                    "model": "Pixel_8",
+                },
+                {
+                    "serial": "adb-R3CN30ABC._adb-tls-connect._tcp",
+                    "status": "device",
+                    "kind": "physical",
+                    "connection_type": "wireless",
+                    "model": "Pixel_9",
+                },
+            ],
+        )
 
     def test_discovered_device_port_assignment_skips_occupied_slots(self):
         from capture_console.device_discovery import build_discovered_devices
@@ -230,6 +261,69 @@ class CaptureConsoleCoreTests(unittest.TestCase):
         self.assertEqual(devices[0]["frida_port"], 27142)
         self.assertEqual(devices[1]["device_id"], "device-2")
         self.assertEqual(devices[1]["proxy_port"], 9110)
+        self.assertEqual(devices[1]["enabled"], 1)
+
+    def test_discovered_device_reuses_existing_identity_and_configuration(self):
+        from capture_console.device_discovery import build_log_devices
+
+        existing = {
+            "device_id": "device-1",
+            "name": "AI Capture Emulator",
+            "avd_name": "AI_Capture_AVD_01",
+            "adb_serial": "emulator-5554",
+            "proxy_port": 9090,
+            "web_port": 9091,
+            "frida_port": 27042,
+            "enabled": 1,
+            "resident": 1,
+            "idle_release_minutes": 0,
+        }
+
+        devices = build_log_devices(
+            [{"serial": "emulator-5554", "status": "device", "kind": "emulator"}],
+            proxy_port_start=9090,
+            web_port_start=9091,
+            frida_port_start=27042,
+            occupied_ports={9090, 9091, 27042},
+            existing_devices=[existing],
+        )
+
+        self.assertEqual(
+            {key: devices[0][key] for key in existing},
+            existing,
+        )
+
+    def test_physical_log_status_skips_emulator_control_commands(self):
+        from capture_console.runner import CommandResult, ConsoleRunner
+
+        runner = ConsoleRunner(Path.cwd(), adb_serial="R5CT123ABC", avd_name="")
+        commands = []
+
+        def fake_run(command, *, timeout=20, env=None):
+            commands.append(command)
+            if command[-1:] == ["devices"]:
+                return CommandResult(0, "List of devices attached\nR5CT123ABC\tdevice\n", "")
+            if command[-3:] == ["shell", "dumpsys", "user"]:
+                return CommandResult(0, "State: RUNNING_UNLOCKED", "")
+            if command[-3:] == ["shell", "dumpsys", "window"]:
+                return CommandResult(0, "mCurrentFocus=Window{1 u0 com.example.app/.MainActivity}", "")
+            return CommandResult(1, "", "unexpected command")
+
+        runner.run = fake_run
+
+        status = runner.log_device_status()
+
+        self.assertEqual(
+            status,
+            {
+                "adb_serial": "R5CT123ABC",
+                "adb_online": True,
+                "unlocked": True,
+                "foreground": "mCurrentFocus=Window{1 u0 com.example.app/.MainActivity}",
+                "devices": "List of devices attached\nR5CT123ABC\tdevice",
+            },
+        )
+        self.assertFalse(any(command[0] == "pgrep" or "emu" in command for command in commands))
 
     def test_release_package_script_excludes_local_runtime_state(self):
         script = Path("release/package.sh").read_text(encoding="utf-8")

@@ -86,7 +86,7 @@ struct UserFacingCopyTests {
         )
 
         await controller.configure(deviceID: nil, packageName: nil)
-        #expect(controller.message == AppCopy.Log.emulatorOffline)
+        #expect(controller.message == AppCopy.Log.deviceOffline)
 
         await controller.configure(deviceID: "device-1", packageName: nil)
         #expect(controller.message == AppCopy.Log.waitingForApp)

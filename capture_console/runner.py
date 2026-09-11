@@ -227,6 +227,28 @@ class ConsoleRunner:
             return []
         return parse_adb_devices(result.stdout)
 
+    def log_device_status(self) -> Dict[str, Any]:
+        devices = self.run([str(self.adb_bin), "devices"], timeout=10)
+        adb_online = bool(re.search(rf"^{re.escape(self.adb_serial)}\s+device$", devices.stdout, re.M))
+        unlocked = False
+        foreground = ""
+        if adb_online:
+            user = self.adb(["shell", "dumpsys", "user"], timeout=15)
+            unlocked = user.ok and "RUNNING_UNLOCKED" in user.stdout
+            window = self.adb(["shell", "dumpsys", "window"], timeout=15)
+            if window.ok:
+                for line in window.stdout.replace("\r", "").splitlines():
+                    if "mCurrentFocus" in line or "topResumedActivity" in line:
+                        foreground = line.strip()
+                        break
+        return {
+            "adb_serial": self.adb_serial,
+            "adb_online": adb_online,
+            "unlocked": unlocked,
+            "foreground": foreground,
+            "devices": devices.stdout.strip(),
+        }
+
     def emulator_status(self) -> Dict[str, Any]:
         process = self.run(["pgrep", "-af", f"emulator.*-avd {self.avd_name}"], timeout=10)
         devices = self.run([str(self.adb_bin), "devices"], timeout=10)
@@ -281,7 +303,7 @@ class ConsoleRunner:
         }
 
     def foreground_app_state(self) -> Dict[str, str]:
-        status = self.emulator_status()
+        status = self.log_device_status()
         if not status.get("adb_online"):
             return empty_foreground_state("device_offline")
         if not status.get("unlocked"):

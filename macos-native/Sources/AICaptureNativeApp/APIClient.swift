@@ -11,6 +11,10 @@ protocol LogcatAPI: Sendable {
     func stopLogcat(deviceID: String) async throws -> LogcatActionResponse
 }
 
+protocol DeviceDiscoveryAPI: Sendable {
+    func discoverLogDevices() async throws -> DeviceDiscoveryResponse
+}
+
 protocol ForegroundTargetAPI: Sendable {
     func getForegroundApp(deviceID: String) async throws -> ForegroundAppState
     func resolveForegroundTarget(deviceID: String) async throws -> ForegroundTargetResponse
@@ -39,7 +43,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -61,6 +65,10 @@ struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAP
     func getDevices() async throws -> [CaptureDevice] {
         let response: DevicesResponse = try await get("api/devices")
         return response.devices
+    }
+
+    func discoverLogDevices() async throws -> DeviceDiscoveryResponse {
+        try await get("api/log-devices/discover")
     }
 
     func getApps() async throws -> [CaptureApp] {
@@ -322,7 +330,7 @@ struct APIClient: LogcatAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAP
     }
 }
 
-enum APIClientError: LocalizedError {
+enum APIClientError: LocalizedError, Sendable {
     case invalidResponse
     case httpStatus(Int, String)
     case decoding(String)

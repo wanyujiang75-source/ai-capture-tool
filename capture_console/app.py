@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .device_discovery import build_discovered_devices
+from .device_discovery import build_discovered_devices, build_log_devices
 from .foreground import capture_state
 from .http_errors import structured_http_error_body
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
@@ -151,6 +151,13 @@ def device_or_404(device_id: str) -> Dict[str, Any]:
     return device
 
 
+def log_device_or_404(device_id: str) -> Dict[str, Any]:
+    device = store.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Android log device not found")
+    return device
+
+
 def mark_device_interactive(device_id: str) -> Dict[str, Any]:
     device = device_or_404(device_id)
     now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -167,6 +174,13 @@ def mark_device_interactive(device_id: str) -> Dict[str, Any]:
 
 def runner_for_device_id(device_id: str):
     device = device_or_404(device_id)
+    if hasattr(runner, "for_device"):
+        return runner.for_device(device)
+    return runner
+
+
+def runner_for_log_device_id(device_id: str):
+    device = log_device_or_404(device_id)
     if hasattr(runner, "for_device"):
         return runner.for_device(device)
     return runner
@@ -1500,6 +1514,77 @@ def api_discover_devices() -> Dict[str, Any]:
     }
 
 
+@app.get("/api/log-devices/discover")
+def api_discover_log_devices() -> Dict[str, Any]:
+    adb_devices = runner.discover_adb_devices() if hasattr(runner, "discover_adb_devices") else []
+    existing_devices = store.list_devices(include_disabled=True)
+    reserved_ports: set[int] = set()
+    for device in existing_devices:
+        reserved_ports.update(
+            int(device[key])
+            for key in ("proxy_port", "web_port", "frida_port")
+            if str(device.get(key) or "").isdigit()
+        )
+    discovered = build_log_devices(
+        adb_devices,
+        proxy_port_start=int(LOCAL_CONFIG["capture"]["proxy_port_start"]),
+        web_port_start=int(LOCAL_CONFIG["capture"]["web_port_start"]),
+        frida_port_start=int(LOCAL_CONFIG["capture"]["frida_port_start"]),
+        occupied_ports=reserved_ports,
+        existing_devices=existing_devices,
+    )
+    device_fields = {
+        "device_id",
+        "name",
+        "avd_name",
+        "adb_serial",
+        "proxy_port",
+        "web_port",
+        "frida_port",
+        "enabled",
+        "resident",
+        "idle_release_minutes",
+    }
+    seen_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    persisted = []
+    for device in discovered:
+        stored_device = store.upsert_device(**{key: device[key] for key in device_fields})
+        stored_device = store.update_device(
+            stored_device["device_id"],
+            sleep_state="awake",
+            error="",
+            last_active_at=seen_at,
+        )
+        persisted.append({
+            **stored_device,
+            "source": device.get("source", "adb"),
+            "kind": device.get("kind", "physical"),
+            "connection_type": device.get("connection_type", "usb"),
+            "adb_state": device.get("adb_state", "device"),
+            "model": device.get("model", ""),
+        })
+    blocked_devices = [device for device in adb_devices if str(device.get("status") or "device") != "device"]
+    unauthorized_physical = any(
+        device.get("kind") == "physical" and device.get("status") == "unauthorized"
+        for device in blocked_devices
+    )
+    if persisted:
+        user_message = "已发现可读取日志的 Android 设备。"
+    elif unauthorized_physical:
+        user_message = "已检测到未授权真机。USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。"
+    elif blocked_devices:
+        user_message = "已检测到 Android 设备，但设备当前离线。请恢复连接后刷新。"
+    else:
+        user_message = "未发现 Android 设备。请连接真机或启动模拟器后刷新。"
+    return {
+        "devices": persisted,
+        "count": len(persisted),
+        "blocked_devices": blocked_devices,
+        "source": "adb",
+        "user_message": user_message,
+    }
+
+
 @app.get("/api/emulator")
 def api_emulator_status(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     return runner_for_device_id(device_id).emulator_status()
@@ -1652,13 +1737,57 @@ def logcat_pid_resolver(device_runner: Any):
     return resolve
 
 
+def logcat_device_kind(device: Dict[str, Any]) -> str:
+    serial = str(device.get("adb_serial") or "")
+    return "emulator" if serial.startswith("emulator-") or str(device.get("avd_name") or "") else "physical"
+
+
+def current_adb_state(device_runner: Any, serial: str) -> str:
+    if not hasattr(device_runner, "discover_adb_devices"):
+        return ""
+    for discovered in device_runner.discover_adb_devices():
+        if str(discovered.get("serial") or "") == serial:
+            return str(discovered.get("status") or "")
+    return ""
+
+
 @app.post("/api/devices/{device_id}/logcat/start")
 def api_start_logcat(device_id: str, payload: LogcatStartPayload) -> Dict[str, Any]:
-    device_or_404(device_id)
+    device = log_device_or_404(device_id)
     source, package_name = validate_logcat_start_payload(payload)
-    device_runner = runner_for_device_id(device_id)
-    emulator = device_runner.emulator_status()
-    if not emulator.get("adb_online"):
+    device_runner = runner_for_log_device_id(device_id)
+    device_status = (
+        device_runner.log_device_status()
+        if hasattr(device_runner, "log_device_status")
+        else device_runner.emulator_status()
+    )
+    if not device_status.get("adb_online"):
+        kind = logcat_device_kind(device)
+        adb_state = current_adb_state(device_runner, str(device.get("adb_serial") or ""))
+        if kind == "physical" and adb_state == "unauthorized":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "physical_device_unauthorized",
+                    "title": "Android 真机尚未授权",
+                    "message": "physical Android device is unauthorized",
+                    "user_message": "Android 真机尚未授权，暂时无法读取日志。",
+                    "fix": "USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。",
+                    "technical_detail": f"serial={device.get('adb_serial', '')} state={adb_state}",
+                },
+            )
+        if kind == "physical":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "physical_device_offline",
+                    "title": "Android 真机未连接",
+                    "message": "physical Android device is not online",
+                    "user_message": "Android 真机当前未连接，无法读取日志。",
+                    "fix": "请检查 USB 或无线调试连接，然后刷新设备。",
+                    "technical_detail": f"serial={device.get('adb_serial', '')} state={adb_state or 'missing'}",
+                },
+            )
         raise HTTPException(
             status_code=409,
             detail={
@@ -1669,7 +1798,14 @@ def api_start_logcat(device_id: str, payload: LogcatStartPayload) -> Dict[str, A
         )
     if not hasattr(device_runner, "adb_command_prefix") or not hasattr(device_runner, "process_environment"):
         raise HTTPException(status_code=501, detail="runner does not support Logcat streaming")
-    mark_device_interactive(device_id)
+    if device.get("enabled"):
+        mark_device_interactive(device_id)
+    else:
+        store.update_device(
+            device_id,
+            last_active_at=datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+            error="",
+        )
     try:
         return logcat_service.start(
             device_id=device_id,
@@ -1685,7 +1821,7 @@ def api_start_logcat(device_id: str, payload: LogcatStartPayload) -> Dict[str, A
 
 @app.get("/api/devices/{device_id}/logcat")
 def api_poll_logcat(device_id: str, after: int = 0, limit: int = 500) -> Dict[str, Any]:
-    device_or_404(device_id)
+    log_device_or_404(device_id)
     if after < 0:
         raise HTTPException(status_code=422, detail="after must be non-negative")
     return logcat_service.poll(device_id, after=after, limit=max(1, min(limit, 1000)))
@@ -1693,13 +1829,13 @@ def api_poll_logcat(device_id: str, after: int = 0, limit: int = 500) -> Dict[st
 
 @app.post("/api/devices/{device_id}/logcat/clear")
 def api_clear_logcat(device_id: str) -> Dict[str, Any]:
-    device_or_404(device_id)
+    log_device_or_404(device_id)
     return logcat_service.clear(device_id)
 
 
 @app.post("/api/devices/{device_id}/logcat/stop")
 def api_stop_logcat(device_id: str) -> Dict[str, Any]:
-    device_or_404(device_id)
+    log_device_or_404(device_id)
     return logcat_service.stop(device_id)
 
 
@@ -1864,7 +2000,7 @@ def api_list_apps() -> Dict[str, Any]:
 
 @app.get("/api/devices/{device_id}/foreground-app")
 def api_foreground_app(device_id: str) -> Dict[str, Any]:
-    return runner_for_device_id(device_id).foreground_app_state()
+    return runner_for_log_device_id(device_id).foreground_app_state()
 
 
 @app.post("/api/devices/{device_id}/foreground-target/resolve")

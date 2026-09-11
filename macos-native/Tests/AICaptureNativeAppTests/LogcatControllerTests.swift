@@ -15,6 +15,8 @@ private actor FakeLogcatAPI: LogcatAPI {
     private var pollResponses: [LogcatPollResponse] = []
     private var clearResponses: [LogcatActionResponse] = []
     private var stopResponses: [LogcatActionResponse] = []
+    private var startErrors: [APIClientError] = []
+    private var pollErrors: [APIClientError] = []
 
     func enqueueStart(_ response: LogcatActionResponse) {
         startResponses.append(response)
@@ -32,12 +34,23 @@ private actor FakeLogcatAPI: LogcatAPI {
         stopResponses.append(response)
     }
 
+    func enqueueStartError(_ error: APIClientError) {
+        startErrors.append(error)
+    }
+
+    func enqueuePollError(_ error: APIClientError) {
+        pollErrors.append(error)
+    }
+
     func startLogcat(
         deviceID: String,
         source: LogcatSource,
         packageName: String
     ) async throws -> LogcatActionResponse {
         calls.append(.start(deviceID: deviceID, source: source, packageName: packageName))
+        if !startErrors.isEmpty {
+            throw startErrors.removeFirst()
+        }
         return startResponses.isEmpty
             ? makeLogcatResponse(source: source, packageName: packageName)
             : startResponses.removeFirst()
@@ -45,6 +58,9 @@ private actor FakeLogcatAPI: LogcatAPI {
 
     func pollLogcat(deviceID: String, after: Int64, limit: Int) async throws -> LogcatPollResponse {
         calls.append(.poll(deviceID: deviceID, after: after, limit: limit))
+        if !pollErrors.isEmpty {
+            throw pollErrors.removeFirst()
+        }
         return pollResponses.isEmpty
             ? makeLogcatResponse(nextCursor: after)
             : pollResponses.removeFirst()
@@ -177,6 +193,111 @@ struct LogcatControllerTests {
 
         #expect(!controller.isPolling)
         #expect(controller.state == "stopped")
+        #expect(await fake.calls.last == .stop(deviceID: "device-1"))
+    }
+
+    @Test
+    func physicalDeviceAuthorizationErrorUsesActionableCopy() async {
+        let fake = FakeLogcatAPI()
+        await fake.enqueueStartError(
+            .httpStatus(
+                409,
+                #"{"detail":{"code":"physical_device_unauthorized","title":"Android 真机尚未授权","user_message":"Android 真机尚未授权，暂时无法读取日志。","recovery_action":"USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。"}}"#
+            )
+        )
+        let controller = makeController(api: fake)
+
+        await controller.configure(
+            deviceID: "adb-physical-995b53ddf225",
+            packageName: "com.example.app",
+            deviceKind: .physical
+        )
+
+        #expect(controller.state == "error")
+        #expect(controller.message == "Android 真机尚未授权，暂时无法读取日志。")
+        #expect(controller.lastIssue?.recoveryAction == "USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。")
+        #expect(!controller.isPolling)
+    }
+
+    @Test
+    func pollingFailureStopsRepeatedRequestsUntilUserRefreshes() async {
+        let fake = FakeLogcatAPI()
+        let controller = makeController(api: fake)
+        await controller.configure(deviceID: "device-1", packageName: "com.example.app")
+        await fake.enqueuePollError(
+            .httpStatus(
+                409,
+                #"{"detail":{"code":"physical_device_offline","title":"Android 真机未连接","user_message":"Android 真机当前未连接，无法读取日志。","recovery_action":"请检查 USB 或无线调试连接，然后刷新设备。"}}"#
+            )
+        )
+
+        await controller.pollOnce()
+
+        #expect(controller.state == "error")
+        #expect(controller.message == "Android 真机当前未连接，无法读取日志。")
+        #expect(!controller.isPolling)
+    }
+
+    @Test
+    func backendErrorStateStopsPollingWithoutWaitingForTransportFailure() async {
+        let fake = FakeLogcatAPI()
+        await fake.enqueuePoll(makeLogcatResponse(state: "error"))
+        let controller = makeController(api: fake)
+
+        await controller.configure(deviceID: "device-1", packageName: "com.example.app")
+
+        #expect(controller.state == "error")
+        #expect(controller.message == AppCopy.Log.disconnected)
+        #expect(!controller.isPolling)
+    }
+
+    @Test
+    func physicalSystemLogDisconnectUsesPhysicalDeviceRecoveryCopy() async {
+        let fake = FakeLogcatAPI()
+        await fake.enqueuePoll(makeLogcatResponse(source: .system, state: "error", packageName: ""))
+        let controller = makeController(api: fake)
+        controller.source = .system
+
+        await controller.configure(
+            deviceID: "adb-physical-995b53ddf225",
+            packageName: nil,
+            deviceKind: .physical
+        )
+
+        #expect(controller.state == "error")
+        #expect(controller.message == AppCopy.Log.physicalOffline)
+        #expect(!controller.isPolling)
+    }
+
+    @Test
+    func physicalDeviceDisconnectStopsTheCurrentStreamAndExplainsRecovery() async {
+        let fake = FakeLogcatAPI()
+        let controller = makeController(api: fake)
+        await controller.configure(
+            deviceID: "adb-physical-995b53ddf225",
+            packageName: "com.example.app",
+            deviceKind: .physical
+        )
+
+        await controller.reportDeviceOffline(kind: .physical)
+
+        #expect(controller.state == "offline")
+        #expect(controller.message == AppCopy.Log.physicalOffline)
+        #expect(!controller.isPolling)
+        #expect(await fake.calls.last == .stop(deviceID: "adb-physical-995b53ddf225"))
+    }
+
+    @Test
+    func lockedDeviceStopsTheCurrentStreamAndWaitsForUnlock() async {
+        let fake = FakeLogcatAPI()
+        let controller = makeController(api: fake)
+        await controller.configure(deviceID: "device-1", packageName: "com.example.app")
+
+        await controller.reportDeviceLocked()
+
+        #expect(controller.state == "device_locked")
+        #expect(controller.message == AppCopy.Log.deviceLocked)
+        #expect(!controller.isPolling)
         #expect(await fake.calls.last == .stop(deviceID: "device-1"))
     }
 

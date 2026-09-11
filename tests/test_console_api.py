@@ -465,15 +465,15 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
-    def test_discover_devices_api_persists_adb_devices_without_fixed_avd_pool(self):
+    def test_discover_devices_api_keeps_capture_device_pool_contract(self):
         original_store = app_module.store
         original_runner = app_module.runner
 
         class DiscoverRunner:
             def discover_adb_devices(self):
                 return [
-                    {"serial": "emulator-5554", "kind": "emulator"},
-                    {"serial": "R5CT123ABC", "kind": "physical"},
+                    {"serial": "emulator-5554", "status": "device", "kind": "emulator"},
+                    {"serial": "R5CT123ABC", "status": "device", "kind": "physical"},
                 ]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -481,11 +481,53 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
                 app_module.runner = DiscoverRunner()
 
-                result = app_module.api_discover_devices()
+                with mock.patch.object(app_module, "discovery_occupied_ports", return_value=set()):
+                    result = app_module.api_discover_devices()
 
                 self.assertEqual([device["device_id"] for device in result["devices"]], ["device-1", "device-2"])
+                self.assertEqual([device["enabled"] for device in result["devices"]], [1, 1])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_log_devices_api_persists_isolated_adb_targets(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [
+                    {"serial": "emulator-5554", "status": "device", "kind": "emulator"},
+                    {
+                        "serial": "R5CT123ABC",
+                        "status": "device",
+                        "kind": "physical",
+                        "connection_type": "usb",
+                        "model": "Pixel_8",
+                    },
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = DiscoverRunner()
+
+                with mock.patch.object(
+                    app_module,
+                    "collect_port_listeners",
+                    side_effect=AssertionError("log-only discovery must not probe capture ports"),
+                ):
+                    result = app_module.api_discover_log_devices()
+
+                self.assertEqual(
+                    [device["device_id"] for device in result["devices"]],
+                    ["adb-emulator-04ab3fc382bf", "adb-physical-995b53ddf225"],
+                )
                 self.assertEqual(result["devices"][0]["adb_serial"], "emulator-5554")
                 self.assertEqual(app_module.store.list_devices()[1]["adb_serial"], "R5CT123ABC")
+                self.assertEqual(result["devices"][1]["kind"], "physical")
+                self.assertEqual(result["devices"][1]["connection_type"], "usb")
+                self.assertEqual(app_module.store.list_devices()[1]["enabled"], 0)
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
@@ -496,22 +538,128 @@ class CaptureConsoleApiTests(unittest.TestCase):
 
         class DiscoverRunner:
             def discover_adb_devices(self):
-                return [{"serial": "emulator-5556", "kind": "emulator"}]
+                return [{"serial": "emulator-5556", "status": "device", "kind": "emulator"}]
 
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 app_module.store = CaptureStore(Path(tmp) / "console.db")
-                self.add_test_device(app_module.store, device_id="device-2", adb_serial="emulator-5556", proxy_port=9100, web_port=9101, frida_port=27142)
-                self.add_test_device(app_module.store, device_id="device-3", adb_serial="emulator-5558", proxy_port=9110, web_port=9111, frida_port=27242)
+                self.add_test_device(
+                    app_module.store,
+                    device_id="device-2",
+                    adb_serial="emulator-5556",
+                    proxy_port=9100,
+                    web_port=9101,
+                    frida_port=27142,
+                )
+                self.add_test_device(
+                    app_module.store,
+                    device_id="device-3",
+                    adb_serial="emulator-5558",
+                    proxy_port=9110,
+                    web_port=9111,
+                    frida_port=27242,
+                )
                 app_module.runner = DiscoverRunner()
 
-                result = app_module.api_discover_devices()
+                with mock.patch.object(app_module, "discovery_occupied_ports", return_value=set()):
+                    result = app_module.api_discover_devices()
 
                 self.assertEqual([device["device_id"] for device in result["devices"]], ["device-1"])
                 self.assertEqual(app_module.store.get_device("device-1")["adb_serial"], "emulator-5556")
-                self.assertEqual(app_module.store.list_devices(include_disabled=False)[0]["device_id"], "device-1")
                 self.assertEqual(app_module.store.get_device("device-2")["enabled"], 0)
                 self.assertEqual(app_module.store.get_device("device-3")["enabled"], 0)
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_log_devices_api_preserves_configured_emulators(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [
+                    {
+                        "serial": "emulator-5554",
+                        "status": "device",
+                        "kind": "emulator",
+                        "connection_type": "emulator",
+                        "model": "sdk_gphone64_arm64",
+                    },
+                    {
+                        "serial": "R5CT123ABC",
+                        "status": "device",
+                        "kind": "physical",
+                        "connection_type": "usb",
+                        "model": "Pixel_8",
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                configured = self.add_test_device(app_module.store)
+                app_module.runner = DiscoverRunner()
+
+                result = app_module.api_discover_log_devices()
+
+                self.assertEqual(result["count"], 2)
+                self.assertEqual(
+                    [device["device_id"] for device in result["devices"]],
+                    ["device-1", "adb-physical-995b53ddf225"],
+                )
+                refreshed = app_module.store.get_device("device-1")
+                for key in ("avd_name", "adb_serial", "proxy_port", "web_port", "frida_port", "enabled"):
+                    self.assertEqual(refreshed[key], configured[key])
+                self.assertEqual(
+                    [device["device_id"] for device in app_module.store.list_devices(include_disabled=False)],
+                    ["device-1"],
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_discover_log_devices_api_reports_unauthorized_phone_without_persisting_it(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class DiscoverRunner:
+            def discover_adb_devices(self):
+                return [
+                    {
+                        "serial": "R5CT123ABC",
+                        "status": "unauthorized",
+                        "kind": "physical",
+                        "connection_type": "usb",
+                        "model": "Pixel_8",
+                    }
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.runner = DiscoverRunner()
+
+                result = app_module.api_discover_log_devices()
+
+                self.assertEqual(result["devices"], [])
+                self.assertEqual(
+                    result["blocked_devices"],
+                    [
+                        {
+                            "serial": "R5CT123ABC",
+                            "status": "unauthorized",
+                            "kind": "physical",
+                            "connection_type": "usb",
+                            "model": "Pixel_8",
+                        }
+                    ],
+                )
+                self.assertEqual(
+                    result["user_message"],
+                    "已检测到未授权真机。USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。",
+                )
+                self.assertEqual(app_module.store.list_devices(), [])
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner
@@ -3877,6 +4025,109 @@ class CaptureConsoleApiTests(unittest.TestCase):
                     },
                     ctx.exception.detail,
                 )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_logcat_start_explains_physical_device_authorization(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class UnauthorizedPhoneRunner:
+            def for_device(self, device):
+                return self
+
+            def discover_adb_devices(self):
+                return [
+                    {
+                        "serial": "R5CT123ABC",
+                        "status": "unauthorized",
+                        "kind": "physical",
+                    }
+                ]
+
+            def emulator_status(self):
+                return {"adb_online": False}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.store.upsert_device(
+                    device_id="adb-physical-995b53ddf225",
+                    name="Pixel 8",
+                    avd_name="",
+                    adb_serial="R5CT123ABC",
+                    proxy_port=9090,
+                    web_port=9091,
+                    frida_port=27042,
+                    enabled=0,
+                )
+                app_module.runner = UnauthorizedPhoneRunner()
+
+                with self.assertRaises(HTTPException) as raised:
+                    app_module.api_start_logcat(
+                        "adb-physical-995b53ddf225",
+                        app_module.LogcatStartPayload(source="system"),
+                    )
+
+                self.assertEqual(raised.exception.status_code, 409)
+                self.assertEqual(raised.exception.detail["code"], "physical_device_unauthorized")
+                self.assertEqual(
+                    raised.exception.detail["user_message"],
+                    "Android 真机尚未授权，暂时无法读取日志。",
+                )
+                self.assertEqual(
+                    raised.exception.detail["fix"],
+                    "USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。",
+                )
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_logcat_foreground_app_allows_disabled_log_only_device(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class PhysicalRunner:
+            def for_device(self, device):
+                self.device = device
+                return self
+
+            def foreground_app_state(self):
+                return {
+                    "state": "ready",
+                    "package_name": "com.example.phone",
+                    "activity": "com.example.phone/.MainActivity",
+                    "component": "com.example.phone/.MainActivity",
+                }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                app_module.store.upsert_device(
+                    device_id="adb-physical-995b53ddf225",
+                    name="Pixel 8",
+                    avd_name="",
+                    adb_serial="R5CT123ABC",
+                    proxy_port=9090,
+                    web_port=9091,
+                    frida_port=27042,
+                    enabled=0,
+                )
+                app_module.runner = PhysicalRunner()
+
+                result = app_module.api_foreground_app("adb-physical-995b53ddf225")
+
+                self.assertEqual(
+                    result,
+                    {
+                        "state": "ready",
+                        "package_name": "com.example.phone",
+                        "activity": "com.example.phone/.MainActivity",
+                        "component": "com.example.phone/.MainActivity",
+                    },
+                )
+                self.assertEqual(app_module.runner.device["enabled"], 0)
             finally:
                 app_module.store = original_store
                 app_module.runner = original_runner

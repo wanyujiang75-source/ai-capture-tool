@@ -163,7 +163,6 @@ class LogcatService:
         if not adb_command:
             raise ValueError("adb command prefix is required")
 
-        self.stop(device_id)
         session = _LogcatSession(
             device_id=device_id,
             adb_command=list(adb_command),
@@ -182,8 +181,11 @@ class LogcatService:
         )
         session.worker_thread = worker
         with self._lock:
+            previous_session = self._sessions.get(device_id)
             self._sessions[device_id] = session
-        worker.start()
+            if previous_session is not None:
+                self._stop_session(previous_session)
+            worker.start()
         return self._response(session, after=session.buffer.cursor(), limit=1)
 
     def poll(self, device_id: str, *, after: int, limit: int) -> Dict[str, Any]:
@@ -410,9 +412,9 @@ class LogcatService:
         if process is not None:
             self._terminate_process(process)
         current = threading.current_thread()
-        if worker and worker is not current:
+        if worker and worker is not current and worker.ident is not None:
             worker.join(timeout=2.0)
-        if reader and reader is not current:
+        if reader and reader is not current and reader.ident is not None:
             reader.join(timeout=1.0)
 
     @staticmethod

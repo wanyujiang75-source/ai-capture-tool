@@ -5,6 +5,93 @@ struct DevicesResponse: Decodable {
     let devices: [CaptureDevice]
 }
 
+struct DeviceDiscoveryResponse: Decodable, Sendable {
+    let devices: [CaptureDevice]
+    let blockedDevices: [AndroidDeviceDiscovery]
+    let count: Int
+    let userMessage: String
+
+    private enum CodingKeys: String, CodingKey {
+        case devices
+        case blockedDevices = "blocked_devices"
+        case count
+        case userMessage = "user_message"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        devices = try container.decodeIfPresent([CaptureDevice].self, forKey: .devices) ?? []
+        blockedDevices = try container.decodeIfPresent([AndroidDeviceDiscovery].self, forKey: .blockedDevices) ?? []
+        count = try container.decodeIfPresent(Int.self, forKey: .count) ?? devices.count
+        userMessage = try container.decodeIfPresent(String.self, forKey: .userMessage)
+            ?? (devices.isEmpty ? AppCopy.Log.deviceOffline : "已发现可读取日志的 Android 设备。")
+    }
+}
+
+enum AndroidDeviceKind: String, Codable, Sendable {
+    case emulator
+    case physical
+}
+
+enum AndroidConnectionType: String, Codable, Sendable {
+    case emulator
+    case usb
+    case wireless
+}
+
+enum AndroidADBState: String, Codable, Sendable {
+    case device
+    case unauthorized
+    case offline
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: rawValue) ?? .unknown
+    }
+}
+
+struct AndroidDeviceDiscovery: Decodable, Equatable, Sendable {
+    let serial: String
+    let status: AndroidADBState
+    let kind: AndroidDeviceKind
+    let connectionType: AndroidConnectionType
+    let model: String
+
+    private enum CodingKeys: String, CodingKey {
+        case serial
+        case status
+        case kind
+        case connectionType = "connection_type"
+        case model
+    }
+
+    init(
+        serial: String,
+        status: AndroidADBState,
+        kind: AndroidDeviceKind,
+        connectionType: AndroidConnectionType,
+        model: String
+    ) {
+        self.serial = serial
+        self.status = status
+        self.kind = kind
+        self.connectionType = connectionType
+        self.model = model
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        serial = try container.decodeIfPresent(String.self, forKey: .serial) ?? ""
+        status = try container.decodeIfPresent(AndroidADBState.self, forKey: .status) ?? .unknown
+        kind = try container.decodeIfPresent(AndroidDeviceKind.self, forKey: .kind)
+            ?? (serial.hasPrefix("emulator-") ? .emulator : .physical)
+        connectionType = try container.decodeIfPresent(AndroidConnectionType.self, forKey: .connectionType)
+            ?? (kind == .emulator ? .emulator : (serial.contains(":") ? .wireless : .usb))
+        model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+    }
+}
+
 struct AppsResponse: Decodable {
     let apps: [CaptureApp]
 }
@@ -51,6 +138,10 @@ struct CaptureDevice: Decodable, Identifiable {
     let capture: CaptureState?
     let googleState: GoogleState?
     let activeSession: CaptureSession?
+    let kind: AndroidDeviceKind
+    let connectionType: AndroidConnectionType
+    let adbState: AndroidADBState?
+    let model: String?
 
     private enum CodingKeys: String, CodingKey {
         case id = "device_id"
@@ -67,6 +158,10 @@ struct CaptureDevice: Decodable, Identifiable {
         case capture
         case googleState = "google_state"
         case activeSession = "active_session"
+        case kind
+        case connectionType = "connection_type"
+        case adbState = "adb_state"
+        case model
     }
 
     init(from decoder: Decoder) throws {
@@ -85,6 +180,36 @@ struct CaptureDevice: Decodable, Identifiable {
         capture = try container.decodeIfPresent(CaptureState.self, forKey: .capture)
         googleState = try container.decodeIfPresent(GoogleState.self, forKey: .googleState)
         activeSession = try container.decodeIfPresent(CaptureSession.self, forKey: .activeSession)
+        let inferredKind: AndroidDeviceKind
+        if let adbSerial, !adbSerial.isEmpty, !adbSerial.hasPrefix("emulator-"), (avdName ?? "").isEmpty {
+            inferredKind = .physical
+        } else {
+            inferredKind = .emulator
+        }
+        kind = try container.decodeIfPresent(AndroidDeviceKind.self, forKey: .kind) ?? inferredKind
+        connectionType = try container.decodeIfPresent(AndroidConnectionType.self, forKey: .connectionType)
+            ?? (kind == .emulator ? .emulator : (adbSerial?.contains(":") == true ? .wireless : .usb))
+        adbState = try container.decodeIfPresent(AndroidADBState.self, forKey: .adbState)
+        model = container.decodeFlexibleString(forKey: .model)
+    }
+
+    var logDisplayName: String {
+        let normalizedModel = model?.replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if kind == .physical {
+            let connectionLabel = connectionType == .wireless ? "无线真机" : "USB 真机"
+            let deviceName = normalizedModel.flatMap { $0.isEmpty ? nil : $0 } ?? "Android 真机"
+            return "\(connectionLabel) · \(deviceName)"
+        }
+        let serial = adbSerial?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let deviceName = [normalizedModel, avdName, name]
+            .compactMap { value -> String? in
+                let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return normalized.isEmpty ? nil : normalized
+            }
+            .first { serial.isEmpty || !$0.localizedCaseInsensitiveContains(serial) }
+            ?? "Android 模拟器"
+        return "模拟器 · \(deviceName)"
     }
 }
 

@@ -118,6 +118,83 @@ struct APIClientTests {
     }
 
     @Test
+    func discoversAuthorizedAndBlockedAndroidLogDevices() async throws {
+        CapturingURLProtocol.reset(
+            responseData: Data(
+                """
+                {
+                  "devices": [
+                    {
+                      "device_id": "adb-physical-995b53ddf225",
+                      "name": "Pixel 8",
+                      "adb_serial": "R5CT123ABC",
+                      "kind": "physical",
+                      "connection_type": "usb",
+                      "adb_state": "device",
+                      "model": "Pixel_8"
+                    }
+                  ],
+                  "blocked_devices": [
+                    {
+                      "serial": "192.168.1.50:5555",
+                      "status": "offline",
+                      "kind": "physical",
+                      "connection_type": "wireless",
+                      "model": "Pixel_9"
+                    }
+                  ],
+                  "count": 1,
+                  "source": "adb",
+                  "user_message": "已发现可读取日志的 Android 设备。"
+                }
+                """.utf8
+            )
+        )
+        let client = makeClient()
+
+        let response = try await client.discoverLogDevices()
+
+        let request = try #require(CapturingURLProtocol.observedRequests.last)
+        #expect(request.httpMethod == "GET")
+        #expect(request.url?.path == "/api/log-devices/discover")
+        #expect(response.devices.count == 1)
+        #expect(response.devices[0].kind == .physical)
+        #expect(response.devices[0].connectionType == .usb)
+        #expect(response.devices[0].logDisplayName == "USB 真机 · Pixel 8")
+        #expect(response.blockedDevices == [
+            AndroidDeviceDiscovery(
+                serial: "192.168.1.50:5555",
+                status: .offline,
+                kind: .physical,
+                connectionType: .wireless,
+                model: "Pixel_9"
+            )
+        ])
+    }
+
+    @Test
+    func logDeviceDisplayNameDoesNotExposeLegacyEmulatorSerial() throws {
+        let decoder = JSONDecoder()
+        let modeledDevice = try decoder.decode(
+            CaptureDevice.self,
+            from: Data(
+                #"{"device_id":"device-1","name":"Android Emulator emulator-5554","adb_serial":"emulator-5554","kind":"emulator","model":"sdk_gphone64_arm64"}"#.utf8
+            )
+        )
+        let unnamedDevice = try decoder.decode(
+            CaptureDevice.self,
+            from: Data(
+                #"{"device_id":"device-2","name":"Android Emulator emulator-5556","adb_serial":"emulator-5556","kind":"emulator"}"#.utf8
+            )
+        )
+
+        #expect(modeledDevice.logDisplayName == "模拟器 · sdk gphone64 arm64")
+        #expect(unnamedDevice.logDisplayName == "模拟器 · Android 模拟器")
+        #expect(!modeledDevice.logDisplayName.contains("emulator-5554"))
+        #expect(!unnamedDevice.logDisplayName.contains("emulator-5556"))
+    }
+
+    @Test
     func uploadsLocalAPKToSelectedDeviceAsProductionPackage() async throws {
         CapturingURLProtocol.reset(
             responseData: Data(

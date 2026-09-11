@@ -2,10 +2,17 @@ import AppKit
 import SwiftUI
 
 struct LogsView: View {
-    @EnvironmentObject private var appState: AppState
     @StateObject private var controller = LogcatController()
     @State private var displayMode: LogcatDisplayMode = .table
     @State private var copySucceeded = false
+    @State private var logDevices: [CaptureDevice] = []
+    @State private var blockedDevices: [AndroidDeviceDiscovery] = []
+    @State private var selectedLogDeviceID: String?
+    @State private var foregroundApp: ForegroundAppState?
+    @State private var discoveryMessage = AppCopy.Log.deviceOffline
+    @State private var isRefreshingDevices = false
+
+    private let apiClient = APIClient()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -18,17 +25,16 @@ struct LogsView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        .task {
+            await refreshLogDevices()
+        }
         .task(id: selectionKey) {
-            if appState.apps.isEmpty || appState.devices.isEmpty {
-                await appState.refreshDeviceAndApps()
-            }
-            await controller.configure(
-                deviceID: appState.selectedDeviceID,
-                packageName: appState.selectedApp?.packageName
-            )
+            await monitorSelectedLogTarget()
         }
         .onDisappear {
-            controller.cancelPolling()
+            Task {
+                await controller.stop()
+            }
         }
     }
 
@@ -49,31 +55,45 @@ struct LogsView: View {
 
     private var targetBar: some View {
         HStack(spacing: 14) {
-            if appState.showsDeviceSelector {
-                Picker("使用设备", selection: selectedDeviceBinding) {
-                    if appState.devices.isEmpty {
-                        Text("暂无可用设备").tag("")
-                    } else {
-                        ForEach(appState.devices) { device in
-                            Text(device.name ?? "模拟器").tag(device.id)
-                        }
-                    }
-                }
-                .frame(minWidth: 220, maxWidth: 320)
-            }
-
-            Picker("应用", selection: selectedAppBinding) {
-                if appState.apps.isEmpty {
-                    Text("暂无已安装应用").tag(0)
+            Picker("Android 设备", selection: selectedDeviceBinding) {
+                if logDevices.isEmpty {
+                    Text("暂无可调试设备").tag("")
                 } else {
-                    ForEach(appState.apps) { app in
-                        Text(app.name ?? "应用")
-                            .tag(app.id)
+                    ForEach(logDevices) { device in
+                        Text(device.logDisplayName).tag(device.id)
                     }
                 }
             }
-            .frame(minWidth: 300, maxWidth: 430)
-            .disabled(controller.source != .app)
+            .frame(minWidth: 260, maxWidth: 380)
+
+            Button {
+                Task {
+                    await refreshLogDevices()
+                }
+            } label: {
+                if isRefreshingDevices {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(AppCopy.Log.refreshingDevices)
+                    }
+                } else {
+                    Label(AppCopy.Log.refreshDevices, systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(isRefreshingDevices)
+
+            HStack(spacing: 7) {
+                Image(systemName: controller.source == .app ? "app.fill" : "info.circle")
+                    .foregroundStyle(.secondary)
+                if controller.source == .app {
+                    Text(foregroundApp == nil ? "等待前台应用" : "已识别前台应用")
+                } else {
+                    Text(AppCopy.Log.noApplicationRequired)
+                }
+            }
+            .font(.callout)
+            .lineLimit(1)
 
             Picker("日志来源", selection: $controller.source) {
                 ForEach(LogcatSource.allCases) { source in
@@ -106,6 +126,7 @@ struct LogsView: View {
                     systemImage: controller.isPaused ? "play.fill" : "pause.fill"
                 )
             }
+            .disabled(!controller.isPolling)
 
             Button {
                 Task {
@@ -175,6 +196,20 @@ struct LogsView: View {
                 Label("较早日志已达到内存上限并被丢弃。", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.orange)
+            }
+            if let recoveryAction = controller.lastIssue?.recoveryAction,
+               !recoveryAction.isEmpty {
+                Text(recoveryAction)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            } else if hasUnauthorizedPhysicalDevice {
+                Text(AppCopy.Log.physicalAuthorization)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            } else if logDevices.isEmpty {
+                Text(deviceDiscoveryGuidance)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -277,26 +312,139 @@ struct LogsView: View {
 
     private var selectedDeviceBinding: Binding<String> {
         Binding {
-            appState.selectedDeviceID ?? ""
+            selectedLogDeviceID ?? ""
         } set: { value in
-            appState.selectedDeviceID = value.isEmpty ? nil : value
+            selectedLogDeviceID = value.isEmpty ? nil : value
         }
     }
 
-    private var selectedAppBinding: Binding<Int> {
-        Binding {
-            appState.selectedAppID ?? 0
-        } set: { value in
-            appState.selectedAppID = value == 0 ? nil : value
+    private var selectedLogDevice: CaptureDevice? {
+        guard let selectedLogDeviceID else {
+            return nil
         }
+        return logDevices.first { $0.id == selectedLogDeviceID }
     }
 
     private var selectionKey: String {
         [
-            appState.selectedDeviceID ?? "",
-            appState.selectedApp?.packageName ?? "",
-            controller.source.rawValue
+            selectedLogDeviceID ?? "",
+            controller.source.rawValue,
+            String(isRefreshingDevices)
         ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func refreshLogDevices() async {
+        isRefreshingDevices = true
+        defer { isRefreshingDevices = false }
+        await controller.stop()
+        do {
+            let response = try await apiClient.discoverLogDevices()
+            logDevices = response.devices
+            blockedDevices = response.blockedDevices
+            discoveryMessage = response.userMessage
+            if let selectedLogDeviceID,
+               response.devices.contains(where: { $0.id == selectedLogDeviceID }) {
+                self.selectedLogDeviceID = selectedLogDeviceID
+            } else {
+                selectedLogDeviceID = response.devices.first?.id
+            }
+        } catch {
+            logDevices = []
+            blockedDevices = []
+            selectedLogDeviceID = nil
+            discoveryMessage = (error as? APIClientError)?.userFacingIssue.message
+                ?? "无法读取 Android 设备，请检查本机服务后重试。"
+        }
+    }
+
+    @MainActor
+    private func monitorSelectedLogTarget() async {
+        guard !isRefreshingDevices else {
+            return
+        }
+        guard let selectedLogDevice else {
+            foregroundApp = nil
+            await controller.configure(deviceID: nil, packageName: nil)
+            return
+        }
+
+        while !Task.isCancelled {
+            if controller.state == "error" {
+                return
+            }
+            if controller.source == .app {
+                do {
+                    let detectedApp = try await apiClient.getForegroundApp(deviceID: selectedLogDevice.id)
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    switch detectedApp.state {
+                    case "ready":
+                        foregroundApp = detectedApp
+                        await controller.configure(
+                            deviceID: selectedLogDevice.id,
+                            packageName: detectedApp.packageName,
+                            deviceKind: selectedLogDevice.kind
+                        )
+                    case "device_offline":
+                        foregroundApp = nil
+                        await controller.reportDeviceOffline(kind: selectedLogDevice.kind)
+                        return
+                    case "device_locked":
+                        foregroundApp = nil
+                        await controller.reportDeviceLocked()
+                    default:
+                        foregroundApp = nil
+                        await controller.configure(
+                            deviceID: selectedLogDevice.id,
+                            packageName: nil,
+                            deviceKind: selectedLogDevice.kind
+                        )
+                    }
+                } catch {
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    foregroundApp = nil
+                    await controller.reportConnectionFailure(error)
+                }
+            } else {
+                foregroundApp = nil
+                await controller.configure(
+                    deviceID: selectedLogDevice.id,
+                    packageName: nil,
+                    deviceKind: selectedLogDevice.kind
+                )
+            }
+
+            if Task.isCancelled {
+                await controller.stop()
+                return
+            }
+            if controller.state == "error" {
+                return
+            }
+            do {
+                try await Task.sleep(for: .seconds(2))
+            } catch {
+                return
+            }
+        }
+    }
+
+    private var deviceDiscoveryGuidance: String {
+        if hasUnauthorizedPhysicalDevice {
+            return AppCopy.Log.physicalAuthorization
+        }
+        if blockedDevices.contains(where: { $0.kind == .physical }) {
+            return "已检测到 Android 真机，但连接尚未建立。请检查 USB 或无线调试后刷新。"
+        }
+        return "\(discoveryMessage) \(AppCopy.Log.physicalSetup)"
+    }
+
+    private var hasUnauthorizedPhysicalDevice: Bool {
+        blockedDevices.contains(where: { $0.kind == .physical && $0.status == .unauthorized })
     }
 
     private var statusTitle: String {
@@ -305,12 +453,14 @@ struct LogsView: View {
             "日志实时读取中"
         case "waiting_app":
             "等待应用"
+        case "device_locked":
+            "等待解锁"
         case "starting":
             "正在连接"
         case "error":
             "日志连接中断"
         case "offline":
-            "模拟器未连接"
+            "设备未连接"
         default:
             "等待连接"
         }
@@ -320,7 +470,7 @@ struct LogsView: View {
         switch controller.state {
         case "streaming":
             .green
-        case "waiting_app", "starting":
+        case "waiting_app", "device_locked", "starting":
             .orange
         case "error", "offline":
             .red
@@ -330,12 +480,18 @@ struct LogsView: View {
     }
 
     private var emptyIcon: String {
-        controller.state == "waiting_app" ? "app.badge.clock" : "text.alignleft"
+        if controller.state == "device_locked" {
+            return "lock.fill"
+        }
+        return controller.state == "waiting_app" ? "app.badge.clock" : "text.alignleft"
     }
 
     private var emptyTitle: String {
         if !controller.searchText.isEmpty {
             return "没有匹配的日志"
+        }
+        if controller.state == "device_locked" {
+            return "等待设备解锁"
         }
         return controller.state == "waiting_app" ? "等待应用运行" : "暂无日志"
     }

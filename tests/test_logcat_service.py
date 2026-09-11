@@ -1,8 +1,10 @@
 import time
 import tempfile
+import threading
 import unittest
 from collections import deque
 from pathlib import Path
+from unittest import mock
 
 from capture_console.logcat import BoundedLogBuffer, LogcatService, parse_threadtime_line
 from capture_console.runner import ConsoleRunner
@@ -244,6 +246,89 @@ class LogcatServiceTests(unittest.TestCase):
         self.assertTrue(device_1_process.terminated)
         self.assertFalse(device_2_process.terminated)
         self.assertEqual("streaming", self.service.poll("device-2", after=0, limit=10)["state"])
+
+    def test_concurrent_starts_do_not_leave_an_unmanaged_process(self) -> None:
+        original_stop = self.service.stop
+        start_barrier = threading.Barrier(2)
+
+        def synchronized_stop(device_id: str):
+            response = original_stop(device_id)
+            start_barrier.wait(timeout=1.0)
+            return response
+
+        try:
+            self.service.stop = synchronized_stop
+            errors = []
+
+            def start_source(source: str) -> None:
+                try:
+                    self.start(source=source)
+                except Exception as exc:
+                    errors.append(exc)
+
+            threads = [
+                threading.Thread(target=start_source, args=("system",)),
+                threading.Thread(target=start_source, args=("crash",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=2.0)
+
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual([], errors)
+            wait_until(lambda: bool(self.factory.processes))
+            time.sleep(0.05)
+        finally:
+            self.service.stop = original_stop
+        self.service.stop("device-1")
+
+        self.assertTrue(all(process.terminated for process in self.factory.processes))
+
+    def test_switch_during_worker_start_does_not_raise_or_leak(self) -> None:
+        real_thread_type = threading.Thread
+        worker_starting = threading.Event()
+        allow_worker_start = threading.Event()
+        first_worker = {"pending": True}
+
+        class DelayedStartThread(real_thread_type):
+            def start(self) -> None:
+                worker_starting.set()
+                if not allow_worker_start.wait(timeout=1.0):
+                    raise TimeoutError("test did not release worker start")
+                super().start()
+
+        def thread_factory(*args, **kwargs):
+            if kwargs.get("name") == "logcat-device-1" and first_worker["pending"]:
+                first_worker["pending"] = False
+                return DelayedStartThread(*args, **kwargs)
+            return real_thread_type(*args, **kwargs)
+
+        errors = []
+
+        def start_source(source: str) -> None:
+            try:
+                self.start(source=source)
+            except Exception as exc:
+                errors.append(exc)
+
+        with mock.patch("capture_console.logcat.threading.Thread", side_effect=thread_factory):
+            first = real_thread_type(target=start_source, args=("system",))
+            first.start()
+            self.assertTrue(worker_starting.wait(timeout=1.0))
+
+            second = real_thread_type(target=start_source, args=("crash",))
+            second.start()
+            time.sleep(0.05)
+            allow_worker_start.set()
+            first.join(timeout=2.0)
+            second.join(timeout=2.0)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual([], errors)
+        self.service.stop("device-1")
+        self.assertTrue(all(process.terminated for process in self.factory.processes))
 
     def test_app_source_waits_for_process_then_attaches(self) -> None:
         current_pid = {"value": None}

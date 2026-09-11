@@ -69,15 +69,22 @@ enum AppCopy {
 
     enum Log {
         static let pageDescription = "实时查看当前应用的运行日志、系统日志和崩溃信息。"
+        static let refreshDevices = "刷新设备"
+        static let refreshingDevices = "正在刷新…"
         static let pauseDisplay = "暂停显示"
         static let resumeDisplay = "继续显示"
         static let clear = "清空日志"
         static let copyAll = "复制全部"
         static let allLevels = "全部级别"
         static let tag = "标签"
-        static let emulatorOffline = "模拟器未连接，启动模拟器后日志会自动连接。"
-        static let waitingForApp = "等待应用运行，请在模拟器中打开要查看的应用。"
-        static let disconnected = "日志连接中断，请检查模拟器连接后重试。"
+        static let deviceOffline = "未连接可调试的 Android 设备。请启动模拟器，或连接并授权 Android 真机。"
+        static let waitingForApp = "等待应用运行，请在当前 Android 设备中打开要查看的应用。"
+        static let disconnected = "日志连接中断，请检查 Android 设备连接后刷新。"
+        static let physicalAuthorization = "已检测到未授权真机。USB 连接请在手机上允许调试；无线连接请先完成配对，然后刷新设备。"
+        static let physicalOffline = "Android 真机当前未连接，无法读取日志。请检查 USB 或无线调试连接后刷新。"
+        static let deviceLocked = "请先解锁当前 Android 设备，再打开要查看的应用。"
+        static let physicalSetup = "真机无需 Root：USB 连接请开启 USB 调试并授权；无线连接请开启无线调试并先与此 Mac 配对。"
+        static let noApplicationRequired = "系统和崩溃日志无需选择应用"
     }
 }
 

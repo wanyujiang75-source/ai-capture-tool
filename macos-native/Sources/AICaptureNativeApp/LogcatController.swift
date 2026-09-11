@@ -57,13 +57,14 @@ final class LogcatController: ObservableObject {
     @Published private(set) var isPaused = false
     @Published var autoScroll = true
     @Published private(set) var truncated = false
-    @Published private(set) var message = AppCopy.Log.emulatorOffline
+    @Published private(set) var message = AppCopy.Log.deviceOffline
     @Published private(set) var lastIssue: UserFacingIssue?
 
     private struct StreamKey: Equatable {
         let deviceID: String
         let source: LogcatSource
         let packageName: String
+        let deviceKind: AndroidDeviceKind
     }
 
     private let api: any LogcatAPI
@@ -117,18 +118,22 @@ final class LogcatController: ObservableObject {
         isPaused ? .seconds(5) : .milliseconds(750)
     }
 
-    func configure(deviceID: String?, packageName: String?) async {
+    func configure(
+        deviceID: String?,
+        packageName: String?,
+        deviceKind: AndroidDeviceKind = .emulator
+    ) async {
         guard let deviceID, !deviceID.isEmpty else {
-            cancelPolling()
+            await stopCurrentStream()
             state = "offline"
-            message = AppCopy.Log.emulatorOffline
+            message = AppCopy.Log.deviceOffline
             lastIssue = nil
             return
         }
 
         let selectedPackage = source == .app ? (packageName ?? "") : ""
         guard source != .app || !selectedPackage.isEmpty else {
-            cancelPolling()
+            await stopCurrentStream()
             state = "waiting_app"
             message = AppCopy.Log.waitingForApp
             lastIssue = nil
@@ -138,7 +143,8 @@ final class LogcatController: ObservableObject {
         let requestedStream = StreamKey(
             deviceID: deviceID,
             source: source,
-            packageName: selectedPackage
+            packageName: selectedPackage,
+            deviceKind: deviceKind
         )
         if currentStream == requestedStream, isPolling {
             return
@@ -155,19 +161,21 @@ final class LogcatController: ObservableObject {
             )
             currentStream = requestedStream
             apply(response, buffering: false)
-            await pollOnce()
-            startPolling()
+            if await pollOnce() {
+                startPolling()
+            }
         } catch {
             currentStream = nil
             state = "error"
             lastIssue = issue(from: error)
-            message = AppCopy.Log.disconnected
+            message = connectionMessage(for: lastIssue)
         }
     }
 
-    func pollOnce() async {
+    @discardableResult
+    func pollOnce() async -> Bool {
         guard let currentStream else {
-            return
+            return false
         }
         do {
             let response = try await api.pollLogcat(
@@ -176,10 +184,35 @@ final class LogcatController: ObservableObject {
                 limit: 500
             )
             apply(response, buffering: isPaused)
+            if response.state == "error" {
+                cancelPolling()
+                let disconnectedMessage = currentStream.deviceKind == .physical
+                    ? AppCopy.Log.physicalOffline
+                    : AppCopy.Log.disconnected
+                lastIssue = UserFacingIssue(
+                    code: currentStream.deviceKind == .physical
+                        ? "physical_device_offline"
+                        : "log_connection_failed",
+                    title: "日志连接中断",
+                    message: disconnectedMessage,
+                    recoveryAction: currentStream.deviceKind == .physical
+                        ? "请检查 USB 或无线调试连接，然后刷新设备。"
+                        : nil
+                )
+                message = disconnectedMessage
+                return false
+            }
+            if response.state == "stopped" {
+                cancelPolling()
+                return false
+            }
+            return true
         } catch {
+            cancelPolling()
             state = "error"
             lastIssue = issue(from: error)
-            message = AppCopy.Log.disconnected
+            message = connectionMessage(for: lastIssue)
+            return false
         }
     }
 
@@ -212,7 +245,7 @@ final class LogcatController: ObservableObject {
         } catch {
             state = "error"
             lastIssue = issue(from: error)
-            message = AppCopy.Log.disconnected
+            message = connectionMessage(for: lastIssue)
         }
     }
 
@@ -220,6 +253,7 @@ final class LogcatController: ObservableObject {
         cancelPolling()
         guard let stream = currentStream else {
             state = "stopped"
+            message = "日志读取已停止。"
             return
         }
         currentStream = nil
@@ -233,6 +267,27 @@ final class LogcatController: ObservableObject {
             lastIssue = issue(from: error)
             message = AppCopy.Log.disconnected
         }
+    }
+
+    func reportConnectionFailure(_ error: Error) async {
+        await stopCurrentStream()
+        state = "error"
+        lastIssue = issue(from: error)
+        message = connectionMessage(for: lastIssue)
+    }
+
+    func reportDeviceOffline(kind: AndroidDeviceKind) async {
+        await stopCurrentStream()
+        state = "offline"
+        lastIssue = nil
+        message = kind == .physical ? AppCopy.Log.physicalOffline : AppCopy.Log.deviceOffline
+    }
+
+    func reportDeviceLocked() async {
+        await stopCurrentStream()
+        state = "device_locked"
+        lastIssue = nil
+        message = AppCopy.Log.deviceLocked
     }
 
     func cancelPolling() {
@@ -257,7 +312,9 @@ final class LogcatController: ObservableObject {
             guard !Task.isCancelled else {
                 break
             }
-            await pollOnce()
+            if !(await pollOnce()) {
+                break
+            }
         }
     }
 
@@ -345,6 +402,15 @@ final class LogcatController: ObservableObject {
             message: AppCopy.Log.disconnected,
             technicalDetail: error.localizedDescription
         )
+    }
+
+    private func connectionMessage(for issue: UserFacingIssue?) -> String {
+        switch issue?.code {
+        case "physical_device_unauthorized", "physical_device_offline":
+            issue?.message ?? AppCopy.Log.disconnected
+        default:
+            AppCopy.Log.disconnected
+        }
     }
 
     private static func rank(for level: String) -> Int {
