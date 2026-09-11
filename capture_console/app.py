@@ -300,6 +300,62 @@ def stop_capture_and_clear_proxy(device_runner: Any) -> tuple[CommandResult, Com
     return stop_result, clear_result
 
 
+def stop_all_active_captures() -> Dict[str, Any]:
+    results = []
+    stopped_count = 0
+    for active in list_active_sessions():
+        device_id = active.get("device_id") or DEFAULT_DEVICE_ID
+        try:
+            device_runner = runner_for_device_id(device_id)
+        except Exception as exc:
+            stop_result = CommandResult(1, "", f"{type(exc).__name__}: {exc}")
+            proxy_result = CommandResult(1, "", "capture runner unavailable")
+        else:
+            try:
+                stop_result = device_runner.stop_capture()
+            except Exception as exc:
+                stop_result = CommandResult(1, "", f"{type(exc).__name__}: {exc}")
+            try:
+                proxy_result = (
+                    device_runner.clear_android_proxy()
+                    if hasattr(device_runner, "clear_android_proxy")
+                    else CommandResult(0, "", "")
+                )
+            except Exception as exc:
+                proxy_result = CommandResult(1, "", f"{type(exc).__name__}: {exc}")
+
+        state_error = ""
+        try:
+            store.update_session_status(active["id"], "stopped")
+            store.mark_app_success(active.get("app_id"), mode=active.get("mode", ""))
+            stopped_count += 1
+        except Exception as exc:
+            state_error = f"{type(exc).__name__}: {exc}"
+
+        results.append(
+            {
+                "device_id": device_id,
+                "session_id": active["id"],
+                "ok": stop_result.ok and proxy_result.ok and not state_error,
+                "stop": {
+                    "stdout": stop_result.stdout,
+                    "stderr": stop_result.stderr,
+                },
+                "proxy": {
+                    "stdout": proxy_result.stdout,
+                    "stderr": proxy_result.stderr,
+                },
+                "state_error": state_error,
+            }
+        )
+
+    return {
+        "ok": all(result["ok"] for result in results),
+        "stopped_count": stopped_count,
+        "results": results,
+    }
+
+
 def auto_release_idle_on_demand_devices() -> list[Dict[str, Any]]:
     released = []
     now = datetime.now(timezone.utc).astimezone()
@@ -1055,6 +1111,8 @@ def startup() -> None:
 def shutdown() -> None:
     stop_logcat_reaper()
     logcat_service.stop_all()
+    if desktop_runtime_metadata()["enabled"]:
+        stop_all_active_captures()
     clear_project_capture_records()
 
 
@@ -2578,6 +2636,11 @@ def api_stop_capture(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
         "stderr": result.stderr,
         "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
     }
+
+
+@app.post("/api/desktop/stop-captures")
+def api_desktop_stop_captures() -> Dict[str, Any]:
+    return stop_all_active_captures()
 
 
 @app.post("/api/captures/{session_id}/stop")

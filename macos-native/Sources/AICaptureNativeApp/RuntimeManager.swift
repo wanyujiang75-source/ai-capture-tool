@@ -11,6 +11,7 @@ final class RuntimeManager {
     private let buildID: String
     private let sessionConfiguration: URLSessionConfiguration
     private let processOwnershipVerifier: (Int32) -> Bool
+    private let shutdownCleanupTimeout: TimeInterval
     private var backendProcess: Process?
     private var adoptedBackendPID: Int32?
 
@@ -20,7 +21,8 @@ final class RuntimeManager {
         projectRootOverride: URL? = nil,
         buildID: String = RuntimeManager.defaultBuildID(),
         sessionConfiguration: URLSessionConfiguration = RuntimeManager.defaultSessionConfiguration(),
-        processOwnershipVerifier: @escaping (Int32) -> Bool = RuntimeManager.isManagedBackendProcess
+        processOwnershipVerifier: @escaping (Int32) -> Bool = RuntimeManager.isManagedBackendProcess,
+        shutdownCleanupTimeout: TimeInterval = 4
     ) {
         self.backendURL = backendURL
         self.runtimeDirectory = runtimeDirectory
@@ -28,6 +30,7 @@ final class RuntimeManager {
         self.buildID = buildID
         self.sessionConfiguration = sessionConfiguration
         self.processOwnershipVerifier = processOwnershipVerifier
+        self.shutdownCleanupTimeout = shutdownCleanupTimeout
     }
 
     func checkStatus() async -> AppState.RuntimeStatus {
@@ -245,6 +248,11 @@ final class RuntimeManager {
     }
 
     func shutdown() {
+        let ownsRunningBackend = backendProcess?.isRunning == true || adoptedBackendPID != nil
+        if ownsRunningBackend {
+            requestCaptureCleanup()
+        }
+
         guard let process = backendProcess else {
             if let adoptedBackendPID {
                 try? stopRecordedBackend(adoptedBackendPID)
@@ -267,6 +275,28 @@ final class RuntimeManager {
         removePIDRecord(ifOwnedBy: processIdentifier)
         backendProcess = nil
         adoptedBackendPID = nil
+    }
+
+    private func requestCaptureCleanup() {
+        var request = URLRequest(
+            url: backendURL.appendingPathComponent("api/desktop/stop-captures")
+        )
+        request.httpMethod = "POST"
+        request.timeoutInterval = shutdownCleanupTimeout
+
+        let configuration = sessionConfiguration.copy() as? URLSessionConfiguration
+            ?? RuntimeManager.defaultSessionConfiguration()
+        configuration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: configuration)
+        let completed = DispatchSemaphore(value: 0)
+        let task = session.dataTask(with: request) { _, _, _ in
+            completed.signal()
+        }
+        task.resume()
+        if completed.wait(timeout: .now() + shutdownCleanupTimeout) == .timedOut {
+            task.cancel()
+        }
+        session.invalidateAndCancel()
     }
 
     private var backendLogURL: URL {

@@ -6,8 +6,12 @@ import Testing
 
 private final class RuntimeStatusURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var responseBodies: [Data] = []
+    nonisolated(unsafe) static var receivedRequests: [URLRequest] = []
+    nonisolated(unsafe) static var stallRequests = false
 
-    static func reset(buildIDs: [String?], activeSession: Bool = false) {
+    static func reset(buildIDs: [String?], activeSession: Bool = false, stallRequests: Bool = false) {
+        receivedRequests = []
+        self.stallRequests = stallRequests
         responseBodies = buildIDs.map { buildID in
             let buildIDField = buildID.map { "\"build_id\": \"\($0)\"" } ?? ""
             let activeSessionField = activeSession ? "{\"id\": 42}" : "null"
@@ -28,6 +32,10 @@ private final class RuntimeStatusURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
+        Self.receivedRequests.append(request)
+        if Self.stallRequests {
+            return
+        }
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: 200,
@@ -86,6 +94,86 @@ struct RuntimeManagerTests {
     }
 
     @Test
+    func shutdownRequestsCaptureCleanupForTheOwnedBackend() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = temporaryDirectory.appendingPathComponent("backend", isDirectory: true)
+        let scriptsDirectory = projectRoot.appendingPathComponent("scripts", isDirectory: true)
+        let runtimeDirectory = temporaryDirectory.appendingPathComponent("runtime", isDirectory: true)
+        try FileManager.default.createDirectory(at: scriptsDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let launcher = scriptsDirectory.appendingPathComponent("start_console.sh")
+        try """
+        #!/bin/bash
+        trap 'exit 0' TERM INT
+        while true; do sleep 1; done
+        """.write(to: launcher, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcher.path)
+
+        RuntimeStatusURLProtocol.reset(buildIDs: [])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RuntimeStatusURLProtocol.self]
+        let manager = RuntimeManager(
+            backendURL: URL(string: "http://127.0.0.1:65521")!,
+            runtimeDirectory: runtimeDirectory,
+            projectRootOverride: projectRoot,
+            sessionConfiguration: configuration
+        )
+        try manager.startBackend()
+
+        manager.shutdown()
+
+        #expect(RuntimeStatusURLProtocol.receivedRequests.contains { request in
+            request.httpMethod == "POST"
+                && request.url?.path == "/api/desktop/stop-captures"
+        })
+    }
+
+    @Test
+    func shutdownCleanupTimeoutDoesNotPreventOwnedBackendTermination() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = temporaryDirectory.appendingPathComponent("backend", isDirectory: true)
+        let scriptsDirectory = projectRoot.appendingPathComponent("scripts", isDirectory: true)
+        let runtimeDirectory = temporaryDirectory.appendingPathComponent("runtime", isDirectory: true)
+        try FileManager.default.createDirectory(at: scriptsDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let launcher = scriptsDirectory.appendingPathComponent("start_console.sh")
+        try """
+        #!/bin/bash
+        trap 'exit 0' TERM INT
+        while true; do sleep 1; done
+        """.write(to: launcher, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcher.path)
+
+        RuntimeStatusURLProtocol.reset(buildIDs: [], stallRequests: true)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RuntimeStatusURLProtocol.self]
+        let manager = RuntimeManager(
+            backendURL: URL(string: "http://127.0.0.1:65520")!,
+            runtimeDirectory: runtimeDirectory,
+            projectRootOverride: projectRoot,
+            sessionConfiguration: configuration,
+            shutdownCleanupTimeout: 0.05
+        )
+        try manager.startBackend()
+        let pid = try #require(Int32(
+            String(
+                contentsOf: runtimeDirectory.appendingPathComponent("native-backend.pid"),
+                encoding: .utf8
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        let startedAt = Date()
+
+        manager.shutdown()
+
+        #expect(Date().timeIntervalSince(startedAt) < 1)
+        #expect(kill(pid, 0) != 0)
+    }
+
+    @Test
     func shutdownDoesNotStopAnUnownedProcess() throws {
         let external = Process()
         external.executableURL = URL(fileURLWithPath: "/bin/sleep")
@@ -98,14 +186,19 @@ struct RuntimeManagerTests {
             }
         }
 
+        RuntimeStatusURLProtocol.reset(buildIDs: [])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RuntimeStatusURLProtocol.self]
         let manager = RuntimeManager(
             backendURL: URL(string: "http://127.0.0.1:65529")!,
             runtimeDirectory: FileManager.default.temporaryDirectory
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+                .appendingPathComponent(UUID().uuidString, isDirectory: true),
+            sessionConfiguration: configuration
         )
         manager.shutdown()
 
         #expect(external.isRunning)
+        #expect(RuntimeStatusURLProtocol.receivedRequests.isEmpty)
     }
 
     @Test

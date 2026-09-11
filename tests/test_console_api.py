@@ -3587,6 +3587,107 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_desktop_stop_captures_cleans_all_active_devices_without_stopping_emulators(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StopRunner:
+            def __init__(self, *, should_fail=False):
+                self.should_fail = should_fail
+                self.stop_calls = 0
+                self.clear_proxy_calls = 0
+                self.stop_emulator_calls = 0
+
+            def stop_capture(self):
+                self.stop_calls += 1
+                if self.should_fail:
+                    raise RuntimeError("stop failed")
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                self.clear_proxy_calls += 1
+                return CommandResult(0, "proxy cleared", "")
+
+            def stop_emulator(self):
+                self.stop_emulator_calls += 1
+                return CommandResult(0, "emulator stopped", "")
+
+        class RunnerPool:
+            def __init__(self):
+                self.runners = {
+                    "device-1": StopRunner(should_fail=True),
+                    "device-2": StopRunner(),
+                }
+
+            def for_device(self, device):
+                return self.runners[device["device_id"]]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store)
+                self.add_test_device(
+                    app_module.store,
+                    device_id="device-2",
+                    adb_serial="emulator-5556",
+                    proxy_port=9100,
+                    web_port=9101,
+                    frida_port=27142,
+                )
+                app_one = app_module.store.create_app(
+                    name="App One",
+                    package_name="com.example.one",
+                    default_mode="system",
+                )
+                app_two = app_module.store.create_app(
+                    name="App Two",
+                    package_name="com.example.two",
+                    default_mode="flutter-socks",
+                )
+                output_directories = [Path(tmp) / "capture-one", Path(tmp) / "capture-two"]
+                for output_directory in output_directories:
+                    output_directory.mkdir()
+                    (output_directory / "result.json").write_text("{}", encoding="utf-8")
+                sessions = [
+                    app_module.store.create_session(
+                        app_id=app_one["id"],
+                        device_id="device-1",
+                        mode="system",
+                        outdir=str(output_directories[0]),
+                        status="running",
+                    ),
+                    app_module.store.create_session(
+                        app_id=app_two["id"],
+                        device_id="device-2",
+                        mode="flutter-socks",
+                        outdir=str(output_directories[1]),
+                        status="running",
+                    ),
+                ]
+                pool = RunnerPool()
+                app_module.runner = pool
+
+                result = app_module.api_desktop_stop_captures()
+
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["stopped_count"], 2)
+                self.assertEqual(
+                    [item["device_id"] for item in result["results"]],
+                    ["device-2", "device-1"],
+                )
+                for session in sessions:
+                    self.assertEqual(app_module.store.get_session(session["id"])["status"], "stopped")
+                self.assertEqual(app_module.store.list_active_sessions(), [])
+                for device_runner in pool.runners.values():
+                    self.assertEqual(device_runner.stop_calls, 1)
+                    self.assertEqual(device_runner.clear_proxy_calls, 1)
+                    self.assertEqual(device_runner.stop_emulator_calls, 0)
+                for output_directory in output_directories:
+                    self.assertTrue((output_directory / "result.json").exists())
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_release_on_demand_device_closes_selected_emulator(self):
         original_store = app_module.store
         original_runner = app_module.runner
@@ -4308,6 +4409,28 @@ class CaptureConsoleApiTests(unittest.TestCase):
         finally:
             app_module.logcat_service = original_service
             app_module.clear_project_capture_records = original_clear
+
+    def test_desktop_shutdown_stops_captures_before_clearing_session_records(self):
+        events = []
+
+        with (
+            mock.patch.dict(os.environ, {"TRACEDECK_DESKTOP": "1"}),
+            mock.patch.object(app_module, "stop_logcat_reaper"),
+            mock.patch.object(app_module.logcat_service, "stop_all"),
+            mock.patch.object(
+                app_module,
+                "stop_all_active_captures",
+                side_effect=lambda: events.append("captures"),
+            ),
+            mock.patch.object(
+                app_module,
+                "clear_project_capture_records",
+                side_effect=lambda: events.append("records"),
+            ),
+        ):
+            app_module.shutdown()
+
+        self.assertEqual(events, ["captures", "records"])
 
     def test_system_sleep_stops_all_logcat_sessions(self):
         original_store = app_module.store
