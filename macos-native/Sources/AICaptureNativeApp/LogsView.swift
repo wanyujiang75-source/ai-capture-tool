@@ -578,9 +578,10 @@ private enum LogcatDisplayMode: String, CaseIterable, Identifiable {
 
 private struct LogcatRow: View {
     let entry: LogcatEntry
+    @State private var isExpanded = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Text(entry.timestamp.isEmpty ? "-" : entry.timestamp)
                 .frame(width: 150, alignment: .leading)
             Text(entry.level.isEmpty ? "-" : entry.level)
@@ -589,9 +590,19 @@ private struct LogcatRow: View {
             Text(entry.tag.isEmpty ? "-" : entry.tag)
                 .frame(width: 180, alignment: .leading)
                 .lineLimit(1)
-            Text(messageText)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isExpanded ? messagePresentation.fullText : messagePresentation.previewText)
+                    .lineLimit(isExpanded ? nil : 3)
+                    .textSelection(.enabled)
+                if messagePresentation.isCollapsible {
+                    Button(isExpanded ? AppCopy.Log.collapseContent : AppCopy.Log.expandFullContent) {
+                        isExpanded.toggle()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                }
+            }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
         }
         .font(.system(.caption, design: .monospaced))
         .foregroundStyle(levelColor)
@@ -600,8 +611,8 @@ private struct LogcatRow: View {
         .background(entry.cursor.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.025))
     }
 
-    private var messageText: String {
-        entry.message.isEmpty ? entry.raw : entry.message
+    private var messagePresentation: LogcatMessagePresentation {
+        LogcatPresentation.message(for: entry)
     }
 
     private var levelColor: Color {

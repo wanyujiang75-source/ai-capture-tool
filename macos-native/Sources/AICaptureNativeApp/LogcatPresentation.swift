@@ -1,6 +1,15 @@
 import Foundation
 
+struct LogcatMessagePresentation: Equatable, Sendable {
+    let fullText: String
+    let previewText: String
+    let isCollapsible: Bool
+}
+
 enum LogcatPresentation {
+    private static let previewCharacterLimit = 360
+    private static let previewLineLimit = 3
+
     private struct MultilineGroup {
         var entry: LogcatEntry
         var lastCursor: Int64
@@ -32,6 +41,35 @@ enum LogcatPresentation {
                 with: "\(group.entry.message)\n\n[\(AppCopy.Log.repeated(group.count))]"
             )
         }
+    }
+
+    static func message(for entry: LogcatEntry) -> LogcatMessagePresentation {
+        let fullText = entry.message.isEmpty ? entry.raw : entry.message
+        let lines = fullText.split(separator: "\n", omittingEmptySubsequences: false)
+        let hasAdditionalLines = lines.count > previewLineLimit
+        let linePreview = lines.prefix(previewLineLimit).joined(separator: "\n")
+        let hasAdditionalCharacters = linePreview.count > previewCharacterLimit
+        let isCollapsible = hasAdditionalLines || fullText.count > previewCharacterLimit
+
+        guard isCollapsible else {
+            return LogcatMessagePresentation(
+                fullText: fullText,
+                previewText: fullText,
+                isCollapsible: false
+            )
+        }
+
+        var previewText = String(linePreview.prefix(previewCharacterLimit))
+        if hasAdditionalCharacters {
+            previewText += "…"
+        } else if hasAdditionalLines {
+            previewText += "\n…"
+        }
+        return LogcatMessagePresentation(
+            fullText: fullText,
+            previewText: previewText,
+            isCollapsible: true
+        )
     }
 
     private static func combineMultilineEntries(_ entries: [LogcatEntry]) -> [LogcatEntry] {

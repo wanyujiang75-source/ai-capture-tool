@@ -51,6 +51,49 @@ struct LogcatPresentationTests {
         #expect(LogcatPresentation.coalesced(entries) == entries)
     }
 
+    @Test
+    func longSingleLineUsesCompactPreviewWithoutChangingFullText() {
+        let message = String(repeating: "A", count: 400)
+
+        let presentation = LogcatPresentation.message(
+            for: entry(cursor: 1, timestamp: "09-14 17:09:01.100", message: message)
+        )
+
+        #expect(presentation.fullText == message)
+        #expect(presentation.previewText == String(repeating: "A", count: 360) + "…")
+        #expect(presentation.isCollapsible)
+    }
+
+    @Test
+    func multilineStackPreviewKeepsOnlyThreeLinesUntilExpanded() {
+        let message = "first\nsecond\nthird\nfourth"
+
+        let presentation = LogcatPresentation.message(
+            for: entry(cursor: 1, timestamp: "09-14 17:09:01.100", message: message)
+        )
+
+        #expect(presentation.fullText == message)
+        #expect(presentation.previewText == "first\nsecond\nthird\n…")
+        #expect(presentation.isCollapsible)
+    }
+
+    @Test
+    func shortMessageDoesNotOfferExpansion() {
+        let message = "ordinary line"
+
+        let presentation = LogcatPresentation.message(
+            for: entry(cursor: 1, timestamp: "09-14 17:09:01.100", message: message)
+        )
+
+        #expect(
+            presentation == LogcatMessagePresentation(
+                fullText: message,
+                previewText: message,
+                isCollapsible: false
+            )
+        )
+    }
+
     private func entry(
         cursor: Int64,
         timestamp: String,
