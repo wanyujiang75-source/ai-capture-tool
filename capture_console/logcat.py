@@ -279,7 +279,7 @@ class LogcatService:
         command = [*session.adb_command, "logcat"]
         if session.source == "crash":
             command.extend(["-b", "crash"])
-        command.extend(["-v", "threadtime"])
+        command.extend(["-T", "1", "-v", "threadtime"])
         process = self._spawn(session, command)
         if process is None:
             return
@@ -300,6 +300,8 @@ class LogcatService:
                 "logcat",
                 "--pid",
                 str(pid),
+                "-T",
+                "1",
                 "-v",
                 "threadtime",
             ]

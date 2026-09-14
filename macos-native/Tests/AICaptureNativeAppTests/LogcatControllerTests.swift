@@ -81,6 +81,53 @@ private actor FakeLogcatAPI: LogcatAPI {
     }
 }
 
+private actor DelayedPollLogcatAPI: LogcatAPI {
+    private(set) var calls: [FakeLogcatAPI.Call] = []
+    private var pollCount = 0
+    private var delayedPoll: CheckedContinuation<LogcatPollResponse, Never>?
+
+    func startLogcat(
+        deviceID: String,
+        source: LogcatSource,
+        packageName: String
+    ) async throws -> LogcatActionResponse {
+        calls.append(.start(deviceID: deviceID, source: source, packageName: packageName))
+        return makeLogcatResponse(source: source, packageName: packageName)
+    }
+
+    func pollLogcat(deviceID: String, after: Int64, limit: Int) async throws -> LogcatPollResponse {
+        calls.append(.poll(deviceID: deviceID, after: after, limit: limit))
+        pollCount += 1
+        guard pollCount == 2 else {
+            return makeLogcatResponse(nextCursor: after)
+        }
+        return await withCheckedContinuation { continuation in
+            delayedPoll = continuation
+        }
+    }
+
+    func clearLogcat(deviceID: String) async throws -> LogcatActionResponse {
+        calls.append(.clear(deviceID: deviceID))
+        return makeLogcatResponse(nextCursor: 9)
+    }
+
+    func stopLogcat(deviceID: String) async throws -> LogcatActionResponse {
+        calls.append(.stop(deviceID: deviceID))
+        return makeLogcatResponse(state: "stopped")
+    }
+
+    func waitUntilPollIsSuspended() async {
+        while delayedPoll == nil {
+            await Task.yield()
+        }
+    }
+
+    func resumeDelayedPoll() {
+        delayedPoll?.resume(returning: makeLogcatResponse(nextCursor: 4, entries: [entry(cursor: 4)]))
+        delayedPoll = nil
+    }
+}
+
 @Suite(.serialized)
 @MainActor
 struct LogcatControllerTests {
@@ -151,6 +198,34 @@ struct LogcatControllerTests {
         await controller.pollOnce()
 
         #expect(controller.entries.isEmpty)
+        #expect(await fake.calls.suffix(2) == [
+            .clear(deviceID: "device-1"),
+            .poll(deviceID: "device-1", after: 9, limit: 500)
+        ])
+        controller.cancelPolling()
+    }
+
+    @Test
+    func clearDiscardsAnOlderPollThatFinishesAfterClear() async {
+        let fake = DelayedPollLogcatAPI()
+        let controller = LogcatController(
+            api: fake,
+            sleep: { _ in
+                try await Task.sleep(for: .seconds(60))
+            }
+        )
+        await controller.configure(deviceID: "device-1", packageName: "com.example.app")
+
+        let stalePoll = Task {
+            await controller.pollOnce()
+        }
+        await fake.waitUntilPollIsSuspended()
+        await controller.clear()
+        await fake.resumeDelayedPoll()
+        _ = await stalePoll.value
+
+        #expect(controller.entries.isEmpty)
+        await controller.pollOnce()
         #expect(await fake.calls.suffix(2) == [
             .clear(deviceID: "device-1"),
             .poll(deviceID: "device-1", after: 9, limit: 500)

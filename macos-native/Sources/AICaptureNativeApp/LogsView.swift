@@ -173,7 +173,7 @@ struct LogsView: View {
 
             Spacer()
 
-            Text("\(controller.filteredEntries.count) / \(controller.entries.count) 条")
+            Text("\(controller.filteredEntries.count) / \(controller.presentedEntries.count) 条")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
         }

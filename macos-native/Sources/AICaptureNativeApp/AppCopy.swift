@@ -85,6 +85,10 @@ enum AppCopy {
         static let deviceLocked = "请先解锁当前 Android 设备，再打开要查看的应用。"
         static let physicalSetup = "真机无需 Root：USB 连接请开启 USB 调试并授权；无线连接请开启无线调试并先与此 Mac 配对。"
         static let noApplicationRequired = "系统和崩溃日志无需选择应用"
+
+        static func repeated(_ count: Int) -> String {
+            "连续出现 \(count) 次"
+        }
     }
 }
 

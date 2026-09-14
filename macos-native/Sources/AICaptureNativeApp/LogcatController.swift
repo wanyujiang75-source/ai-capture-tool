@@ -74,6 +74,7 @@ final class LogcatController: ObservableObject {
     private var currentStream: StreamKey?
     private var cursor: Int64 = 0
     private var pendingEntries: [LogcatEntry] = []
+    private var streamRevision: UInt64 = 0
 
     init(
         api: any LogcatAPI = APIClient(),
@@ -89,9 +90,13 @@ final class LogcatController: ObservableObject {
         pollingTask?.cancel()
     }
 
+    var presentedEntries: [LogcatEntry] {
+        LogcatPresentation.coalesced(entries)
+    }
+
     var filteredEntries: [LogcatEntry] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return entries.filter { entry in
+        return presentedEntries.filter { entry in
             guard Self.rank(for: entry.level) >= minimumLevel.rank else {
                 return false
             }
@@ -177,12 +182,17 @@ final class LogcatController: ObservableObject {
         guard let currentStream else {
             return false
         }
+        let requestedRevision = streamRevision
         do {
             let response = try await api.pollLogcat(
                 deviceID: currentStream.deviceID,
                 after: cursor,
                 limit: 500
             )
+            guard streamRevision == requestedRevision,
+                  self.currentStream == currentStream else {
+                return false
+            }
             apply(response, buffering: isPaused)
             if response.state == "error" {
                 cancelPolling()
@@ -208,6 +218,10 @@ final class LogcatController: ObservableObject {
             }
             return true
         } catch {
+            guard streamRevision == requestedRevision,
+                  self.currentStream == currentStream else {
+                return false
+            }
             cancelPolling()
             state = "error"
             lastIssue = issue(from: error)
@@ -234,22 +248,41 @@ final class LogcatController: ObservableObject {
             pendingEntries = []
             return
         }
+        let shouldResumePolling = isPolling
+        streamRevision &+= 1
+        let clearRevision = streamRevision
+        cancelPolling()
         do {
             let response = try await api.clearLogcat(deviceID: currentStream.deviceID)
+            guard streamRevision == clearRevision,
+                  self.currentStream == currentStream else {
+                return
+            }
             entries = []
             pendingEntries = []
             cursor = response.nextCursor
             truncated = false
             state = response.state
             message = "日志已清空，新的日志仍会实时显示。"
+            if shouldResumePolling {
+                startPolling()
+            }
         } catch {
+            guard streamRevision == clearRevision,
+                  self.currentStream == currentStream else {
+                return
+            }
             state = "error"
             lastIssue = issue(from: error)
             message = connectionMessage(for: lastIssue)
+            if shouldResumePolling {
+                startPolling()
+            }
         }
     }
 
     func stop() async {
+        streamRevision &+= 1
         cancelPolling()
         guard let stream = currentStream else {
             state = "stopped"
@@ -319,6 +352,7 @@ final class LogcatController: ObservableObject {
     }
 
     private func stopCurrentStream() async {
+        streamRevision &+= 1
         cancelPolling()
         guard let stream = currentStream else {
             return

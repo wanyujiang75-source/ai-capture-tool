@@ -214,8 +214,19 @@ class LogcatServiceTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                ["adb", "-s", "emulator-5554", "logcat", "-v", "threadtime"],
-                ["adb", "-s", "emulator-5554", "logcat", "-b", "crash", "-v", "threadtime"],
+                ["adb", "-s", "emulator-5554", "logcat", "-T", "1", "-v", "threadtime"],
+                [
+                    "adb",
+                    "-s",
+                    "emulator-5554",
+                    "logcat",
+                    "-b",
+                    "crash",
+                    "-T",
+                    "1",
+                    "-v",
+                    "threadtime",
+                ],
                 [
                     "adb",
                     "-s",
@@ -223,6 +234,8 @@ class LogcatServiceTests(unittest.TestCase):
                     "logcat",
                     "--pid",
                     "2468",
+                    "-T",
+                    "1",
                     "-v",
                     "threadtime",
                 ],
@@ -347,7 +360,18 @@ class LogcatServiceTests(unittest.TestCase):
         wait_until(lambda: len(self.factory.commands) == 1)
 
         self.assertEqual(
-            ["adb", "-s", "emulator-5554", "logcat", "--pid", "1357", "-v", "threadtime"],
+            [
+                "adb",
+                "-s",
+                "emulator-5554",
+                "logcat",
+                "--pid",
+                "1357",
+                "-T",
+                "1",
+                "-v",
+                "threadtime",
+            ],
             self.factory.commands[0],
         )
 
@@ -365,7 +389,18 @@ class LogcatServiceTests(unittest.TestCase):
         wait_until(lambda: len(self.factory.processes) == 2)
 
         self.assertEqual(
-            ["adb", "-s", "emulator-5554", "logcat", "--pid", "2222", "-v", "threadtime"],
+            [
+                "adb",
+                "-s",
+                "emulator-5554",
+                "logcat",
+                "--pid",
+                "2222",
+                "-T",
+                "1",
+                "-v",
+                "threadtime",
+            ],
             self.factory.commands[1],
         )
 
