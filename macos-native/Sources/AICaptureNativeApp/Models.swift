@@ -689,6 +689,8 @@ struct FlowDetail: Decodable, Identifiable {
     let responseJSON: JSONValue?
     let requestText: String?
     let responseText: String?
+    let requestBody: FlowBodyInfo?
+    let responseBody: FlowBodyInfo?
     let metaJSON: JSONValue?
     let files: JSONValue?
 
@@ -703,8 +705,35 @@ struct FlowDetail: Decodable, Identifiable {
         case responseJSON = "response_json"
         case requestText = "request_text"
         case responseText = "response_text"
+        case requestBody = "request_body"
+        case responseBody = "response_body"
         case metaJSON = "meta_json"
         case files
+    }
+}
+
+struct FlowBodyInfo: Decodable, Equatable {
+    let kind: String?
+    let contentType: String?
+    let sizeBytes: Int
+    let path: String?
+    let truncated: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case contentType = "content_type"
+        case sizeBytes = "size_bytes"
+        case path
+        case truncated
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        contentType = try container.decodeIfPresent(String.self, forKey: .contentType)
+        sizeBytes = try container.decodeIfPresent(Int.self, forKey: .sizeBytes) ?? 0
+        path = try container.decodeIfPresent(String.self, forKey: .path)
+        truncated = try container.decodeIfPresent(Bool.self, forKey: .truncated) ?? false
     }
 }
 

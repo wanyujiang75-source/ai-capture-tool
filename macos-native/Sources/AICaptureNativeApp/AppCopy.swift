@@ -55,6 +55,7 @@ enum AppCopy {
         static let waitingSync = "等待同步"
         static let syncing = "同步中"
         static let live = "实时"
+        static let showFullBodyFile = "在 Finder 中显示完整文件"
 
         static func captureNumber(_ id: Int) -> String {
             "本次抓包 #\(id)"
@@ -62,6 +63,11 @@ enum AppCopy {
 
         static func responseWithoutBody(statusCode: String) -> String {
             "已捕获 HTTP \(statusCode)，但没有可展示的响应正文。"
+        }
+
+        static func largeBodyPreview(sizeBytes: Int) -> String {
+            let size = ByteCountFormatter.string(fromByteCount: Int64(sizeBytes), countStyle: .file)
+            return "内容较大（完整文件 \(size)），当前仅显示前 256 KB。"
         }
 
         static let responsePending = "尚未捕获响应，请求可能仍在进行或连接已提前结束。"

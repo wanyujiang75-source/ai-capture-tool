@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct FlowViews: View {
@@ -186,17 +187,22 @@ struct FlowViews: View {
             case "request":
                 CodeBlock(
                     title: "Request Body (\(detail.requestBodyKind ?? "text"))",
-                    text: FlowListPresentation.requestBodyText(detail)
+                    content: FlowListPresentation.requestBody(detail)
                 )
             case "response":
                 CodeBlock(
                     title: "Response Body (\(detail.responseBodyKind ?? "text"))",
-                    text: FlowListPresentation.responseBodyText(detail)
+                    content: FlowListPresentation.responseBody(detail)
                 )
             default:
                 CodeBlock(
                     title: "cURL",
-                    text: appState.selectedFlowCurl.isEmpty ? "尚未生成 cURL" : appState.selectedFlowCurl
+                    content: FlowBodyPresentation(
+                        text: appState.selectedFlowCurl.isEmpty ? "尚未生成 cURL" : appState.selectedFlowCurl,
+                        isTruncated: false,
+                        sizeBytes: 0,
+                        fullFileURL: nil
+                    )
                 )
             }
         }
@@ -294,21 +300,89 @@ private struct FlowRow: View {
 
 private struct CodeBlock: View {
     let title: String
-    let text: String
+    let content: FlowBodyPresentation
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
-            ScrollView {
-                Text(text)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
+            if content.isTruncated {
+                HStack(spacing: 12) {
+                    Text(AppCopy.Flow.largeBodyPreview(sizeBytes: content.sizeBytes))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let fullFileURL = content.fullFileURL {
+                        Button(AppCopy.Flow.showFullBodyFile) {
+                            NSWorkspace.shared.activateFileViewerSelecting([fullFileURL])
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            ReadOnlyCodeTextView(text: content.text)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .layoutPriority(1)
         }
+    }
+}
+
+private struct ReadOnlyCodeTextView: NSViewRepresentable {
+    let text: String
+
+    final class Coordinator {
+        var renderedText = ""
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .textBackgroundColor
+
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return scrollView
+        }
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.usesFindBar = true
+        textView.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .textBackgroundColor
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = true
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.containerSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.widthTracksTextView = false
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView,
+              context.coordinator.renderedText != text else {
+            return
+        }
+        context.coordinator.renderedText = text
+        textView.string = text
+        textView.scrollToBeginningOfDocument(nil)
     }
 }

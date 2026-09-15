@@ -1,5 +1,12 @@
 import Foundation
 
+struct FlowBodyPresentation: Equatable {
+    let text: String
+    let isTruncated: Bool
+    let sizeBytes: Int
+    let fullFileURL: URL?
+}
+
 enum FlowListPresentation {
     static func filtered(_ flows: [FlowSummary], query: String) -> [FlowSummary] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -28,6 +35,22 @@ enum FlowListPresentation {
     }
 
     static func requestBodyText(_ detail: FlowDetail) -> String {
+        requestBody(detail).text
+    }
+
+    static func requestBody(_ detail: FlowDetail) -> FlowBodyPresentation {
+        bodyPresentation(text: requestText(detail), info: detail.requestBody)
+    }
+
+    static func responseBodyText(_ detail: FlowDetail) -> String {
+        responseBody(detail).text
+    }
+
+    static func responseBody(_ detail: FlowDetail) -> FlowBodyPresentation {
+        bodyPresentation(text: responseText(detail), info: detail.responseBody)
+    }
+
+    private static func requestText(_ detail: FlowDetail) -> String {
         if let requestJSON = detail.requestJSON {
             return requestJSON.description
         }
@@ -37,7 +60,7 @@ enum FlowListPresentation {
         return AppCopy.Flow.noRequestBody
     }
 
-    static func responseBodyText(_ detail: FlowDetail) -> String {
+    private static func responseText(_ detail: FlowDetail) -> String {
         if let responseJSON = detail.responseJSON {
             return responseJSON.description
         }
@@ -48,6 +71,15 @@ enum FlowListPresentation {
             return AppCopy.Flow.responsePending
         }
         return AppCopy.Flow.responseWithoutBody(statusCode: nonempty(detail.status) ?? "-")
+    }
+
+    private static func bodyPresentation(text: String, info: FlowBodyInfo?) -> FlowBodyPresentation {
+        FlowBodyPresentation(
+            text: text,
+            isTruncated: info?.truncated ?? false,
+            sizeBytes: info?.sizeBytes ?? 0,
+            fullFileURL: nonempty(info?.path).map { URL(fileURLWithPath: $0) }
+        )
     }
 
     private static func nonempty(_ value: String?) -> String? {

@@ -2688,7 +2688,12 @@ def api_get_flow_detail(session_id: int, flow_id: str) -> Dict[str, Any]:
 def api_get_flow_curl(session_id: int, flow_id: str) -> str:
     session = session_or_404(session_id)
     try:
-        detail = get_flow_detail(Path(session["outdir"]), flow_id)
+        detail = get_flow_detail(
+            Path(session["outdir"]),
+            flow_id,
+            include_response=False,
+            inline_body_limit=None,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return build_curl(detail)

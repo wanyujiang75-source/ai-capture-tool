@@ -108,6 +108,39 @@ struct FlowListPresentationTests {
     }
 
     @Test
+    func largeResponsePresentationKeepsBoundedPreviewAndFullFileLocation() throws {
+        let detail = try JSONDecoder().decode(
+            FlowDetail.self,
+            from: Data(
+                #"""
+                {
+                  "id": "flow-large",
+                  "method": "POST",
+                  "status": "200",
+                  "url": "https://api.example.test/cards",
+                  "response_body_kind": "json",
+                  "response_text": "bounded preview",
+                  "response_body": {
+                    "kind": "json",
+                    "content_type": "application/json",
+                    "size_bytes": 2016157,
+                    "path": "/tmp/flow-large.response.bin",
+                    "truncated": true
+                  }
+                }
+                """#.utf8
+            )
+        )
+
+        let presentation = FlowListPresentation.responseBody(detail)
+
+        #expect(presentation.text == "bounded preview")
+        #expect(presentation.isTruncated)
+        #expect(presentation.sizeBytes == 2_016_157)
+        #expect(presentation.fullFileURL?.path == "/tmp/flow-large.response.bin")
+    }
+
+    @Test
     func refreshingFlowsClearsDetailsThatNoLongerExist() async throws {
         let oldFlows = try makeFlows()
         let state = AppState(flowAPI: FlowAPISpy(flows: []))

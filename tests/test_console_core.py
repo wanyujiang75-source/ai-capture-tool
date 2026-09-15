@@ -2009,6 +2009,165 @@ Packages:
             self.assertIn("https://www.blockdance-test.xyz/aisong/portal/mv/create", curl)
             self.assertIn("--data-raw", curl)
 
+    def test_result_indexer_bounds_large_json_preview_and_preserves_full_file(self):
+        from capture_console.results import MAX_INLINE_BODY_BYTES, get_flow_detail, scan_capture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            prefix = "20260915-163349_POST_200_api.example.test_cards_flow-large"
+            meta_name = f"{prefix}.meta.json"
+            request_name = f"{prefix}.request.bin"
+            response_name = f"{prefix}.response.bin"
+            response_payload = json.dumps(
+                {"items": ["界" * (MAX_INLINE_BODY_BYTES // 2)]},
+                ensure_ascii=False,
+            ).encode("utf-8")
+
+            (outdir / "all-flows.tsv").write_text(
+                "\t".join(
+                    [
+                        "time",
+                        "kind",
+                        "score",
+                        "method",
+                        "status",
+                        "host",
+                        "pattern",
+                        "url",
+                        "noise_reason",
+                        "meta",
+                        "request_bin",
+                        "response_bin",
+                    ]
+                )
+                + "\n"
+                + "\t".join(
+                    [
+                        "2026-09-15T16:33:49+08:00",
+                        "candidate",
+                        "100",
+                        "POST",
+                        "200",
+                        "api.example.test",
+                        "https://api.example.test/cards",
+                        "https://api.example.test/cards",
+                        "",
+                        meta_name,
+                        request_name,
+                        response_name,
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (outdir / meta_name).write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "id": "flow-large",
+                            "method": "POST",
+                            "status": 200,
+                            "url": "https://api.example.test/cards",
+                            "response_content_type": "application/json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (outdir / request_name).write_bytes(b"{}")
+            response_path = outdir / response_name
+            response_path.write_bytes(response_payload)
+            (outdir / f"{prefix}.response.json").write_bytes(response_payload)
+
+            flow = scan_capture(outdir)[0]
+            detail = get_flow_detail(outdir, flow["id"])
+
+            self.assertIsNone(detail["response_json"])
+            self.assertTrue(detail["response_body"]["truncated"])
+            self.assertEqual(detail["response_body"]["size_bytes"], len(response_payload))
+            self.assertEqual(detail["response_body"]["path"], str(response_path.resolve()))
+            self.assertLessEqual(
+                len(detail["response_text"].encode("utf-8")),
+                MAX_INLINE_BODY_BYTES + 200,
+            )
+            self.assertNotIn("\ufffd", detail["response_text"])
+            self.assertEqual(response_path.read_bytes(), response_payload)
+
+    def test_curl_detail_does_not_read_unrelated_response_body(self):
+        from capture_console.results import build_curl, get_flow_detail, scan_capture
+
+        with tempfile.TemporaryDirectory() as tmp:
+            outdir = Path(tmp)
+            prefix = "20260915-163349_POST_200_api.example.test_cards_flow-curl"
+            meta_name = f"{prefix}.meta.json"
+            request_name = f"{prefix}.request.bin"
+            response_name = f"{prefix}.response.bin"
+            (outdir / "all-flows.tsv").write_text(
+                "\t".join(
+                    [
+                        "time",
+                        "kind",
+                        "score",
+                        "method",
+                        "status",
+                        "host",
+                        "pattern",
+                        "url",
+                        "noise_reason",
+                        "meta",
+                        "request_bin",
+                        "response_bin",
+                    ]
+                )
+                + "\n"
+                + "\t".join(
+                    [
+                        "2026-09-15T16:33:49+08:00",
+                        "candidate",
+                        "100",
+                        "POST",
+                        "200",
+                        "api.example.test",
+                        "https://api.example.test/cards",
+                        "https://api.example.test/cards",
+                        "",
+                        meta_name,
+                        request_name,
+                        response_name,
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (outdir / meta_name).write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "id": "flow-curl",
+                            "method": "POST",
+                            "status": 200,
+                            "url": "https://api.example.test/cards",
+                            "request_headers": [["content-type", "application/json"]],
+                            "response_content_type": "application/json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (outdir / request_name).write_bytes(b'{"page":1}')
+            (outdir / f"{prefix}.request.json").write_text('{"page":1}', encoding="utf-8")
+            (outdir / response_name).write_bytes(b"not valid json")
+            (outdir / f"{prefix}.response.json").write_text("not valid json", encoding="utf-8")
+
+            flow = scan_capture(outdir)[0]
+            detail = get_flow_detail(outdir, flow["id"], include_response=False, inline_body_limit=None)
+            curl = build_curl(detail)
+
+            self.assertIn("https://api.example.test/cards", curl)
+            self.assertIn("--data-raw", curl)
+            self.assertIsNone(detail["response_json"])
+            self.assertEqual(detail["response_text"], "")
+
     def test_result_indexer_exposes_request_and_response_timing(self):
         from capture_console.results import get_flow_detail, scan_capture
 

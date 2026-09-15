@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import csv
 from datetime import datetime
 import json
@@ -9,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 
-MAX_TEXT_BYTES = 2 * 1024 * 1024
+MAX_INLINE_BODY_BYTES = 256 * 1024
 TEXT_CONTENT_TYPES = {
     "application/graphql",
     "application/javascript",
@@ -51,14 +52,24 @@ def _read_json(path: Path) -> Any:
         return json.load(fp)
 
 
-def _read_text(path: Path) -> str:
-    data = path.read_bytes()
-    if len(data) > MAX_TEXT_BYTES:
-        data = data[:MAX_TEXT_BYTES]
-        suffix = f"\n\n... truncated at {MAX_TEXT_BYTES} bytes ..."
+def _read_text(path: Path, inline_body_limit: Optional[int]) -> tuple[str, bool]:
+    size = path.stat().st_size
+    if inline_body_limit is None:
+        data = path.read_bytes()
+        truncated = False
     else:
-        suffix = ""
-    return data.decode("utf-8", errors="replace") + suffix
+        with path.open("rb") as fp:
+            data = fp.read(inline_body_limit)
+        truncated = size > inline_body_limit
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    text = decoder.decode(data, final=not truncated)
+    if truncated:
+        text += (
+            f"\n\n... inline preview limited to {inline_body_limit} "
+            f"of {size} bytes ..."
+        )
+    return text, truncated
 
 
 def _normalized_content_type(value: Any) -> str:
@@ -87,15 +98,23 @@ def _is_text_body(path: Path, content_type: str) -> bool:
         return True
     if normalized.startswith(BINARY_CONTENT_PREFIXES) or normalized in BINARY_CONTENT_TYPES:
         return False
-    return _looks_like_text(path.read_bytes())
+    with path.open("rb") as fp:
+        return _looks_like_text(fp.read(4096))
 
 
-def _body_info(path: Optional[Path], content_type: str, kind: str) -> Dict[str, Any]:
+def _body_info(
+    path: Optional[Path],
+    content_type: str,
+    kind: str,
+    *,
+    truncated: bool = False,
+) -> Dict[str, Any]:
     return {
         "kind": kind,
         "content_type": _normalized_content_type(content_type),
         "size_bytes": path.stat().st_size if path and path.exists() else 0,
         "path": str(path) if path else "",
+        "truncated": truncated,
     }
 
 
@@ -245,7 +264,13 @@ def scan_capture(outdir: str | Path) -> List[Dict[str, Any]]:
     return _scan_tsv(outdir, candidates)
 
 
-def get_flow_detail(outdir: str | Path, flow_id: str) -> Dict[str, Any]:
+def get_flow_detail(
+    outdir: str | Path,
+    flow_id: str,
+    *,
+    include_response: bool = True,
+    inline_body_limit: Optional[int] = MAX_INLINE_BODY_BYTES,
+) -> Dict[str, Any]:
     outdir = Path(outdir)
     flows = scan_capture(outdir)
     flow = next((item for item in flows if item["id"] == flow_id or item.get("flow_id") == flow_id), None)
@@ -272,28 +297,62 @@ def get_flow_detail(outdir: str | Path, flow_id: str) -> Dict[str, Any]:
     request_content_type = str(summary.get("request_content_type") or "")
     response_content_type = str(summary.get("response_content_type") or "")
 
-    if request_json.exists():
+    if request_json.exists() and (
+        inline_body_limit is None or request_json.stat().st_size <= inline_body_limit
+    ):
         detail["request_json"] = _read_json(request_json)
         detail["request_body_kind"] = "json"
         detail["request_body"] = _body_info(request_bin, request_content_type, "json")
+    elif request_json.exists():
+        preview_path = request_bin if request_bin and request_bin.exists() else request_json
+        detail["request_text"], truncated = _read_text(preview_path, inline_body_limit)
+        detail["request_body_kind"] = "json"
+        detail["request_body"] = _body_info(
+            preview_path,
+            request_content_type,
+            "json",
+            truncated=truncated,
+        )
     elif request_bin and request_bin.exists():
         if _is_text_body(request_bin, request_content_type):
-            detail["request_text"] = _read_text(request_bin)
+            detail["request_text"], truncated = _read_text(request_bin, inline_body_limit)
             detail["request_body_kind"] = "text"
-            detail["request_body"] = _body_info(request_bin, request_content_type, "text")
+            detail["request_body"] = _body_info(
+                request_bin,
+                request_content_type,
+                "text",
+                truncated=truncated,
+            )
         else:
             detail["request_body_kind"] = "binary"
             detail["request_body"] = _body_info(request_bin, request_content_type, "binary")
 
-    if response_json.exists():
+    if include_response and response_json.exists() and (
+        inline_body_limit is None or response_json.stat().st_size <= inline_body_limit
+    ):
         detail["response_json"] = _read_json(response_json)
         detail["response_body_kind"] = "json"
         detail["response_body"] = _body_info(response_bin, response_content_type, "json")
-    elif response_bin and response_bin.exists():
+    elif include_response and response_json.exists():
+        preview_path = response_bin if response_bin and response_bin.exists() else response_json
+        detail["response_text"], truncated = _read_text(preview_path, inline_body_limit)
+        detail["response_body_kind"] = "json"
+        detail["response_body"] = _body_info(
+            preview_path,
+            response_content_type,
+            "json",
+            truncated=truncated,
+        )
+    elif include_response and response_bin and response_bin.exists():
         if _is_text_body(response_bin, response_content_type):
-            detail["response_text"] = _read_text(response_bin)
+            detail["response_text"], truncated = _read_text(response_bin, inline_body_limit)
             detail["response_body_kind"] = "text"
-            detail["response_body"] = _body_info(response_bin, response_content_type, "text")
+            detail["response_body"] = _body_info(
+                response_bin,
+                response_content_type,
+                "text",
+                truncated=truncated,
+            )
         else:
             detail["response_body_kind"] = "binary"
             detail["response_body"] = _body_info(response_bin, response_content_type, "binary")
