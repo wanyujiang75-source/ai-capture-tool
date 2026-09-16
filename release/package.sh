@@ -60,6 +60,11 @@ if [[ ! -f "$INSTALL_GUIDE_PATH" ]]; then
   exit 1
 fi
 
+PACKAGE_TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$PACKAGE_TEMP_DIR"' EXIT
+PORTABLE_INSTALL_GUIDE_PATH="$PACKAGE_TEMP_DIR/INSTALL.md"
+cp "$INSTALL_GUIDE_PATH" "$PORTABLE_INSTALL_GUIDE_PATH"
+
 if command -v npm >/dev/null 2>&1; then
   (cd "$ROOT_DIR/web" && npm install && npm run build)
 fi
@@ -89,7 +94,10 @@ else
     "$DESKTOP_ARCHIVE_PATH"
 fi
 
-/usr/bin/zip -q -j "$DESKTOP_ARCHIVE_PATH" "$INSTALL_GUIDE_PATH"
+/usr/bin/zip -q -j \
+  "$DESKTOP_ARCHIVE_PATH" \
+  "$INSTALL_GUIDE_PATH" \
+  "$PORTABLE_INSTALL_GUIDE_PATH"
 write_checksum "$DESKTOP_ARCHIVE_PATH"
 
 (

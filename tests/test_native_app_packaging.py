@@ -13,6 +13,7 @@ import unittest
 import urllib.error
 import urllib.request
 import uuid
+import zipfile
 from pathlib import Path
 
 
@@ -304,6 +305,10 @@ class NativeAppPackagingTests(unittest.TestCase):
             f"{hashlib.sha256(source_archive.read_bytes()).hexdigest()}  {source_archive.name}\n",
             source_checksum.read_text(encoding="utf-8"),
         )
+        with zipfile.ZipFile(archive) as desktop_bundle:
+            portable_install_copy = desktop_bundle.read("INSTALL.md").decode("utf-8")
+        self.assertIn("## 前置准备条件", portable_install_copy)
+        self.assertIn("## 安装步骤", portable_install_copy)
         with tarfile.open(source_archive, "r:gz") as source_bundle:
             source_names = set(source_bundle.getnames())
         self.assertIn("INSTALL.md", source_names)
