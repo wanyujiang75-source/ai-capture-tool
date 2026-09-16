@@ -16,6 +16,7 @@ else
 fi
 DESKTOP_ARCHIVE_PATH="$ROOT_DIR/release/$DESKTOP_ARCHIVE_NAME"
 NATIVE_APP_PATH="$ROOT_DIR/macos-native/build/抓包工具.app"
+INSTALL_GUIDE_PATH="$ROOT_DIR/release/安装说明.md"
 
 write_checksum() {
   local target_path="$1"
@@ -54,6 +55,11 @@ if [[ "$HOST_ARCH" != "arm64" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$INSTALL_GUIDE_PATH" ]]; then
+  echo "desktop install guide is missing: $INSTALL_GUIDE_PATH" >&2
+  exit 1
+fi
+
 if command -v npm >/dev/null 2>&1; then
   (cd "$ROOT_DIR/web" && npm install && npm run build)
 fi
@@ -81,8 +87,10 @@ else
   ditto -c -k --sequesterRsrc --keepParent \
     "$NATIVE_APP_PATH" \
     "$DESKTOP_ARCHIVE_PATH"
-  write_checksum "$DESKTOP_ARCHIVE_PATH"
 fi
+
+/usr/bin/zip -q -j "$DESKTOP_ARCHIVE_PATH" "$INSTALL_GUIDE_PATH"
+write_checksum "$DESKTOP_ARCHIVE_PATH"
 
 (
   cd "$ROOT_DIR"
@@ -110,6 +118,7 @@ fi
     setup.sh \
     start.sh \
     start_capture.sh \
+    release/安装说明.md \
     release/package.sh \
     release/notarize-app.sh \
     package.json \

@@ -307,6 +307,7 @@ class NativeAppPackagingTests(unittest.TestCase):
         with tarfile.open(source_archive, "r:gz") as source_bundle:
             source_names = set(source_bundle.getnames())
         self.assertIn("INSTALL.md", source_names)
+        self.assertIn("release/安装说明.md", source_names)
         self.assertIn("release/package.sh", source_names)
         self.assertIn("release/notarize-app.sh", source_names)
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -316,9 +317,19 @@ class NativeAppPackagingTests(unittest.TestCase):
                 check=True,
             )
             extracted_app = extracted / "抓包工具.app"
+            install_guide = extracted / "安装说明.md"
             self.assertTrue(
                 (extracted_app / "Contents" / "MacOS" / "抓包工具").is_file()
             )
+            self.assertTrue(install_guide.is_file(), install_guide)
+            install_copy = install_guide.read_text(encoding="utf-8")
+            for required_heading in (
+                "## 前置准备条件",
+                "## 安装步骤",
+                "## 首次使用",
+                "## 常见问题",
+            ):
+                self.assertIn(required_heading, install_copy)
             verification = subprocess.run(
                 [
                     "codesign",
