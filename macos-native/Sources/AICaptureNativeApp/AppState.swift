@@ -553,12 +553,13 @@ final class AppState: ObservableObject {
         captureActionState = .loading
         do {
             let response = try await captureWorkflowAPI.stopCapture(deviceId: selectedDeviceID)
-            if response.ok == false {
-                captureMessage = "请打开运行检查并重试停止操作。"
+            let serverConfirmedStop = response.session?.status == "stopped"
+            if response.ok == false && !serverConfirmedStop {
+                captureMessage = AppCopy.Capture.stopFailedMessage
                 captureActionState = .failed(captureMessage)
                 showNotice(
                     .failure(
-                        title: "抓包停止失败",
+                        title: AppCopy.Capture.stopFailedTitle,
                         message: captureMessage
                     )
                 )
@@ -566,15 +567,23 @@ final class AppState: ObservableObject {
             }
             didStopCapture()
             setWorkflowState(.stopped)
-            showNotice(.success(title: "抓包已停止", message: "已保留本次抓包结果。"))
+            let networkRecoveryPending = response.cleanupOk == false || (response.ok == false && serverConfirmedStop)
+            showNotice(
+                .success(
+                    title: AppCopy.Capture.stoppedTitle,
+                    message: networkRecoveryPending
+                        ? AppCopy.Capture.stoppedWithNetworkPending
+                        : AppCopy.Capture.stoppedMessage
+                )
+            )
             await refreshDevices()
             await refreshForegroundTarget(forceResolve: true)
         } catch {
-            captureMessage = "请打开运行检查并重试停止操作。"
+            captureMessage = AppCopy.Capture.stopFailedMessage
             captureActionState = .failed(captureMessage)
             showNotice(
                 .failure(
-                    title: "抓包停止失败",
+                    title: AppCopy.Capture.stopFailedTitle,
                     message: captureMessage
                 )
             )

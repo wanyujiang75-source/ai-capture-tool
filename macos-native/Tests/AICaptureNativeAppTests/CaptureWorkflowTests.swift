@@ -7,6 +7,7 @@ private actor CaptureWorkflowAPISpy: CaptureWorkflowAPI {
     private let captureResponse: CaptureStartResponse
     private let startCaptureErrorBody: String?
     private let stopSucceeds: Bool
+    private let stopResponseBody: String?
     private(set) var startDeviceCalls = 0
     private(set) var prepareCalls = 0
     private(set) var startCaptureCalls = 0
@@ -16,12 +17,14 @@ private actor CaptureWorkflowAPISpy: CaptureWorkflowAPI {
         deviceResponses: [[CaptureDevice]],
         captureResponse: CaptureStartResponse,
         startCaptureErrorBody: String? = nil,
-        stopSucceeds: Bool = true
+        stopSucceeds: Bool = true,
+        stopResponseBody: String? = nil
     ) {
         self.deviceResponses = deviceResponses
         self.captureResponse = captureResponse
         self.startCaptureErrorBody = startCaptureErrorBody
         self.stopSucceeds = stopSucceeds
+        self.stopResponseBody = stopResponseBody
     }
 
     func getDevices() async throws -> [CaptureDevice] {
@@ -54,6 +57,9 @@ private actor CaptureWorkflowAPISpy: CaptureWorkflowAPI {
 
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse {
         stopCaptureCalls += 1
+        if let stopResponseBody {
+            return try decode(CaptureStopResponse.self, stopResponseBody)
+        }
         return try decode(
             CaptureStopResponse.self,
             stopSucceeds ? #"{"ok":true}"# : #"{"ok":false,"stderr":"proxy cleanup failed"}"#
@@ -285,6 +291,49 @@ struct CaptureWorkflowTests {
         #expect(state.captureWorkflowState == .capturing(name: "Melody", flowCount: 3))
         let calls = await captureAPI.callCounts()
         #expect(calls.stopCapture == 1)
+    }
+
+    @Test
+    func serverConfirmedStopClearsLegacyCombinedFailureState() async throws {
+        let ready = try device(adbOnline: true, bootCompleted: true, unlocked: true)
+        let captureAPI = CaptureWorkflowAPISpy(
+            deviceResponses: [[ready]],
+            captureResponse: try captureResponse(packageName: "com.example.music"),
+            stopResponseBody: #"{"ok":false,"cleanup_ok":false,"session":{"id":91,"status":"stopped"},"proxy":{"ok":false,"stderr":"adb: device offline"}}"#
+        )
+        let state = AppState(captureWorkflowAPI: captureAPI)
+        state.devices = [ready]
+        state.selectedDeviceID = "device-1"
+        state.activeSessionID = 91
+        state.captureWorkflowState = .capturing(name: "Melody", flowCount: 3)
+
+        await state.stopSelectedCapture()
+
+        #expect(state.activeSessionID == nil)
+        #expect(state.captureWorkflowState == .stopped)
+        #expect(state.notice?.title == "抓包已停止")
+        #expect(state.notice?.message == "模拟器网络暂未恢复，重新连接后运行检查会继续处理。")
+    }
+
+    @Test
+    func proxyCleanupFailureDoesNotBlockSuccessfulStop() async throws {
+        let ready = try device(adbOnline: true, bootCompleted: true, unlocked: true)
+        let captureAPI = CaptureWorkflowAPISpy(
+            deviceResponses: [[ready]],
+            captureResponse: try captureResponse(packageName: "com.example.music"),
+            stopResponseBody: #"{"ok":true,"cleanup_ok":false,"session":{"id":91,"status":"stopped"},"proxy":{"ok":false,"stderr":"adb: device offline"}}"#
+        )
+        let state = AppState(captureWorkflowAPI: captureAPI)
+        state.devices = [ready]
+        state.selectedDeviceID = "device-1"
+        state.activeSessionID = 91
+        state.captureWorkflowState = .capturing(name: "Melody", flowCount: 3)
+
+        await state.stopSelectedCapture()
+
+        #expect(state.activeSessionID == nil)
+        #expect(state.captureWorkflowState == .stopped)
+        #expect(state.notice?.message == "模拟器网络暂未恢复，重新连接后运行检查会继续处理。")
     }
 
     @Test

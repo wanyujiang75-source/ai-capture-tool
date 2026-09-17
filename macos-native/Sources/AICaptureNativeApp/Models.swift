@@ -602,9 +602,18 @@ struct CaptureStartResponse: Decodable {
 
 struct CaptureStopResponse: Decodable {
     let ok: Bool?
+    let cleanupOk: Bool?
     let session: CaptureSession?
     let stdout: String?
     let stderr: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case cleanupOk = "cleanup_ok"
+        case session
+        case stdout
+        case stderr
+    }
 }
 
 struct CaptureSession: Decodable {

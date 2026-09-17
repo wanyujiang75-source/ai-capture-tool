@@ -16,6 +16,11 @@ enum AppCopy {
         static let showEmulator = "显示模拟器"
         static let stopAndSwitch = "停止并切换"
         static let continueCurrent = "继续当前任务"
+        static let stoppedTitle = "抓包已停止"
+        static let stoppedMessage = "已保留本次抓包结果。"
+        static let stoppedWithNetworkPending = "模拟器网络暂未恢复，重新连接后运行检查会继续处理。"
+        static let stopFailedTitle = "抓包停止失败"
+        static let stopFailedMessage = "请打开运行检查并重试停止操作。"
     }
 
     enum Install {
@@ -300,8 +305,8 @@ enum CaptureWorkflowState: Equatable, Sendable {
             )
         case .stopped:
             return .init(
-                title: "抓包已停止",
-                message: "已保留本次抓包结果。",
+                title: AppCopy.Capture.stoppedTitle,
+                message: AppCopy.Capture.stoppedMessage,
                 primaryAction: .startCapture,
                 primaryButtonTitle: AppCopy.Capture.start
             )

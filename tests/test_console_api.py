@@ -3536,6 +3536,97 @@ class CaptureConsoleApiTests(unittest.TestCase):
                 app_module.store = original_store
                 app_module.runner = original_runner
 
+    def test_stop_capture_succeeds_when_proxy_cleanup_fails(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StopRunner:
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(0, "stopped", "")
+
+            def clear_android_proxy(self):
+                return CommandResult(1, "", "adb: device offline")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Chrome",
+                    package_name="com.android.chrome",
+                    activity="com.android.chrome/com.google.android.apps.chrome.Main",
+                    default_mode="system",
+                )
+                session = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="system",
+                    outdir=str(Path(tmp) / "capture"),
+                    status="running",
+                )
+                app_module.store.update_device("device-1", current_session_id=session["id"], lease_status="running")
+                app_module.runner = StopRunner()
+
+                result = app_module.api_stop_capture(device_id="device-1")
+
+                self.assertTrue(result["ok"])
+                self.assertFalse(result["cleanup_ok"])
+                self.assertFalse(result["proxy"]["ok"])
+                self.assertEqual(result["session"]["status"], "stopped")
+                self.assertIsNone(app_module.store.active_session(device_id="device-1"))
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
+    def test_stop_capture_failure_keeps_session_active(self):
+        original_store = app_module.store
+        original_runner = app_module.runner
+
+        class StopRunner:
+            def for_device(self, device):
+                return self
+
+            def stop_capture(self):
+                return CommandResult(1, "", "stop command failed")
+
+            def clear_android_proxy(self):
+                return CommandResult(0, "proxy cleared", "")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                app_module.store = CaptureStore(Path(tmp) / "console.db")
+                self.add_test_device(app_module.store, resident=0, idle_release_minutes=10)
+                app = app_module.store.create_app(
+                    platform="android",
+                    name="Chrome",
+                    package_name="com.android.chrome",
+                    activity="com.android.chrome/com.google.android.apps.chrome.Main",
+                    default_mode="system",
+                )
+                session = app_module.store.create_session(
+                    app_id=app["id"],
+                    device_id="device-1",
+                    mode="system",
+                    outdir=str(Path(tmp) / "capture"),
+                    status="running",
+                )
+                app_module.store.update_device("device-1", current_session_id=session["id"], lease_status="running")
+                app_module.runner = StopRunner()
+
+                result = app_module.api_stop_capture(device_id="device-1")
+
+                self.assertFalse(result["ok"])
+                self.assertFalse(result["cleanup_ok"])
+                self.assertEqual(result["session"]["status"], "running")
+                self.assertEqual(app_module.store.active_session(device_id="device-1")["id"], session["id"])
+            finally:
+                app_module.store = original_store
+                app_module.runner = original_runner
+
     def test_stop_capture_session_clears_android_proxy(self):
         original_store = app_module.store
         original_runner = app_module.runner

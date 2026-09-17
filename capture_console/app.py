@@ -2625,16 +2625,21 @@ def api_stop_capture(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     device_runner = runner_for_device_id(device_id)
     result, proxy_result = stop_capture_and_clear_proxy(device_runner)
     active = store.active_session(device_id=device_id)
-    session = None
-    if active:
+    session = active
+    if active and result.ok:
         session = store.update_session_status(active["id"], "stopped")
         store.mark_app_success(active.get("app_id"), mode=active.get("mode", ""))
     return {
-        "ok": result.ok and proxy_result.ok,
+        "ok": result.ok,
+        "cleanup_ok": result.ok and proxy_result.ok,
         "session": session,
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
+        "proxy": {
+            "ok": proxy_result.ok,
+            "stdout": proxy_result.stdout,
+            "stderr": proxy_result.stderr,
+        },
     }
 
 
@@ -2649,14 +2654,21 @@ def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
     device_id = session.get("device_id") or DEFAULT_DEVICE_ID
     device_runner = runner_for_device_id(device_id)
     result, proxy_result = stop_capture_and_clear_proxy(device_runner)
-    stopped = store.update_session_status(session_id, "stopped")
-    store.mark_app_success(session.get("app_id"), mode=session.get("mode", ""))
+    stopped = session
+    if result.ok:
+        stopped = store.update_session_status(session_id, "stopped")
+        store.mark_app_success(session.get("app_id"), mode=session.get("mode", ""))
     return {
-        "ok": result.ok and proxy_result.ok,
+        "ok": result.ok,
+        "cleanup_ok": result.ok and proxy_result.ok,
         "session": stopped,
         "stdout": result.stdout,
         "stderr": result.stderr,
-        "proxy": {"stdout": proxy_result.stdout, "stderr": proxy_result.stderr},
+        "proxy": {
+            "ok": proxy_result.ok,
+            "stdout": proxy_result.stdout,
+            "stderr": proxy_result.stderr,
+        },
     }
 
 
