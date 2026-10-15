@@ -306,7 +306,6 @@ start_exporter() {
 
 clear_android_http_proxy() {
   adb_cmd shell settings put global http_proxy :0 >/dev/null 2>&1 || true
-  adb_cmd shell settings delete global http_proxy >/dev/null 2>&1 || true
 }
 
 resolve_app_activity() {

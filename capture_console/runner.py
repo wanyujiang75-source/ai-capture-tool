@@ -794,7 +794,8 @@ class ConsoleRunner:
         return self.run([str(self.scripts_dir / "ai_capture_stop.sh")], timeout=45)
 
     def clear_android_proxy(self) -> CommandResult:
-        return self.adb(["shell", "settings", "delete", "global", "http_proxy"], timeout=20)
+        # Android ignores a deleted legacy key; an empty proxy also resets its cached proxy.
+        return self.adb(["shell", "settings", "put", "global", "http_proxy", ":0"], timeout=20)
 
     def set_android_proxy(self, proxy: str) -> CommandResult:
         proxy = proxy.strip()
