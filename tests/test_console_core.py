@@ -1122,7 +1122,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             self.assertIn("PlayStore.enabled=true", config)
             self.assertIn("AvdId=AI_Capture_AVD_01", config)
             self.assertIn("target=android-35", config)
-            self.assertIn("disk.dataPartition.size=8G", config)
+            self.assertIn("disk.dataPartition.size=16G", config)
             self.assertIn("hw.cpu.ncore=4", config)
             self.assertIn("hw.gpu.mode=host", config)
             self.assertIn("hw.ramSize=4096", config)
@@ -1142,7 +1142,10 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                     "machine": "arm64",
                 }
 
-        profile = HighPerformanceHostRunner("/tmp").recommended_avd_performance_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = HighPerformanceHostRunner(tmp)
+            runner.avd_home = Path(tmp)
+            profile = runner.recommended_avd_performance_profile()
 
         self.assertEqual(
             profile,
@@ -1151,7 +1154,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                 "ram_mb": 4096,
                 "cpu_cores": 4,
                 "gpu_mode": "host",
-                "data_partition_size": "8G",
+                "data_partition_size": "16G",
                 "vm_heap_mb": 512,
             },
         )

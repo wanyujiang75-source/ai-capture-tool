@@ -8,6 +8,19 @@ from capture_console.runner import CommandResult, ConsoleRunner
 
 
 class PackageInstallTests(unittest.TestCase):
+    def test_storage_profile_preserves_existing_avd_capacity(self):
+        for capacity in ("8G", "32G"):
+            with self.subTest(capacity=capacity), tempfile.TemporaryDirectory() as tmp:
+                runner = ConsoleRunner(tmp, avd_name="Existing")
+                runner.avd_home = Path(tmp)
+                avd = runner.avd_home / "Existing.avd"
+                avd.mkdir()
+                (avd / "config.ini").write_text(f"disk.dataPartition.size={capacity}\n")
+
+                profile = runner.recommended_avd_performance_profile()
+
+                self.assertEqual(profile["data_partition_size"], capacity)
+
     def test_storage_failure_reclaims_cache_and_retries_single_and_split_install(self):
         for names in (["app.apk"], ["split.apk", "base.apk"]):
             with self.subTest(names=names), tempfile.TemporaryDirectory() as tmp:

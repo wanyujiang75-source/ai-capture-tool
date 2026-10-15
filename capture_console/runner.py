@@ -488,12 +488,13 @@ class ConsoleRunner:
     def recommended_avd_performance_profile(self) -> Dict[str, Any]:
         host = self.host_resource_status()
         high_performance = int(host["memory_mb"]) >= 16384 and int(host["cpu_count"]) >= 8
+        avd_config = self._read_ini(self.avd_home / f"{self.avd_name}.avd" / "config.ini")
         return {
             "tier": "high" if high_performance else "balanced",
             "ram_mb": 4096 if high_performance else 2048,
             "cpu_cores": 4 if high_performance else 2,
             "gpu_mode": "host" if host["system"] == "Darwin" else "auto",
-            "data_partition_size": "8G",
+            "data_partition_size": avd_config.get("disk.dataPartition.size") or "16G",
             "vm_heap_mb": 512 if high_performance else 336,
         }
 
