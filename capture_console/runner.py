@@ -675,6 +675,8 @@ class ConsoleRunner:
         package_parts = str(image.get("package") or "").split(";")
         target = package_parts[1] if len(package_parts) > 1 else f"android-{image.get('api_level', '')}"
         profile = self.recommended_avd_performance_profile()
+        # This path only normalizes a newly created AVD, not an existing user disk.
+        profile["data_partition_size"] = "16G"
         abi = str(image.get("abi") or "")
         self._rewrite_ini(
             config_path,

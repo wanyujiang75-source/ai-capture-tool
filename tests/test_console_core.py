@@ -1099,6 +1099,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                             "avd.id = <build>\n"
                             "avd.name = <build>\n"
                             "disk.dataPartition.path = <temp>\n"
+                            "disk.dataPartition.size = 6G\n"
                             "hw.device.name = medium_phone\n"
                             "image.sysdir.1 = system-images/android-35/google_apis_playstore/arm64-v8a/\n",
                             encoding="utf-8",
