@@ -39,8 +39,14 @@ struct DeviceAppView: View {
             }
         }
         .task {
-            if appState.deviceLoadState == .idle || appState.jenkinsLoadState == .idle {
-                await appState.refreshWorkspaceData()
+            while !Task.isCancelled {
+                await appState.refreshDevices()
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            }
+        }
+        .task {
+            if appState.jenkinsLoadState == .idle {
+                await appState.refreshJenkinsPackages()
             }
         }
     }
@@ -75,12 +81,25 @@ struct DeviceAppView: View {
                 }
                 .frame(maxWidth: 420)
             }
-        } else if let readinessMessage {
+        }
+        if let issue = appState.installationReadinessIssue {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
-                Text(readinessMessage)
+                Text(issue.message)
                     .foregroundStyle(.secondary)
+                Spacer()
+                if issue.code == "capture_active" {
+                    Button(AppCopy.Capture.stop) {
+                        Task { await appState.stopSelectedCapture() }
+                    }
+                    .disabled(appState.captureActionState == .loading)
+                } else if let recovery = issue.recoveryAction {
+                    Button(recovery) {
+                        Task { await appState.startSelectedDevice() }
+                    }
+                    .disabled(appState.captureActionState == .loading)
+                }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,7 +131,7 @@ struct DeviceAppView: View {
                     Label(AppCopy.Install.chooseAPK, systemImage: "folder.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(appState.localInstallState == .loading)
+                .disabled(appState.localInstallState == .loading || appState.jenkinsInstallState == .loading)
             }
         }
     }
@@ -171,7 +190,7 @@ struct DeviceAppView: View {
                         JenkinsPackageRow(
                             package: package,
                             installing: appState.installingJenkinsPackageID == package.id,
-                            disabled: appState.jenkinsInstallState == .loading
+                            disabled: appState.jenkinsInstallState == .loading || appState.localInstallState == .loading
                         ) {
                             Task {
                                 await appState.installJenkinsPackage(package)
@@ -203,20 +222,6 @@ struct DeviceAppView: View {
         } set: { value in
             appState.selectedDeviceID = value.isEmpty ? nil : value
         }
-    }
-
-    private var readinessMessage: String? {
-        guard let device = appState.selectedDevice,
-              device.emulator?.adbOnline == true else {
-            return AppCopy.Install.emulatorOffline
-        }
-        guard device.emulator?.bootCompleted == true else {
-            return AppCopy.Install.emulatorBooting
-        }
-        guard device.emulator?.unlocked == true else {
-            return AppCopy.Install.emulatorLocked
-        }
-        return nil
     }
 
     private var jenkinsMessageColor: Color {

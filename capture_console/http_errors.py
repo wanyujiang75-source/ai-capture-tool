@@ -15,6 +15,10 @@ def structured_http_error_body(*, path: str, status_code: int, detail: Any) -> D
             or json.dumps(detail_fields, ensure_ascii=False, default=str)
         )
 
+    output = str(detail_fields.get("output") or "")
+    if output and output not in technical_detail:
+        technical_detail = f"{technical_detail}\n{output}"
+
     normalized = technical_detail.lower()
     state = str(
         detail_fields.get("state")
@@ -77,16 +81,26 @@ def structured_http_error_body(*, path: str, status_code: int, detail: Any) -> D
         title = "无法确认 Google 登录状态"
         user_message = "请先检查模拟器连接和 Google 登录状态。"
         recovery_action = "打开运行检查"
-    elif "jenkins" in path:
-        code = "jenkins_unavailable"
-        title = "无法连接 Jenkins"
-        user_message = "无法连接 Jenkins，请确认已连接公司网络后重试。"
-        recovery_action = "检查公司网络"
     elif "install_failed_update_incompatible" in normalized or "signature" in normalized:
         code = "signature_conflict"
         title = "应用签名不一致"
         user_message = "新安装包与现有版本签名不一致。为保护应用数据，工具不会自动卸载旧版本。"
         recovery_action = "选择签名一致的 APK"
+    elif "install_failed_insufficient_storage" in normalized:
+        code = "device_storage_full"
+        title = "模拟器存储空间不足"
+        user_message = "已尝试回收缓存，模拟器空间仍不足。请在模拟器中释放存储空间后重新安装。"
+        recovery_action = "释放模拟器存储空间"
+    elif "adb install failed" in normalized:
+        code = "app_install_failed"
+        title = "应用安装失败"
+        user_message = "模拟器未能安装此 APK，请确认安装包完整且适用于当前 Android 版本。"
+        recovery_action = "更换安装包后重试"
+    elif "jenkins" in path:
+        code = "jenkins_unavailable"
+        title = "无法连接 Jenkins"
+        user_message = "无法连接 Jenkins，请确认已连接公司网络后重试。"
+        recovery_action = "检查公司网络"
     elif "/logcat" in path:
         code = "log_connection_failed"
         title = "日志连接中断"

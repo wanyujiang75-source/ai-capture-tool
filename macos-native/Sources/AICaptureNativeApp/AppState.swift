@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     @Published var jenkinsInstallState: LoadState = .idle
     @Published var installingJenkinsPackageID: String?
     @Published var jenkinsMessage = ""
+    var jenkinsInstallIssue: UserFacingIssue?
     @Published var selectedDeviceID: String?
     @Published var selectedAppID: Int?
     @Published var captureActionState: LoadState = .idle
@@ -126,6 +127,13 @@ final class AppState: ObservableObject {
             reconcileSelections()
             syncActiveSessionFromSelectedDevice()
             deviceLoadState = .loaded
+            if jenkinsInstallIssue?.code == "capture_active",
+               selectedDevice?.activeSession == nil,
+               selectedDevice?.capture?.health != "running" {
+                jenkinsInstallIssue = nil
+                jenkinsMessage = ""
+                jenkinsInstallState = .idle
+            }
         } catch {
             deviceLoadState = .failed(error.localizedDescription)
         }
@@ -615,7 +623,9 @@ final class AppState: ObservableObject {
     }
 
     func installJenkinsPackage(_ package: JenkinsPackage) async {
+        guard jenkinsInstallState != .loading, localInstallState != .loading else { return }
         jenkinsInstallState = .loading
+        jenkinsInstallIssue = nil
         installingJenkinsPackageID = package.id
         jenkinsMessage = AppCopy.Install.installingJenkins(
             jobName: package.jobName,
@@ -633,6 +643,7 @@ final class AppState: ObservableObject {
             showNotice(.success(title: "应用安装完成", message: jenkinsMessage))
         } catch {
             let issue = friendlyInstallIssue(error)
+            jenkinsInstallIssue = issue
             jenkinsMessage = issue.message
             jenkinsInstallState = .failed(issue.message)
             showNotice(.failure(title: issue.title, message: issue.message))
@@ -641,6 +652,7 @@ final class AppState: ObservableObject {
     }
 
     func installLocalAPK(_ fileURL: URL) async {
+        guard localInstallState != .loading, jenkinsInstallState != .loading else { return }
         guard fileURL.pathExtension.lowercased() == "apk" else {
             let message = "请选择扩展名为 .apk 的 Android 安装包。"
             localInstallMessage = message
@@ -648,10 +660,10 @@ final class AppState: ObservableObject {
             showNotice(.failure(title: "无法安装应用", message: message))
             return
         }
-        if let readinessMessage = selectedDeviceInstallReadinessMessage() {
-            localInstallMessage = readinessMessage
-            localInstallState = .failed(readinessMessage)
-            showNotice(.failure(title: "暂时无法安装应用", message: readinessMessage))
+        if let issue = installationReadinessIssue {
+            localInstallMessage = issue.message
+            localInstallState = .failed(issue.message)
+            showNotice(.failure(title: issue.title, message: issue.message))
             return
         }
         guard let selectedDeviceID else {
@@ -699,29 +711,35 @@ final class AppState: ObservableObject {
         lastForegroundDeviceID = nil
     }
 
-    private func selectedDeviceInstallReadinessMessage() -> String? {
-        guard selectedDeviceID != nil else {
-            return AppCopy.Install.emulatorOffline
+    var installationReadinessIssue: UserFacingIssue? {
+        if selectedDevice?.activeSession != nil || selectedDevice?.capture?.health == "running" {
+            return .init(
+                code: "capture_active", title: "暂时无法安装应用",
+                message: AppCopy.Install.captureConflict, recoveryAction: AppCopy.Capture.stop
+            )
         }
-        guard let selectedDevice else {
-            return AppCopy.Install.emulatorOffline
+        guard selectedDevice?.emulator?.adbOnline == true else {
+            return .init(
+                code: "emulator_not_ready", title: "模拟器尚未启动",
+                message: AppCopy.Install.emulatorOffline, recoveryAction: AppCopy.Capture.startEmulator
+            )
         }
-        guard selectedDevice.emulator?.adbOnline == true else {
-            return AppCopy.Install.emulatorOffline
+        guard selectedDevice?.emulator?.bootCompleted == true else {
+            return .init(code: "emulator_booting", title: "Android 正在启动", message: AppCopy.Install.emulatorBooting)
         }
-        guard selectedDevice.emulator?.bootCompleted == true else {
-            return AppCopy.Install.emulatorBooting
-        }
-        guard selectedDevice.emulator?.unlocked == true else {
-            return AppCopy.Install.emulatorLocked
+        guard selectedDevice?.emulator?.unlocked == true else {
+            return .init(
+                code: "emulator_locked", title: "模拟器尚未解锁",
+                message: AppCopy.Install.emulatorLocked, recoveryAction: AppCopy.Capture.showEmulator
+            )
         }
         return nil
     }
 
     private func installJenkinsPackageOnSelectedDevice(_ package: JenkinsPackage) async throws -> CaptureApp? {
         await refreshDevices()
-        if let readinessMessage = selectedDeviceInstallReadinessMessage() {
-            throw UserVisibleError(readinessMessage)
+        if let issue = installationReadinessIssue {
+            throw issue
         }
         guard let selectedDeviceID else {
             throw UserVisibleError("未选择安装目标：请先选择一台已启动的 Android 模拟器后再安装。")
@@ -744,6 +762,7 @@ final class AppState: ObservableObject {
     }
 
     private func friendlyInstallIssue(_ error: Error) -> UserFacingIssue {
+        if let issue = error as? UserFacingIssue { return issue }
         let apiIssue = (error as? APIClientError)?.userFacingIssue
         let technicalDetail = apiIssue?.technicalDetail ?? error.localizedDescription
         if technicalDetail.contains("emulator is not ready for package install") {

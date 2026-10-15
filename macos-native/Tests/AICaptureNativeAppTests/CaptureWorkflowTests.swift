@@ -301,7 +301,13 @@ struct CaptureWorkflowTests {
             captureResponse: try captureResponse(packageName: "com.example.music"),
             stopResponseBody: #"{"ok":false,"cleanup_ok":false,"session":{"id":91,"status":"stopped"},"proxy":{"ok":false,"stderr":"adb: device offline"}}"#
         )
-        let state = AppState(captureWorkflowAPI: captureAPI)
+        let state = AppState(
+            foregroundAPI: CaptureForegroundAPISpy(
+                foregroundResponses: [try foreground(state: "waiting_app")],
+                target: try foregroundTarget(packageName: "com.example.music", name: "Melody")
+            ),
+            captureWorkflowAPI: captureAPI
+        )
         state.devices = [ready]
         state.selectedDeviceID = "device-1"
         state.activeSessionID = 91
@@ -323,7 +329,13 @@ struct CaptureWorkflowTests {
             captureResponse: try captureResponse(packageName: "com.example.music"),
             stopResponseBody: #"{"ok":true,"cleanup_ok":false,"session":{"id":91,"status":"stopped"},"proxy":{"ok":false,"stderr":"adb: device offline"}}"#
         )
-        let state = AppState(captureWorkflowAPI: captureAPI)
+        let state = AppState(
+            foregroundAPI: CaptureForegroundAPISpy(
+                foregroundResponses: [try foreground(state: "waiting_app")],
+                target: try foregroundTarget(packageName: "com.example.music", name: "Melody")
+            ),
+            captureWorkflowAPI: captureAPI
+        )
         state.devices = [ready]
         state.selectedDeviceID = "device-1"
         state.activeSessionID = 91
@@ -366,6 +378,55 @@ struct CaptureWorkflowTests {
         #expect(state.captureWorkflowState == .restored(name: "Melody"))
         let calls = await captureAPI.callCounts()
         #expect(calls.startCapture == 1)
+    }
+
+    @Test(arguments: ["capture_active", "signature_conflict"])
+    func refreshingStoppedDeviceClearsOnlyResolvedInstallConflict(code: String) async throws {
+        let ready = try device(adbOnline: true, bootCompleted: true, unlocked: true)
+        let captureAPI = CaptureWorkflowAPISpy(
+            deviceResponses: [[ready]],
+            captureResponse: try captureResponse(packageName: "com.example.music")
+        )
+        let state = AppState(captureWorkflowAPI: captureAPI)
+        state.selectedDeviceID = "device-1"
+        state.jenkinsInstallIssue = UserFacingIssue(code: code, title: "安装失败", message: "原错误")
+        state.jenkinsMessage = "原错误"
+        state.jenkinsInstallState = .failed("原错误")
+
+        await state.refreshDevices()
+
+        if code == "capture_active" {
+            #expect(state.jenkinsMessage.isEmpty)
+            #expect(state.jenkinsInstallState == .idle)
+            #expect(state.jenkinsInstallIssue == nil)
+        } else {
+            #expect(state.jenkinsMessage == "原错误")
+            #expect(state.jenkinsInstallState == .failed("原错误"))
+        }
+    }
+
+    @Test
+    func refreshingActiveDevicePreservesInstallConflictAndRecovery() async throws {
+        let active = try device(
+            adbOnline: true, bootCompleted: true, unlocked: true, activePackage: "com.example.music"
+        )
+        let captureAPI = CaptureWorkflowAPISpy(
+            deviceResponses: [[active]],
+            captureResponse: try captureResponse(packageName: "com.example.music")
+        )
+        let state = AppState(captureWorkflowAPI: captureAPI)
+        state.selectedDeviceID = "device-1"
+        state.jenkinsInstallIssue = UserFacingIssue(
+            code: "capture_active", title: "安装失败", message: AppCopy.Install.captureConflict
+        )
+        state.jenkinsMessage = AppCopy.Install.captureConflict
+        state.jenkinsInstallState = .failed(AppCopy.Install.captureConflict)
+
+        await state.refreshDevices()
+
+        #expect(state.jenkinsMessage == AppCopy.Install.captureConflict)
+        #expect(state.installationReadinessIssue?.code == "capture_active")
+        #expect(state.installationReadinessIssue?.recoveryAction == AppCopy.Capture.stop)
     }
 
     private func device(

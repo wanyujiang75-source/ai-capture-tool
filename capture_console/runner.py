@@ -1149,8 +1149,15 @@ class ConsoleRunner:
         ordered = [str(path) for path in apk_paths]
         ordered.sort(key=lambda path: (Path(path).name != "base.apk", Path(path).name))
         if len(ordered) == 1:
-            return self.adb(["install", "-r", ordered[0]], timeout=240)
-        return self.adb(["install-multiple", "-r", *ordered], timeout=300)
+            command, timeout = ["install", "-r", ordered[0]], 240
+        else:
+            command, timeout = ["install-multiple", "-r", *ordered], 300
+        result = self.adb(command, timeout=timeout)
+        if not result.ok and "INSTALL_FAILED_INSUFFICIENT_STORAGE" in result.text:
+            reclaimed = self.adb(["shell", "pm", "trim-caches", "2G", "internal"], timeout=60)
+            if reclaimed.ok:
+                return self.adb(command, timeout=timeout)
+        return result
 
     @staticmethod
     def account_text_has_google_login(text: str) -> bool:
