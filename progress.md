@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| W3 | DOING | 将已验收的安装、网络恢复和弱网改动推送并快进合并到远端 main | `goal.md`, `specs/weak-network.md`, `progress.md`；当前分支已有提交及本地/远端分支引用 | 相关 Python/Swift 回归通过；无强推、无无关文件；远端 main 与功能分支提交一致；本地 main 快进且用户未提交文档保留 | 已 fetch，远端 main=cce3065 是当前分支祖先；源代码 a70bb46 的 Python 217 项、Swift 89+1 项重新验证通过，diff --check 通过。构建/签名/真实弱网沿用 W1/W2 同源证据；根工作树仅有用户未跟踪文档 | 提交交付记录，快进推送并核对分支；不发布安装包 |
+| W3 | DONE | 将已验收的安装、网络恢复和弱网改动推送并快进合并到远端 main | `goal.md`, `specs/weak-network.md`, `progress.md`；当前分支已有提交及本地/远端分支引用 | 相关 Python/Swift 回归通过；无强推、无无关文件；远端 main 与功能分支提交一致；本地 main 快进且用户未提交文档保留 | 源代码 a70bb46 的 Python 217 项、Swift 89+1 项重新通过，diff --check 通过；构建/签名/真实弱网复用同源 W1/W2 证据。原子推送将远端 main 从 cce3065 快进至 01928bd，ls-remote 确认 main 与 codex/weak-network 一致；本地 main 已快进。用户文档 SHA-256 前后同为 3273ffb68135fb7c2bc633f667fc9cb3a2d4e0aea67bbe501e7bee0016a97a25 | 保留工作树和现有运行中的桌面；不发布安装包 |
 
 ## 2026-10-20 网络场景预设调整
 
