@@ -42,35 +42,26 @@ final class WeakNetworkController: ObservableObject {
     @Published private(set) var status: WeakNetworkStatus?
     @Published private(set) var busy = false
     @Published private(set) var issue: String?
-    @Published var upload = "512"
-    @Published var download = "2048"
-    @Published var latency = "150"
-    @Published var preset = "light"
+    @Published private(set) var preset = "unlimited"
+    private var hasPendingSelection = false
     private var generation = UUID()
     private let api: any WeakNetworkAPI
+    private static let profiles: [String: WeakNetworkProfile] = [
+        "2g": .init(uploadKbps: 128, downloadKbps: 256, latencyMs: 600),
+        "3g": .init(uploadKbps: 512, downloadKbps: 2048, latencyMs: 150),
+        "4g": .init(uploadKbps: 5000, downloadKbps: 10000, latencyMs: 50),
+    ]
 
     init(api: any WeakNetworkAPI = APIClient()) { self.api = api }
 
     var profile: WeakNetworkProfile? {
-        guard let up = Int(upload), let down = Int(download), let delay = Int(latency),
-              (32...100000).contains(up), (32...100000).contains(down), (0...5000).contains(delay)
-        else { return nil }
-        return .init(uploadKbps: up, downloadKbps: down, latencyMs: delay)
+        Self.profiles[preset]
     }
 
     func choosePreset(_ value: String) {
+        guard value == "unlimited" || Self.profiles[value] != nil else { return }
         preset = value
-        switch value {
-        case "light": upload = "512"; download = "2048"; latency = "150"
-        case "severe": upload = "128"; download = "256"; latency = "600"
-        default: break
-        }
-    }
-
-    func editValue(_ value: String, at keyPath: ReferenceWritableKeyPath<WeakNetworkController, String>) {
-        guard self[keyPath: keyPath] != value else { return }
-        self[keyPath: keyPath] = value
-        preset = "custom"
+        hasPendingSelection = true
     }
 
     func selectDevice(_ id: String?) async {
@@ -79,6 +70,8 @@ final class WeakNetworkController: ObservableObject {
         status = nil
         issue = nil
         busy = false
+        preset = "unlimited"
+        hasPendingSelection = false
         await refresh()
     }
 
@@ -89,6 +82,7 @@ final class WeakNetworkController: ObservableObject {
             let result = try await api.readWeakNetwork(deviceID: id)
             guard current == generation, !busy, !Task.isCancelled else { return }
             status = result
+            if !hasPendingSelection { synchronizePreset(with: result) }
             if issue == AppCopy.WeakNetwork.connectionFailed { issue = nil }
         } catch {
             guard current == generation, !Task.isCancelled else { return }
@@ -98,12 +92,12 @@ final class WeakNetworkController: ObservableObject {
 
     func apply() async {
         guard let id = deviceID, !busy else { return }
-        if preset == "normal" {
+        if preset == "unlimited" {
             await restore()
             return
         }
         guard let profile else {
-            issue = AppCopy.WeakNetwork.invalidInput
+            issue = AppCopy.WeakNetwork.selectProfile
             return
         }
         await update { try await self.api.applyWeakNetwork(deviceID: id, profile: profile) }
@@ -112,6 +106,13 @@ final class WeakNetworkController: ObservableObject {
     func restore() async {
         guard let id = deviceID, !busy else { return }
         await update { try await self.api.restoreWeakNetwork(deviceID: id) }
+    }
+
+    private func synchronizePreset(with result: WeakNetworkStatus) {
+        guard result.available, !result.pendingRestore else { return }
+        preset = result.enabled
+            ? Self.profiles.first(where: { $0.value == result.profile })?.key ?? ""
+            : "unlimited"
     }
 
     private func update(_ operation: () async throws -> WeakNetworkStatus) async {
@@ -123,6 +124,10 @@ final class WeakNetworkController: ObservableObject {
             let result = try await operation()
             guard current == generation else { return }
             status = result
+            if result.available, !result.pendingRestore {
+                hasPendingSelection = false
+                synchronizePreset(with: result)
+            }
         } catch {
             guard current == generation else { return }
             issue = AppCopy.WeakNetwork.connectionFailed

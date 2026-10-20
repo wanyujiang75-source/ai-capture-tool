@@ -19,31 +19,33 @@ struct WeakNetworkView: View {
             Picker(AppCopy.WeakNetwork.profile, selection: Binding(
                 get: { controller.preset }, set: { controller.choosePreset($0) }
             )) {
-                Text(AppCopy.WeakNetwork.normalProfile).tag("normal")
-                Text(AppCopy.WeakNetwork.light).tag("light")
-                Text(AppCopy.WeakNetwork.severe).tag("severe")
-                Text(AppCopy.WeakNetwork.custom).tag("custom")
+                Text(AppCopy.WeakNetwork.twoG).tag("2g")
+                Text(AppCopy.WeakNetwork.threeG).tag("3g")
+                Text(AppCopy.WeakNetwork.fourG).tag("4g")
+                Text(AppCopy.WeakNetwork.unlimited).tag("unlimited")
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 480)
             .disabled(controller.busy)
-            HStack(spacing: 18) {
-                field(AppCopy.WeakNetwork.upload, at: \.upload)
-                field(AppCopy.WeakNetwork.download, at: \.download)
-                field(AppCopy.WeakNetwork.latency, at: \.latency)
+            if let selected = controller.profile {
+                Text(AppCopy.WeakNetwork.selected(selected)).font(.callout)
+            } else {
+                Text(controller.preset == "unlimited"
+                     ? AppCopy.WeakNetwork.unlimitedDescription : AppCopy.WeakNetwork.selectProfile)
+                    .font(.callout)
             }
-            .disabled(controller.busy || controller.preset == "normal")
             Text(AppCopy.WeakNetwork.units).font(.caption).foregroundStyle(.secondary)
             if let applied = controller.status?.profile, controller.status?.enabled == true {
                 Text(AppCopy.WeakNetwork.applied(applied)).font(.callout).foregroundStyle(.orange)
             }
             HStack {
-                Button(controller.preset == "normal" ? AppCopy.WeakNetwork.restore : AppCopy.WeakNetwork.apply) {
+                Button(controller.preset == "unlimited" ? AppCopy.WeakNetwork.restore : AppCopy.WeakNetwork.apply) {
                     Task { await controller.apply() }
                 }
                     .disabled(deviceID == nil || controller.busy ||
-                              (controller.preset != "normal" && (!online || controller.status?.pendingRestore == true)))
-                if controller.preset != "normal" {
+                              (controller.preset != "unlimited" &&
+                               (!online || controller.profile == nil || controller.status?.pendingRestore == true)))
+                if controller.preset != "unlimited" {
                     Button(AppCopy.WeakNetwork.restore) { Task { await controller.restore() } }
                         .disabled(deviceID == nil || controller.busy)
                 }
@@ -95,14 +97,4 @@ struct WeakNetworkView: View {
         return status.enabled ? AppCopy.WeakNetwork.active : AppCopy.WeakNetwork.normal
     }
 
-    private func field(_ title: String, at keyPath: ReferenceWritableKeyPath<WeakNetworkController, String>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            TextField(title, text: Binding(get: { controller[keyPath: keyPath] }, set: {
-                controller.editValue($0, at: keyPath)
-            }))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 180)
-        }
-    }
 }

@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-10-20 网络场景预设调整
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| W2 | DONE | 改为 2G/3G/4G/不限制，默认不限制 | `goal.md`, `specs/weak-network.md`, `progress.md`, `macos-native/Sources/AICaptureNativeApp/{WeakNetworkController,WeakNetworkView,AppCopy}.swift`, `macos-native/Tests/AICaptureNativeAppTests/WeakNetworkTests.swift`, `docs/desktop-user-guide.md` | Swift 测试覆盖默认不修改设备、三个预设应用、不限制调用恢复、失败/设备切换与已生效状态同步；构建签名、原生四档切换与实际规则验证、最终恢复不限制 | TDD RED 复现默认值/预设/恢复/同步不符后修复；7 项弱网回归、Swift 89+1 项分批通过；四档原生操作与设备 qdisc 一致；切换页面正确选回 4G；最终无 netem/IFB、API enabled=false、pending_restore=false；构建、运行后严格签名、diff 检查通过 | 仅本地提交，不推送；新版桌面已打开且保持不限制 |
+
 ## 2026-10-19 弱网模拟任务
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
