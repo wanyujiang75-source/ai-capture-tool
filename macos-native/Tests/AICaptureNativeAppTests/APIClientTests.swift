@@ -60,6 +60,27 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 @Suite(.serialized)
 struct APIClientTests {
     @Test
+    func weakNetworkUsesDeviceScopedMethodsAndSnakeCasePayload() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"enabled":true,"pending_restore":false,"available":true,
+         "profile":{"upload_kbps":512,"download_kbps":1024,"latency_ms":200},
+         "message":"active","technical_detail":""}
+        """.utf8))
+        let client = makeClient()
+        let profile = WeakNetworkProfile(uploadKbps: 512, downloadKbps: 1024, latencyMs: 200)
+        let applied = try await client.applyWeakNetwork(deviceID: "device-2", profile: profile)
+        #expect(applied.enabled && applied.profile == profile)
+        let body = try #require(CapturingURLProtocol.observedRequests.first?.httpBody)
+        #expect(try JSONDecoder().decode(WeakNetworkProfile.self, from: body) == profile)
+        _ = try await client.readWeakNetwork(deviceID: "device-2")
+        _ = try await client.restoreWeakNetwork(deviceID: "device-2")
+        #expect(CapturingURLProtocol.observedRequests.map(\.httpMethod) == ["PUT", "GET", "DELETE"])
+        #expect(CapturingURLProtocol.observedRequests.allSatisfy {
+            $0.url?.path == "/api/devices/device-2/weak-network"
+        })
+    }
+
+    @Test
     func startDeviceDecodesPreparedPerformanceProfileMessage() async throws {
         CapturingURLProtocol.reset(
             responseData: Data(

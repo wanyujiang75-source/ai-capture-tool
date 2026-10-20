@@ -14,6 +14,7 @@ final class RuntimeManager {
     private let shutdownCleanupTimeout: TimeInterval
     private var backendProcess: Process?
     private var adoptedBackendPID: Int32?
+    private var statusTask: Task<AppState.RuntimeStatus, Never>?
 
     init(
         backendURL: URL = URL(string: "http://127.0.0.1:7001")!,
@@ -22,7 +23,7 @@ final class RuntimeManager {
         buildID: String = RuntimeManager.defaultBuildID(),
         sessionConfiguration: URLSessionConfiguration = RuntimeManager.defaultSessionConfiguration(),
         processOwnershipVerifier: @escaping (Int32) -> Bool = RuntimeManager.isManagedBackendProcess,
-        shutdownCleanupTimeout: TimeInterval = 4
+        shutdownCleanupTimeout: TimeInterval = 15
     ) {
         self.backendURL = backendURL
         self.runtimeDirectory = runtimeDirectory
@@ -34,6 +35,16 @@ final class RuntimeManager {
     }
 
     func checkStatus() async -> AppState.RuntimeStatus {
+        if let statusTask { return await statusTask.value }
+        // Coalesce refreshes across suspension points, including orphan recovery.
+        let task = Task { await self.performStatusCheck() }
+        statusTask = task
+        let result = await task.value
+        statusTask = nil
+        return result
+    }
+
+    private func performStatusCheck() async -> AppState.RuntimeStatus {
         do {
             try FileManager.default.createDirectory(
                 at: runtimeDirectory,
@@ -113,7 +124,22 @@ final class RuntimeManager {
                 return .incompatible(activeCapture: status.activeSession != nil)
             }
             if backendProcess == nil {
-                adoptedBackendPID = recordedManagedBackendPID()
+                let candidate = recordedManagedBackendPID()
+                if let candidate, candidate != adoptedBackendPID {
+                    // A UI crash can leave its backend alive; server startup recovery won't run.
+                    var recovery = URLRequest(url: backendURL.appendingPathComponent("api/desktop/recover-weak-network"))
+                    recovery.httpMethod = "POST"
+                    recovery.timeoutInterval = 15
+                    do {
+                        let (_, response) = try await session.data(for: recovery)
+                        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                            return .failed(AppCopy.WeakNetwork.connectionFailed)
+                        }
+                    } catch {
+                        return .failed(AppCopy.WeakNetwork.connectionFailed)
+                    }
+                }
+                adoptedBackendPID = candidate
             }
             return .ready(.ready(backendURL.absoluteString))
         } catch {

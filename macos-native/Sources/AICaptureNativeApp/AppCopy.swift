@@ -1,6 +1,36 @@
 import Foundation
 
 enum AppCopy {
+    enum WeakNetwork {
+        static let title = "弱网模拟"
+        static let scope = "仅影响当前模拟器，可与抓包同时使用。其他应用（包括 Google Play）也会变慢；不会改变 Mac 网络。"
+        static let profile = "网络场景"
+        static let normalProfile = "正常网络"
+        static let light = "轻度弱网"
+        static let severe = "重度弱网"
+        static let custom = "自定义"
+        static let upload = "上传上限（kbps）"
+        static let download = "下载上限（kbps）"
+        static let latency = "额外往返延迟（ms）"
+        static let units = "速率范围 32–100000 kbps；延迟范围 0–5000 ms。速率为每个网卡的共享上限，实际传输还受网络和应用影响。"
+        static let apply = "应用弱网"
+        static let restore = "恢复网络"
+        static let normal = "未启用弱网"
+        static let active = "弱网已开启"
+        static let pending = "等待恢复网络"
+        static let failed = "弱网设置失败"
+        static let checking = "正在检查网络设置…"
+        static let changing = "正在调整模拟器网络…"
+        static let offline = "请先启动模拟器，再应用弱网。退出工具时会恢复网络；异常退出后将在下次打开时恢复。"
+        static let invalidInput = "请输入 32–100000 的上传、下载速率，以及 0–5000 的额外往返延迟。"
+        static let connectionFailed = "无法确认网络设置，请检查本机服务和模拟器连接，再点击恢复网络。"
+        static let technicalDetail = "弱网技术详情"
+        static let close = "关闭检查"
+        static func applied(_ profile: WeakNetworkProfile) -> String {
+            "当前生效：上传 \(profile.uploadKbps) kbps，下载 \(profile.downloadKbps) kbps，额外往返延迟 \(profile.latencyMs) ms。"
+        }
+    }
+
     enum Navigation {
         static let capture = "抓包"
         static let installApps = "安装应用"

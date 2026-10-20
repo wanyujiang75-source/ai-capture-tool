@@ -3,6 +3,7 @@ import json
 import os
 import platform
 import plistlib
+import shutil
 import signal
 import socket
 import subprocess
@@ -41,6 +42,24 @@ EXPECTED_ICONSET_FILES = [
 
 @unittest.skipUnless(platform.system() == "Darwin", "native app packaging requires macOS")
 class NativeAppPackagingTests(unittest.TestCase):
+    def test_missing_web_assets_fail_before_replacing_existing_app(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            script = root / "macos-native" / "scripts" / "build-app.sh"
+            script.parent.mkdir(parents=True)
+            shutil.copy2(BUILD_SCRIPT, script)
+            marker = root / "macos-native" / "build" / "抓包工具.app" / "keep"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("previous build", encoding="utf-8")
+            result = subprocess.run(
+                ["bash", str(script)], capture_output=True, text=True,
+                env={**os.environ, "AI_CAPTURE_BUILD_ID": "test-missing-assets"},
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("desktop web assets are missing", result.stderr)
+            self.assertIn("npm --prefix web run build", result.stderr)
+            self.assertEqual("previous build", marker.read_text(encoding="utf-8"))
+
     def test_source_icon_meets_asset_contract(self) -> None:
         self.assertTrue(SOURCE_ICON.is_file(), SOURCE_ICON)
         result = subprocess.run(

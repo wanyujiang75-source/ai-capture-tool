@@ -43,7 +43,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -65,6 +65,26 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPacka
     func getDevices() async throws -> [CaptureDevice] {
         let response: DevicesResponse = try await get("api/devices")
         return response.devices
+    }
+
+    func readWeakNetwork(deviceID: String) async throws -> WeakNetworkStatus {
+        try await get("api/devices/\(deviceID)/weak-network", timeoutInterval: 30)
+    }
+
+    func applyWeakNetwork(deviceID: String, profile: WeakNetworkProfile) async throws -> WeakNetworkStatus {
+        var request = URLRequest(url: url(path: "api/devices/\(deviceID)/weak-network", queryItems: []))
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(profile)
+        return try await send(request)
+    }
+
+    func restoreWeakNetwork(deviceID: String) async throws -> WeakNetworkStatus {
+        var request = URLRequest(url: url(path: "api/devices/\(deviceID)/weak-network", queryItems: []))
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 60
+        return try await send(request)
     }
 
     func discoverLogDevices() async throws -> DeviceDiscoveryResponse {

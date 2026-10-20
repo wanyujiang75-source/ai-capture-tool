@@ -5,13 +5,18 @@ struct CaptureView: View {
     @Binding var showsRuntimeCheck: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            header
-            targetPanel
-            workflowPanel
-            Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+                targetPanel
+                workflowPanel
+                WeakNetworkView(
+                    deviceID: appState.selectedDeviceID,
+                    online: appState.selectedDevice?.emulator?.bootCompleted == true
+                )
+            }
+            .padding(28)
         }
-        .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .task {

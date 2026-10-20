@@ -33,6 +33,9 @@ from .readiness import build_readiness_report
 from .results import build_curl, get_flow_detail, scan_capture
 from .runner import CommandResult, ConsoleRunner
 from .store import CAPTURE_MODES, CaptureStore, DEFAULT_DEVICE_ID, validate_app_environment
+from .weak_network import WeakNetworkService
+from .weak_network_api import weak_network_router
+from .weak_network_device import EmulatorNetworkDevice
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -184,6 +187,14 @@ def runner_for_log_device_id(device_id: str):
     if hasattr(runner, "for_device"):
         return runner.for_device(device)
     return runner
+
+
+weak_network_service = WeakNetworkService(
+    RUNTIME_DIR / "weak-network",
+    lambda device_id: EmulatorNetworkDevice(runner_for_log_device_id(device_id)),
+    lambda saved: EmulatorNetworkDevice(ConsoleRunner(ROOT_DIR, adb_serial=saved["serial"], avd_name=saved["avd"])),
+)
+app.include_router(weak_network_router(weak_network_service, device_or_404))
 
 
 def prepare_device_runner_for_launch(device_id: str):
@@ -1076,6 +1087,7 @@ def build_setup_state(*, force_progress: bool = False) -> Dict[str, Any]:
 def logcat_reaper_loop() -> None:
     while not logcat_reaper_stop_event.wait(LOGCAT_REAPER_INTERVAL_SECONDS):
         logcat_service.reap_idle()
+        weak_network_service.recover()
 
 
 def start_logcat_reaper() -> None:
@@ -1111,6 +1123,7 @@ def startup() -> None:
 def shutdown() -> None:
     stop_logcat_reaper()
     logcat_service.stop_all()
+    weak_network_service.restore_all()
     if desktop_runtime_metadata()["enabled"]:
         stop_all_active_captures()
     clear_project_capture_records()
@@ -2645,6 +2658,7 @@ def api_stop_capture(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
 
 @app.post("/api/desktop/stop-captures")
 def api_desktop_stop_captures() -> Dict[str, Any]:
+    weak_network_service.restore_all()
     return stop_all_active_captures()
 
 

@@ -17,6 +17,12 @@ ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.png"
 ICONSET_DIR="$ROOT_DIR/build/AppIcon.iconset"
 ICON_OUTPUT="$RESOURCES_DIR/AppIcon.icns"
 
+if [[ ! -f "$PROJECT_ROOT/web/dist/index.html" ]]; then
+  echo "desktop web assets are missing: $PROJECT_ROOT/web/dist/index.html" >&2
+  echo "From the project root, run: npm --prefix web ci && npm --prefix web run build" >&2
+  exit 1
+fi
+
 if [[ -z "$BUILD_ID" ]]; then
   BUILD_ID="$(git -C "$PROJECT_ROOT" rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
 fi
@@ -79,9 +85,7 @@ cp -R "$PROJECT_ROOT/tools/httptoolkit-frida" "$BACKEND_DIR/tools/httptoolkit-fr
 cp "$PROJECT_ROOT/requirements-console.txt" "$BACKEND_DIR/requirements-console.txt"
 mkdir -p "$BACKEND_DIR/config" "$BACKEND_DIR/web"
 cp "$PROJECT_ROOT/config/local.example.json" "$BACKEND_DIR/config/local.example.json"
-if [[ -d "$PROJECT_ROOT/web/dist" ]]; then
-  cp -R "$PROJECT_ROOT/web/dist" "$BACKEND_DIR/web/dist"
-fi
+cp -R "$PROJECT_ROOT/web/dist" "$BACKEND_DIR/web/dist"
 find "$BACKEND_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
 find "$BACKEND_DIR" -name '*.pyc' -delete
 

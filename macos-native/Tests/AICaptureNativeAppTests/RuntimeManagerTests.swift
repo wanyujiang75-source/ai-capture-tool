@@ -5,13 +5,23 @@ import Testing
 @testable import AICaptureNativeApp
 
 private final class RuntimeStatusURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
     nonisolated(unsafe) static var responseBodies: [Data] = []
     nonisolated(unsafe) static var receivedRequests: [URLRequest] = []
     nonisolated(unsafe) static var stallRequests = false
+    nonisolated(unsafe) static var recoveryDelay: TimeInterval = 0
+    nonisolated(unsafe) static var cleanupDelay: TimeInterval = 0
+    nonisolated(unsafe) static var cleanupCompleted = false
+    private let completionLock = NSLock()
+    private var stopped = false
 
-    static func reset(buildIDs: [String?], activeSession: Bool = false, stallRequests: Bool = false) {
+    static func reset(buildIDs: [String?], activeSession: Bool = false, stallRequests: Bool = false,
+                      recoveryDelay: TimeInterval = 0, cleanupDelay: TimeInterval = 0) {
         receivedRequests = []
         self.stallRequests = stallRequests
+        self.recoveryDelay = recoveryDelay
+        self.cleanupDelay = cleanupDelay
+        cleanupCompleted = false
         responseBodies = buildIDs.map { buildID in
             let buildIDField = buildID.map { "\"build_id\": \"\($0)\"" } ?? ""
             let activeSessionField = activeSession ? "{\"id\": 42}" : "null"
@@ -32,6 +42,8 @@ private final class RuntimeStatusURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func startLoading() {
+        Self.lock.lock()
+        defer { Self.lock.unlock() }
         Self.receivedRequests.append(request)
         if Self.stallRequests {
             return
@@ -45,12 +57,31 @@ private final class RuntimeStatusURLProtocol: URLProtocol, @unchecked Sendable {
         let body = Self.responseBodies.isEmpty
             ? Data("{\"desktop\": {\"enabled\": true}}".utf8)
             : Self.responseBodies.removeFirst()
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
+        let complete: @Sendable () -> Void = { [self] in
+            completionLock.lock()
+            defer { completionLock.unlock() }
+            guard !stopped else { return }
+            if request.url?.path == "/api/desktop/stop-captures" {
+                Self.cleanupCompleted = true
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        if request.url?.path == "/api/desktop/stop-captures", Self.cleanupDelay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.cleanupDelay, execute: complete)
+        } else if request.url?.path == "/api/desktop/recover-weak-network", Self.recoveryDelay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.recoveryDelay, execute: complete)
+        } else {
+            complete()
+        }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        completionLock.lock()
+        stopped = true
+        completionLock.unlock()
+    }
 }
 
 @MainActor
@@ -93,8 +124,8 @@ struct RuntimeManagerTests {
         #expect(kill(pid, 0) != 0)
     }
 
-    @Test
-    func shutdownRequestsCaptureCleanupForTheOwnedBackend() throws {
+    @Test(arguments: [0.0, 5.0])
+    func shutdownRequestsCaptureCleanupForTheOwnedBackend(cleanupDelay: TimeInterval) throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let projectRoot = temporaryDirectory.appendingPathComponent("backend", isDirectory: true)
@@ -111,7 +142,7 @@ struct RuntimeManagerTests {
         """.write(to: launcher, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcher.path)
 
-        RuntimeStatusURLProtocol.reset(buildIDs: [])
+        RuntimeStatusURLProtocol.reset(buildIDs: [], cleanupDelay: cleanupDelay)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RuntimeStatusURLProtocol.self]
         let manager = RuntimeManager(
@@ -124,6 +155,7 @@ struct RuntimeManagerTests {
 
         manager.shutdown()
 
+        #expect(RuntimeStatusURLProtocol.cleanupCompleted)
         #expect(RuntimeStatusURLProtocol.receivedRequests.contains { request in
             request.httpMethod == "POST"
                 && request.url?.path == "/api/desktop/stop-captures"
@@ -385,7 +417,7 @@ struct RuntimeManagerTests {
             encoding: .utf8
         )
 
-        RuntimeStatusURLProtocol.reset(buildIDs: ["current-build"])
+        RuntimeStatusURLProtocol.reset(buildIDs: Array(repeating: "current-build", count: 5), recoveryDelay: 0.1)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RuntimeStatusURLProtocol.self]
         let manager = RuntimeManager(
@@ -396,7 +428,17 @@ struct RuntimeManagerTests {
             processOwnershipVerifier: { $0 == orphan.processIdentifier }
         )
 
+        async let first = manager.checkStatus()
+        async let concurrent = manager.checkStatus()
+        let results = await [first, concurrent]
+        #expect(results == [.ready("http://127.0.0.1:65523"), .ready("http://127.0.0.1:65523")])
         #expect(await manager.checkStatus() == .ready("http://127.0.0.1:65523"))
+        #expect(RuntimeStatusURLProtocol.receivedRequests.filter {
+            $0.httpMethod == "POST" && $0.url?.path == "/api/desktop/recover-weak-network"
+        }.count == 1)
+        #expect(!RuntimeStatusURLProtocol.receivedRequests.contains {
+            $0.url?.path == "/api/desktop/stop-captures"
+        })
         manager.shutdown()
 
         #expect(!orphan.isRunning)

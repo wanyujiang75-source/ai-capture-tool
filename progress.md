@@ -1,5 +1,19 @@
 # 进度记录
 
+## 2026-10-19 弱网模拟任务
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| W1 | DONE | 桌面弱网面板、设备限速和恢复机制及完整测试 | `goal.md`, `specs/weak-network.md`, `progress.md`, `capture_console/weak_network*.py`, `capture_console/app.py`, `tests/test_weak_network*.py`, `tests/fixtures/WeakNetworkProbe.java`, `scripts/qa_weak_network*.py`, `macos-native/Sources/AICaptureNativeApp/{WeakNetwork*,APIClient,AppCopy,CaptureView,RuntimeManager}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{WeakNetworkTests,APIClientTests,RuntimeManagerTests}.swift`, `macos-native/scripts/build-app.sh`, `tests/test_native_app_packaging.py`, `docs/desktop-user-guide.md` | 单元/API/Swift 测试、真实上下行/延迟测量、抓包共存、恢复和桌面 UI 验收、构建签名通过；不影响其他设备/主机网络 | 217 项后端、Swift 分批 88+1 项通过；真实直连/SOCKS5 测量和 9 条 HTTP 200 响应通过；孤儿后端、崩溃重开和优雅退出恢复通过。原生验收发现缺资源包、焦点误改预设及 4 秒清理截断，均经 RED 回归修复。r7 原生冷启动、全部场景/无效输入/手动恢复/退出重开通过，设备规则和恢复记录清空，7001 退出释放；重开 build_id 正确、无活动抓包、严格签名通过 | 本地提交；不推送、不发布 |
+
+W1 续验：r5 内嵌 Python + 包内后端通过隔离生命周期测试，清理 3.158 秒，异常重启恢复及运行后签名通过。二进制直接 cmp 因重签名不相同，改核对 Mach-O UUID 一致并验证严格签名。此前 Mac 锁屏，UI 验收未完成，不记为 DONE。
+
+2026-10-20 UI 验收发现：r5 缺少 web/dist/index.html，实际桌面启动脚本拒绝启动后端（之前直启 uvicorn 的测试未覆盖）；弱网字段仅切换焦点也会把预设改成自定义。W1 保持 DOING，Scope Files 补充 `macos-native/scripts/build-app.sh`、`tests/test_native_app_packaging.py`；验收补充构建缺资源时不替换旧包、包内真实启动脚本冷启动、焦点切换保留预设。旧抓包已通过桌面正常停止并保留结果，未动登录与应用数据。
+
+续验：以上两处已通过回归及原生操作；217 项 Python、88+1 项 Swift、缺资源保护和搬移后正式启动脚本通过。r6 桌面退出仍发现旧 4 秒清理窗口截断弱网恢复，设备尚有部分规则及恢复记录，不能判通过。继续修复有界退出等待，增加超过 4 秒的清理回归，再重复原生退出验收。npm audit 开发依赖报告 8 项，生产依赖 0 项；未扩大本任务修改依赖。
+
+最终验收（2026-10-20）：延迟 5 秒清理回归在旧 4 秒窗口失败，调整为有界 15 秒后通过，超时退出与外部进程保护回归保持通过。r7 实际桌面应用弱网后 Command-Q，设备恢复默认 qdisc、系统 clsact 保留、IFB 与恢复记录清除，后端日志完整 shutdown、端口 7001 释放；重开界面“未启用弱网”，API enabled=false / pending_restore=false / active_session=null。最终 App 运行后严格签名、git diff --check 通过。界面与使用说明已验收，本次仅本地交付。
+
 ## 2026-05-12
 
 - 读取了当前 README、FastAPI 后端入口、抓包脚本和核心测试。
