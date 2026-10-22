@@ -19,7 +19,7 @@
  *
  *************************************************************************************************/
 
-const injectAndroidSystemCertificate = () => Java.perform(() => {
+const injectAndroidSystemCertificate = () => {
     // First, we build a JVM representation of our certificate:
     const String = Java.use("java.lang.String");
     const ByteArrayInputStream = Java.use('java.io.ByteArrayInputStream');
@@ -33,7 +33,7 @@ const injectAndroidSystemCertificate = () => Java.perform(() => {
     } catch (e) {
         console.error('Could not parse provided certificate PEM!');
         console.error(e);
-        Java.use('java.lang.System').exit(1);
+        throw e;
     }
 
     // Then we hook TrustedCertificateIndex. This is used for caching known trusted certs within Conscrypt -
@@ -100,10 +100,17 @@ const injectAndroidSystemCertificate = () => Java.perform(() => {
     // the underlying cert checking component.
 
     console.log('== System certificate trust injected ==');
-});
+    send({ type: 'android-system-ca-ready' });
+};
 
 if (globalThis.Java?.available) {
-    injectAndroidSystemCertificate();
+    Java.perform(() => {
+        try {
+            injectAndroidSystemCertificate();
+        } catch (error) {
+            send({ type: 'android-system-ca-error', error: String(error) });
+        }
+    });
 } else {
-    console.warn('Android system certificate injection skipped: Frida Java bridge is unavailable');
+    throw new Error('Android certificate injection failed: Frida Java bridge is unavailable');
 }

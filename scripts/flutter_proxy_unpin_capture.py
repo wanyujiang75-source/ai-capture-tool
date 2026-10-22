@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import argparse
+import contextlib
 import datetime as dt
+from importlib import resources
 import json
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 try:
@@ -194,10 +197,54 @@ def build_config(repo_dir, cert_pem, proxy_host, proxy_port, debug, socks5=False
     return source
 
 
+def load_android_java_bridge():
+    try:
+        source = resources.files("frida_tools").joinpath("bridges", "java.js").read_text(encoding="utf-8")
+        if not source.strip():
+            raise ValueError("empty Java bridge resource")
+    except (ImportError, OSError, ValueError) as exc:
+        raise RuntimeError("Reinstall the packaged frida-tools runtime: Android Java bridge is missing") from exc
+    # Frida 17 removed built-in bridges; use the offline bridge shipped with frida-tools.
+    return "if (!globalThis.Java) {\n(() => {\n" + source + "\nglobalThis.Java = bridge;\n})();\n}"
+
+
+def load_capture_script(script, on_message, *, require_android_ca, timeout=20):
+    ready = threading.Event()
+    errors = []
+
+    def handle_message(message, data):
+        payload = message.get("payload") or {}
+        if message.get("type") == "error":
+            errors.append(message.get("description") or "script error")
+            ready.set()
+        elif isinstance(payload, dict):
+            if payload.get("type") == "android-system-ca-error":
+                errors.append(payload.get("error") or "certificate hook failed")
+                ready.set()
+            elif payload.get("type") == "android-system-ca-ready":
+                ready.set()
+        on_message(message, data)
+
+    script.on("message", handle_message)
+    try:
+        script.load()
+        if require_android_ca:
+            if not ready.wait(timeout):
+                errors.append("timed out waiting for certificate trust")
+            if errors:
+                raise RuntimeError("Android certificate injection failed: " + "; ".join(errors))
+    except Exception:
+        with contextlib.suppress(Exception):
+            script.unload()
+        raise
+
+
 def build_combined_script(args):
     repo_dir = args.httptoolkit_dir
     cert_pem = read_text(args.cert)
     parts = []
+    if args.android_system_cert_hook:
+        parts.append(load_android_java_bridge())
     if not args.no_proxy_env:
         proxy = f"http://{args.proxy_host}:{args.proxy_port}"
         env = {
@@ -230,6 +277,7 @@ def build_combined_script(args):
 
 def main():
     root = os.getcwd()
+    runtime_dir = os.environ.get("CAPTURE_RUNTIME_DIR") or os.environ.get("RUNTIME_DIR") or os.path.join(root, "runtime")
     parser = argparse.ArgumentParser(description="Run a Flutter Android app through mitmproxy with Frida proxy env + certificate bypass hooks.")
     parser.add_argument("--serial", default=os.environ.get("ADB_SERIAL") or "emulator-5554")
     parser.add_argument("--package", default=DEFAULT_PACKAGE)
@@ -239,7 +287,7 @@ def main():
     parser.add_argument("--frida-host", default="127.0.0.1:27042", help="Frida remote device endpoint. Use the emulator-specific adb forward to avoid attaching to another USB device.")
     parser.add_argument("--cert", default=os.path.expanduser("~/.mitmproxy/mitmproxy-ca-cert.pem"))
     parser.add_argument("--httptoolkit-dir", default=os.path.join(root, "tools", "httptoolkit-frida"))
-    parser.add_argument("--outdir", default=os.path.join(root, "runtime", "captures", f"flutter-proxy-unpin-{now_label()}"))
+    parser.add_argument("--outdir", default=os.path.join(runtime_dir, "captures", f"flutter-proxy-unpin-{now_label()}"))
     parser.add_argument("--no-force-stop", action="store_true")
     parser.add_argument("--pid-timeout", type=int, default=60, help="Seconds to wait for the target package process after launch.")
     parser.add_argument("--no-proxy-env", action="store_true", help="Do not inject HTTP_PROXY/HTTPS_PROXY. Use this with SOCKS5 native transparent redirection to avoid protocol conflicts.")
@@ -251,10 +299,12 @@ def main():
     parser.add_argument("--flutter-verify-success-value", type=int, choices=(0, 1), default=0, help="Return value used by the Flutter ssl_verify_peer_cert hook.")
     parser.add_argument("--duration", type=int, default=0, help="Seconds to keep hooks alive. 0 means until Ctrl-C.")
     args = parser.parse_args()
+    script_source = build_combined_script(args)
 
     os.makedirs(args.outdir, exist_ok=True)
+    os.makedirs(runtime_dir, exist_ok=True)
     log_path = os.path.join(args.outdir, "frida-unpin.log")
-    last_path = os.path.join(root, "runtime", "last-flutter-proxy-unpin-dir.txt")
+    last_path = os.path.join(runtime_dir, "last-flutter-proxy-unpin-dir.txt")
     with open(last_path, "w", encoding="utf-8") as fp:
         fp.write(args.outdir + "\n")
 
@@ -285,7 +335,6 @@ def main():
     else:
         device = frida.get_usb_device(timeout=10)
 
-    script_source = build_combined_script(args)
     state = {"session": None, "script": None, "pid": None, "detached": False}
 
     def detach_current():
@@ -312,9 +361,12 @@ def main():
             session.on("detached", on_detached)
         except Exception:
             pass
-        script = session.create_script(script_source)
-        script.on("message", on_message)
-        script.load()
+        try:
+            script = session.create_script(script_source)
+            load_capture_script(script, on_message, require_android_ca=args.android_system_cert_hook)
+        except Exception:
+            session.detach()
+            raise
         state["session"] = session
         state["script"] = script
         state["pid"] = target_pid
@@ -329,8 +381,7 @@ def main():
         except Exception as exc:
             log(f"initial frida attach failed pid={pid}: {type(exc).__name__}: {exc}")
             if time.time() >= attach_deadline:
-                log("initial frida attach timed out; keeping hook process alive for reattach")
-                break
+                raise RuntimeError("initial frida attach timed out; capture hooks were not initialized") from exc
             time.sleep(2)
             pid = current_pid(args.serial, args.package) or pid
 

@@ -173,7 +173,12 @@ class NativeAppPackagingTests(unittest.TestCase):
                 [
                     str(relocated_python),
                     "-c",
-                    "import fastapi, frida, mitmproxy, uvicorn; print('runtime-ok')",
+                    "import fastapi, frida, mitmproxy, uvicorn; "
+                    "import runpy, sys; "
+                    "capture = runpy.run_path(sys.argv[1]); "
+                    "assert 'globalThis.Java = bridge' in capture['load_android_java_bridge'](); "
+                    "print('runtime-ok')",
+                    str(relocated_app / "Contents/Resources/backend/scripts/flutter_proxy_unpin_capture.py"),
                 ],
                 capture_output=True,
                 text=True,

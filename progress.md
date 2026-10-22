@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-10-22 内嵌网页证书修复
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| C1 | DONE | 修复 Frida 17 下 Android 证书注入跳过与内嵌网页白屏 | `goal.md`, `progress.md`, `specs/webview-certificate-trust.md`, `scripts/flutter_proxy_unpin_capture.py`, `tools/httptoolkit-frida/android/android-system-certificate-injection.js`, `tests/test_flutter_proxy_unpin_capture.py`, `tests/test_native_app_packaging.py`，本地构建与目标设备验收 | TDD RED/GREEN、脚本与打包回归、App 构建签名、真实证书注入及页面链路验证；不清数据、不改宿主机信任、不发布 | 198 项相关回归与 8 项打包测试通过；Frida 17 显式加载内置 Java bridge，等待 CA ready，失败不再静默跳过或无限存活。#67 捕获同步页与资源 HTTP 200，用户确认“可以了”；无关自签名证书仍拒绝。验收发现包内日志破坏签名，经 RED 修复到 CAPTURE_RUNTIME_DIR；最终 r2 启动 #68、CA ready、包内无 runtime 目录，运行后严格签名及 diff 检查通过 | 保持桌面与 #68 抓包运行；仅本地提交，未推送或更新下载包 |
+
 ## 2026-10-22 Jenkins 刷新性能问题记录
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
