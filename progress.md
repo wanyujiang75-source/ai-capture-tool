@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-10-22 Jenkins 刷新性能问题记录
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| J2-RECORD | DONE | 记录安装包刷新慢的证据、根因及后续验收标准 | `goal.md`, `progress.md`, `specs/jenkins-refresh-performance.md` | 与只读实测一致，明确尚未修复，git diff --check 通过；不修改产品代码或 Jenkins | 完整列表约 9.21 秒；36 次串行查询约 10.06 秒，ai-music-apitest 单任务约 6.8 秒且无安装包；记录包含 43,020 条产物与约 5.7 MB 的复核证据及后续验收，diff --check 通过 | 问题保留待修复；仅本地文档提交，不推送；当前白屏另做只读诊断 |
+
 ## 2026-10-20 远端合并交付
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
