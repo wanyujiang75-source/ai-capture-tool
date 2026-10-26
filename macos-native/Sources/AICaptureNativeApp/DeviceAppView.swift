@@ -62,11 +62,12 @@ struct DeviceAppView: View {
             Spacer()
             Button {
                 Task {
-                    await appState.refreshWorkspaceData()
+                    await appState.refreshJenkinsPackages()
                 }
             } label: {
-                Label("刷新安装包", systemImage: "arrow.clockwise")
+                Label(AppCopy.Install.refreshPackages, systemImage: "arrow.clockwise")
             }
+            .disabled(appState.jenkinsLoadState == .loading)
         }
     }
 
@@ -175,15 +176,22 @@ struct DeviceAppView: View {
     private var jenkinsContent: some View {
         switch appState.jenkinsLoadState {
         case .idle, .loading:
-            ProgressView("正在获取 Jenkins 最新安装包…")
+            ProgressView(appState.jenkinsPackages.isEmpty ? AppCopy.Install.loadingPackages : AppCopy.Install.refreshingPackages)
                 .padding(.vertical, 12)
         case .failed:
-            EmptyStateView(text: AppCopy.Install.jenkinsUnavailable)
+            Text(appState.jenkinsPackages.isEmpty ? AppCopy.Install.jenkinsUnavailable : AppCopy.Install.refreshFailedWithPrevious)
+                .foregroundStyle(.orange)
         case .loaded:
-            if appState.jenkinsPackages.isEmpty {
+            if !appState.jenkinsRefreshWarning.isEmpty {
+                Text(appState.jenkinsRefreshWarning)
+                    .foregroundStyle(.orange)
+            } else if appState.jenkinsPackages.isEmpty {
                 EmptyStateView(text: AppCopy.Install.missingArtifact)
-            } else if filteredPackages.isEmpty {
-                EmptyStateView(text: "没有匹配的安装包，请更换搜索关键词。")
+            }
+        }
+        if !appState.jenkinsPackages.isEmpty {
+            if filteredPackages.isEmpty {
+                EmptyStateView(text: AppCopy.Install.noMatchingPackages)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(filteredPackages) { package in

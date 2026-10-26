@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
+import re
 import shutil
+import threading
 import time
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -47,23 +52,59 @@ class JenkinsPackageSource:
         self.config = config
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         self.last_errors: list[str] = []
+        self._lock = threading.Lock()
+        self._inflight: Future | None = None
+        self._artifact_cache: OrderedDict = OrderedDict()
 
     def list_latest_packages(self) -> list[dict[str, Any]]:
-        self.last_errors = []
-        data = self._get_json("/api/json?tree=jobs[name,url,color]")
-        packages: list[dict[str, Any]] = []
-        for job in data.get("jobs", []):
-            name = str(job.get("name") or "")
-            if not name or self._skip_job(name, str(job.get("color") or "")):
-                continue
+        result = self.list_package_snapshot()
+        self.last_errors = result["errors"]
+        return result["packages"]
+
+    def list_package_snapshot(self) -> dict[str, Any]:
+        # Share in-flight work, not stale list results: every later refresh checks builds.
+        with self._lock:
+            future = self._inflight
+            leader = future is None
+            if leader:
+                future = self._inflight = Future()
+        if leader:
             try:
-                package = self._latest_package_for_job(name)
-            except JenkinsSourceError as exc:
-                self.last_errors.append(f"{name}: {exc}")
-                continue
-            if package:
-                packages.append(package)
-        return sorted(packages, key=lambda item: int(item.get("timestamp") or 0), reverse=True)
+                future.set_result(self._load_package_snapshot())
+            except Exception as exc:
+                future.set_exception(exc)
+            finally:
+                with self._lock:
+                    self._inflight = None
+        return copy.deepcopy(future.result())
+
+    def _load_package_snapshot(self) -> dict[str, Any]:
+        data = self._get_json(
+            "/api/json?tree=jobs[name,color,builds[number,result,timestamp]"
+            f"{{0,{self.config.artifact_limit}}}]"
+        )
+        packages: list[dict[str, Any]] = []
+        errors, failed_jobs = [], []
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="jenkins-list") as pool:
+            queries = [
+                (str(job["name"]), pool.submit(self._latest_package_for_job, str(job["name"]), job.get("builds", [])))
+                for job in data.get("jobs", [])
+                if job.get("name") and not self._skip_job(str(job["name"]), str(job.get("color") or ""))
+            ]
+            for name, query in queries:
+                try:
+                    package = query.result()
+                except JenkinsSourceError as exc:
+                    errors.append(f"{name}: {exc}")
+                    failed_jobs.append(name)
+                    continue
+                if package:
+                    packages.append(package)
+        return {
+            "packages": sorted(packages, key=lambda item: int(item.get("timestamp") or 0), reverse=True),
+            "errors": errors,
+            "failed_jobs": failed_jobs,
+        }
 
     def download_package(
         self,
@@ -92,22 +133,16 @@ class JenkinsPackageSource:
             raise JenkinsSourceError(f"downloaded Jenkins artifact is empty: {filename}")
         return filename, destination
 
-    def _latest_package_for_job(self, job_name: str) -> dict[str, Any] | None:
-        path = (
-            f"/job/{self._quote_segment(job_name)}/api/json?"
-            "tree=builds[number,result,timestamp,url,artifacts[fileName,relativePath]]"
-            f"{{0,{self.config.artifact_limit}}}"
-        )
-        data = self._get_json(path)
-        for build in data.get("builds", []):
+    def _latest_package_for_job(self, job_name: str, builds: list[dict[str, Any]]) -> dict[str, Any] | None:
+        for build in builds[:self.config.artifact_limit]:
             if build.get("result") != "SUCCESS":
                 continue
-            artifacts = self._installable_artifacts(build.get("artifacts") or [])
+            build_number = int(build.get("number") or 0)
+            timestamp = int(build.get("timestamp") or 0)
+            artifacts = self._cached_build_artifacts(job_name, build_number, timestamp)
             if not artifacts:
                 continue
             artifact = artifacts[0]
-            build_number = int(build.get("number") or 0)
-            timestamp = int(build.get("timestamp") or 0)
             return {
                 "id": f"{job_name}-{build_number}-{artifact['relative_path']}",
                 "job_name": job_name,
@@ -121,6 +156,25 @@ class JenkinsPackageSource:
                 "environment": self._infer_environment(job_name),
             }
         return None
+
+    def _cached_build_artifacts(self, job_name: str, number: int, timestamp: int) -> list[dict[str, str]]:
+        key = (job_name, number, timestamp)
+        with self._lock:
+            cached = self._artifact_cache.get(key)
+            if cached is not None and cached[0] > time.monotonic():
+                self._artifact_cache.move_to_end(key)
+                return cached[1]
+        data = self._get_json(
+            f"/job/{self._quote_segment(job_name)}/{number}/api/json?"
+            "tree=artifacts[fileName,relativePath]"
+        )
+        artifacts = self._installable_artifacts(data.get("artifacts") or [])
+        with self._lock:
+            self._artifact_cache[key] = (time.monotonic() + 300, artifacts)
+            self._artifact_cache.move_to_end(key)
+            while len(self._artifact_cache) > 256:
+                self._artifact_cache.popitem(last=False)
+        return artifacts
 
     def _artifact_for_build(
         self,
@@ -145,7 +199,8 @@ class JenkinsPackageSource:
     def _get_json(self, path_or_url: str) -> dict[str, Any]:
         request = self._request(self._absolute_url(path_or_url))
         try:
-            with self._opener.open(request, timeout=15) as response:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(request, timeout=15) as response:
                 payload = response.read()
         except Exception as exc:
             raise JenkinsSourceError(f"failed to read Jenkins API: {exc}") from exc
@@ -181,6 +236,8 @@ class JenkinsPackageSource:
         if color == "disabled":
             return True
         lower_name = name.lower()
+        if "api-test" in self.config.job_exclude_keywords and re.search(r"(?:^|[-_])api[-_]?test(?:$|[-_])", lower_name):
+            return True
         return any(keyword.lower() in lower_name for keyword in self.config.job_exclude_keywords)
 
     def _installable_artifacts(self, artifacts: list[dict[str, Any]]) -> list[dict[str, str]]:

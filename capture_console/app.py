@@ -2175,17 +2175,18 @@ def api_delete_app(app_id: int) -> Dict[str, Any]:
 @app.get("/api/package-sources/jenkins/packages")
 def api_jenkins_packages() -> Dict[str, Any]:
     try:
-        packages = jenkins_source.list_latest_packages()
+        snapshot = jenkins_source.list_package_snapshot()
     except JenkinsSourceError as exc:
         raise HTTPException(status_code=502, detail={"message": str(exc)}) from exc
     return {
         "source": {
             "type": "jenkins",
             "base_url": jenkins_source.config.base_url,
-            "count": len(packages),
-            "errors": jenkins_source.last_errors[:20],
+            "count": len(snapshot["packages"]),
+            "errors": snapshot["errors"][:20],
+            "failed_jobs": snapshot["failed_jobs"],
         },
-        "packages": packages,
+        "packages": snapshot["packages"],
     }
 
 

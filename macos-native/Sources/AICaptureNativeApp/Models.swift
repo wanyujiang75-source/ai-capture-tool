@@ -105,11 +105,15 @@ struct JenkinsSourceSummary: Decodable {
     let type: String?
     let baseURL: String?
     let count: Int?
+    let errors: [String]?
+    let failedJobs: [String]?
 
     private enum CodingKeys: String, CodingKey {
         case type
         case baseURL = "base_url"
         case count
+        case errors
+        case failedJobs = "failed_jobs"
     }
 }
 

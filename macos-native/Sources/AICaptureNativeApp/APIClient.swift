@@ -15,6 +15,10 @@ protocol DeviceDiscoveryAPI: Sendable {
     func discoverLogDevices() async throws -> DeviceDiscoveryResponse
 }
 
+protocol JenkinsPackageAPI: Sendable {
+    func getJenkinsPackages() async throws -> JenkinsPackagesResponse
+}
+
 protocol ForegroundTargetAPI: Sendable {
     func getForegroundApp(deviceID: String) async throws -> ForegroundAppState
     func resolveForegroundTarget(deviceID: String) async throws -> ForegroundTargetResponse
@@ -43,7 +47,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -96,9 +100,8 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, ForegroundTargetAPI, LocalPacka
         return response.apps
     }
 
-    func getJenkinsPackages() async throws -> [JenkinsPackage] {
-        let response: JenkinsPackagesResponse = try await get("api/package-sources/jenkins/packages")
-        return response.packages
+    func getJenkinsPackages() async throws -> JenkinsPackagesResponse {
+        try await get("api/package-sources/jenkins/packages")
     }
 
     func getForegroundApp(deviceID: String) async throws -> ForegroundAppState {

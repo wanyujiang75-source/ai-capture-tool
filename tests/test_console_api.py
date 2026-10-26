@@ -15,6 +15,18 @@ from capture_console.store import CaptureStore
 
 
 class CaptureConsoleApiTests(unittest.TestCase):
+    def test_jenkins_listing_uses_errors_from_same_snapshot(self):
+        snapshot = {"packages": [{"id": "music-1"}], "errors": ["poke: offline"], "failed_jobs": ["poke"]}
+        with mock.patch.object(app_module.jenkins_source, "list_package_snapshot", return_value=snapshot):
+            with mock.patch.object(app_module.jenkins_source, "last_errors", ["unrelated request"]):
+                self.assertEqual(app_module.api_jenkins_packages(), {
+                    "source": {
+                        "type": "jenkins", "base_url": app_module.jenkins_source.config.base_url,
+                        "count": 1, "errors": ["poke: offline"], "failed_jobs": ["poke"],
+                    },
+                    "packages": [{"id": "music-1"}],
+                })
+
     def add_test_device(
         self,
         store,

@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-10-26 Jenkins 刷新性能修复
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| J2 | DONE | 减少 Jenkins 列表查询并保留刷新期间的列表 | `goal.md`, `progress.md`, `specs/jenkins-refresh-performance.md`, `capture_console/jenkins_source.py`, `capture_console/app.py`, `tests/test_jenkins_source.py`, `tests/test_console_api.py`, `macos-native/Sources/AICaptureNativeApp/{APIClient,Models,AppState,AppCopy,DeviceAppView}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{JenkinsRefreshTests,APIClientTests}.swift`；本地构建 | 查询/缓存/并发/失败 Python 回归与 Swift 刷新回归通过；同网耗时、请求量及结果一致性验证；桌面构建、刷新和签名通过 | RED 已复现旧查询与缺少状态接口；Python 210 项、Swift 94+1 项通过。旧版 10.962 秒/36 请求/5.19 MB，新版冷加载 1.697 秒/39 请求/29.6 KB，后续 0.249/0.175 秒各 1 请求；最终 API 0.204 秒，前后 31 个包完整数组一致。原生刷新、构建 jenkins-refresh-20261026、运行后严格签名和 diff 检查通过；一次启动请求 502 后恢复已如实记录 | 本机桌面保持打开；仅本地提交，未推送或更新 GitHub 下载包 |
+
 ## 2026-10-22 内嵌网页证书修复
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

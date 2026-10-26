@@ -60,6 +60,17 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 @Suite(.serialized)
 struct APIClientTests {
     @Test
+    func jenkinsRefreshPreservesPartialFailureMetadata() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"source":{"errors":["music: offline"],"failed_jobs":["music"]},"packages":[]}
+        """.utf8))
+        let response = try await makeClient().getJenkinsPackages()
+        #expect(response.source?.failedJobs == ["music"])
+        #expect(response.source?.errors == ["music: offline"])
+        #expect(CapturingURLProtocol.observedRequests.map { $0.url?.path } == ["/api/package-sources/jenkins/packages"])
+    }
+
+    @Test
     func weakNetworkUsesDeviceScopedMethodsAndSnakeCasePayload() async throws {
         CapturingURLProtocol.reset(responseData: Data("""
         {"enabled":true,"pending_restore":false,"available":true,

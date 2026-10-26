@@ -18,6 +18,7 @@ final class AppState: ObservableObject {
     @Published var appLoadState: LoadState = .idle
     @Published var jenkinsPackages: [JenkinsPackage] = []
     @Published var jenkinsLoadState: LoadState = .idle
+    @Published var jenkinsRefreshWarning = ""
     @Published var jenkinsInstallState: LoadState = .idle
     @Published var installingJenkinsPackageID: String?
     @Published var jenkinsMessage = ""
@@ -43,6 +44,7 @@ final class AppState: ObservableObject {
 
     private let runtimeManager: RuntimeManager
     private let apiClient: APIClient
+    private let jenkinsAPI: any JenkinsPackageAPI
     private let foregroundAPI: any ForegroundTargetAPI
     private let packageInstallAPI: any LocalPackageInstallAPI
     private let flowAPI: any FlowAPI
@@ -67,6 +69,7 @@ final class AppState: ObservableObject {
     init(
         runtimeManager: RuntimeManager = .shared,
         apiClient: APIClient = APIClient(),
+        jenkinsAPI: (any JenkinsPackageAPI)? = nil,
         foregroundAPI: (any ForegroundTargetAPI)? = nil,
         packageInstallAPI: (any LocalPackageInstallAPI)? = nil,
         flowAPI: (any FlowAPI)? = nil,
@@ -75,6 +78,7 @@ final class AppState: ObservableObject {
     ) {
         self.runtimeManager = runtimeManager
         self.apiClient = apiClient
+        self.jenkinsAPI = jenkinsAPI ?? apiClient
         self.foregroundAPI = foregroundAPI ?? apiClient
         self.packageInstallAPI = packageInstallAPI ?? apiClient
         self.flowAPI = flowAPI ?? apiClient
@@ -140,9 +144,21 @@ final class AppState: ObservableObject {
     }
 
     func refreshJenkinsPackages() async {
+        guard jenkinsLoadState != .loading else { return }
         jenkinsLoadState = .loading
+        jenkinsRefreshWarning = ""
         do {
-            jenkinsPackages = try await apiClient.getJenkinsPackages()
+            let response = try await jenkinsAPI.getJenkinsPackages()
+            let failedJobs = response.source?.failedJobs ?? []
+            let partialFailure = !(response.source?.errors ?? []).isEmpty || !failedJobs.isEmpty
+            let updatedJobs = Set(response.packages.map(\.jobName))
+            let retained = partialFailure ? jenkinsPackages.filter {
+                !updatedJobs.contains($0.jobName) && (failedJobs.contains($0.jobName) || response.source?.failedJobs == nil)
+            } : []
+            jenkinsPackages = response.packages + retained
+            if partialFailure {
+                jenkinsRefreshWarning = AppCopy.Install.partialRefresh
+            }
             reconcileSelections()
             jenkinsLoadState = .loaded
         } catch {
