@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showsRuntimeCheck = false
+    @State private var showsIOSSetup = false
 
     var body: some View {
         NavigationSplitView {
@@ -25,6 +26,11 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem {
+                Button { showsIOSSetup = true } label: {
+                    Label(AppCopy.IOSSetup.title, systemImage: "iphone")
+                }
+            }
+            ToolbarItem {
                 Button {
                     showsRuntimeCheck = true
                 } label: {
@@ -36,6 +42,7 @@ struct ContentView: View {
             RuntimeCheckView()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showsIOSSetup) { IOSSetupView() }
         .overlay(alignment: .bottomTrailing) {
             if let notice = appState.notice {
                 TransientNoticeView(notice: notice)

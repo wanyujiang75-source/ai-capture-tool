@@ -23,6 +23,8 @@ from .device_discovery import build_discovered_devices, build_log_devices
 from .foreground import capture_state
 from .http_errors import structured_http_error_body
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
+from .ios_setup import IOSSetupService
+from .ios_setup_api import ios_setup_router
 from .local_config import load_local_config
 from .logcat import LogcatService
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
@@ -72,6 +74,8 @@ logcat_service = LogcatService()
 logcat_reaper_stop_event = threading.Event()
 logcat_reaper_thread: Optional[threading.Thread] = None
 app = FastAPI(title="TraceDeck API", version="1.0.0")
+ios_setup_service = IOSSetupService(RUNTIME_DIR / "ios-setup")
+app.include_router(ios_setup_router(ios_setup_service))
 
 
 @app.exception_handler(HTTPException)
@@ -1121,12 +1125,15 @@ def startup() -> None:
 
 @app.on_event("shutdown")
 def shutdown() -> None:
-    stop_logcat_reaper()
-    logcat_service.stop_all()
-    weak_network_service.restore_all()
-    if desktop_runtime_metadata()["enabled"]:
-        stop_all_active_captures()
-    clear_project_capture_records()
+    try:
+        ios_setup_service.shutdown()
+    finally:
+        stop_logcat_reaper()
+        logcat_service.stop_all()
+        weak_network_service.restore_all()
+        if desktop_runtime_metadata()["enabled"]:
+            stop_all_active_captures()
+        clear_project_capture_records()
 
 
 @app.get("/api/status")

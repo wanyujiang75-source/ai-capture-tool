@@ -47,7 +47,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSSetupAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -69,6 +69,24 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
     func getDevices() async throws -> [CaptureDevice] {
         let response: DevicesResponse = try await get("api/devices")
         return response.devices
+    }
+
+    func readIOSSetup() async throws -> IOSSetupStatus {
+        try await get("api/ios-setup", timeoutInterval: 5)
+    }
+
+    func prepareIOSSetup(ssid: String) async throws -> IOSSetupStatus {
+        struct Payload: Encodable {
+            let ssid: String
+            let desktopPID: Int32
+            enum CodingKeys: String, CodingKey { case ssid, desktopPID = "desktop_pid" }
+        }
+        return try await post("api/ios-setup/prepare", timeoutInterval: 25,
+                              body: Payload(ssid: ssid, desktopPID: ProcessInfo.processInfo.processIdentifier))
+    }
+
+    func stopIOSSetup() async throws -> IOSSetupStatus {
+        try await post("api/ios-setup/stop", timeoutInterval: 10, body: ["phone_configuration_removed": true])
     }
 
     func readWeakNetwork(deviceID: String) async throws -> WeakNetworkStatus {

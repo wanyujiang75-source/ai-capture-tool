@@ -1,5 +1,17 @@
 # 进度记录
 
+## 2026-10-29 iOS 真机可行性试验
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-TRIAL-1 | BLOCKED | 自动准备 iPhone PokeHub 抓包并只保留必要手机确认 | `goal.md`, `progress.md`, `specs/ios-device-trial.md`, `capture_console/ios_setup.py`, `capture_console/ios_setup_api.py`, `capture_console/ios_pairing_proxy.py`, `capture_console/app.py`, `tests/test_ios_setup.py`, `tests/test_ios_setup_integration.py`, `macos-native/Sources/AICaptureNativeApp/{IOSSetupController,IOSSetupView,IOSSetupCopy,ContentView,APIClient}.swift`, `macos-native/Tests/AICaptureNativeAppTests/IOSSetupTests.swift`, `docs/desktop-user-guide.md`；隔离构建与测试运行目录 | 配置文件不含 Wi-Fi 密码且可移除；代理认证、手机证据与 Mac 自检区分、进程清理和重复启动回归；Swift 引导回归；隔离真实代理验证与桌面构建；手机实际抓包单独记录 | 自动化代码与文档已实现；126 项 Python、101 项 Swift、8 项打包回归通过；隔离代理及包内运行时完成 407/HTTPS 200、自检归属、桌面退出清理及恢复标记验证；最终构建与签名通过。缺少手机网络名及本人安装/信任后的 PokeHub 实测，不记为整体验收完成；未替换活动旧桌面，视觉验收也待完成 | 用户提供 Wi-Fi 名称后继续手机配置与真实接口验收；保留 Android 抓包；仅本地提交，不推送或发布 |
+
+IOS-TRIAL-1 验证记录：初始缺模块/状态类型的 RED 已复现；非 UTF-8 与 gzip 正文回归先失败后修复。
+评审发现桌面异常退出、WebSocket 历史、重启清理标记、JSON 转义体积和 Wi-Fi 输入被轮询覆盖五项问题，已加测试修复。
+打包首次因新工作树无 `web/dist` 失败，复用同源构建资源后构建通过；随后测试因人为设置 `AI_CAPTURE_BUILD_ID=ios-setup-20261029` 不符合现有默认哈希断言失败，已移除该测试环境覆盖后重跑。
+新增混合类型请求体曾导致 Swift 编译失败，已改为类型化 Encodable 请求并通过 6 项专项测试。
+补充复核发现状态写失败可能使退出监测失效，已用注入磁盘错误先复现 RED，再验证自动停止及独立凭据清理；iOS 清理失败不再跳过 Android 退出处理，新增回归先失败后通过。最终静态复核无剩余发现。
+
 ## 2026-10-26 Jenkins 刷新性能修复
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
