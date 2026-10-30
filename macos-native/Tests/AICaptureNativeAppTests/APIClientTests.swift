@@ -59,6 +59,52 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Suite(.serialized)
 struct APIClientTests {
+    @Test func iphoneRecordingAndConnectionEndUseSeparateEndpoints() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"phase":"ready","connection_state":"ready","recording_state":"stopped",
+         "session_id":12,"flow_count":2,"flows":[],"project":{"id":"pokehub","name":"PokeHub","domains":["api.example.test"]}}
+        """.utf8))
+        let client = makeClient()
+        let state = try await client.startIOSRecording(projectID: "pokehub")
+        #expect(state.sessionID == 12 && state.isConnected && !state.isRecording)
+        let payload = try #require(CapturingURLProtocol.observedRequests.first?.httpBody)
+        #expect(try JSONDecoder().decode([String: String].self, from: payload) == ["project_id": "pokehub"])
+        _ = try await client.stopIOSRecording()
+        _ = try await client.stopIOSSetup()
+        #expect(CapturingURLProtocol.observedRequests.map { $0.url?.path } == [
+            "/api/ios-setup/recording/start", "/api/ios-setup/recording/stop", "/api/ios-setup/stop"
+        ])
+        let endBody = try #require(CapturingURLProtocol.observedRequests.last?.httpBody)
+        #expect(try JSONDecoder().decode([String: Bool].self, from: endBody) == ["phone_configuration_removed": true])
+    }
+
+    @Test func iphoneResultsUseRevisionCursorAndBoundedPage() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"flows":[{"id":"request-1","status":"NO_RESPONSE"}],"total":8,"cursor":7,"next_cursor":7}
+        """.utf8))
+        let page = try await makeClient().getFlowPage(sessionID: 12, cursor: 3)
+        #expect(page.cursor == 7 && page.nextCursor == 7 && page.total == 8)
+        let url = try #require(CapturingURLProtocol.observedRequests.first?.url)
+        #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [
+            URLQueryItem(name: "cursor", value: "3"), URLQueryItem(name: "limit", value: "200")
+        ])
+    }
+
+    @Test func projectSaveAndMixedCaptureSourcesDecodeBackendContract() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"id":"second","name":"Second","domains":["api.example.test"]}
+        """.utf8))
+        let client = makeClient()
+        let project = try await client.saveIOSProject(IOSProjectDraft(id: nil, name: "Second", domains: ["api.example.test"]))
+        #expect(project.id == "second")
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"sessions":[{"id":12,"platform":"ios","mode":"ios-http-proxy","status":"running","app_name":"PokeHub"},
+                     {"id":11,"status":"stopped","app_name":"Android App","mode":"flutter-socks"}]}
+        """.utf8))
+        let sources = try await client.getCaptureSources()
+        #expect(sources.map(\.isIOS) == [true, false])
+    }
+
     @Test
     func jenkinsRefreshPreservesPartialFailureMetadata() async throws {
         CapturingURLProtocol.reset(responseData: Data("""

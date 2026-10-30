@@ -12,6 +12,8 @@ struct UserFacingSourceTests {
             "DeviceAppView.swift",
             "FlowViews.swift",
             "LogsView.swift",
+            "IOSCaptureView.swift",
+            "IOSSetupView.swift",
         ]
         let forbiddenCopy = [
             "Session #",

@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     @Published var runtimeDirectory: URL?
     @Published var lastRuntimeCheckAt: Date?
     @Published var selectedSection: SidebarSection = .capture
+    @Published var selectedCapturePlatform: CapturePlatform = .android
+    let iosController = IOSSetupController()
     @Published var devices: [CaptureDevice] = []
     @Published var apps: [CaptureApp] = []
     @Published var deviceLoadState: LoadState = .idle
@@ -33,6 +35,14 @@ final class AppState: ObservableObject {
     @Published var selectedFlowID: String?
     @Published var selectedFlowDetail: FlowDetail?
     @Published var selectedFlowCurl = ""
+    @Published var flowCurlIssue: String?
+    @Published private(set) var flowSources: [CaptureSource] = []
+    @Published private(set) var selectedFlowSourceID: Int?
+    @Published private(set) var flowSourcesIssue: String?
+    private var flowCursor = 0
+    private var pendingFlowIDs: Set<String> = []
+    private var flowClearedBefore: Date?
+    private var sourcesRequestID = UUID()
     @Published var flowDetailLoadState: LoadState = .idle
     @Published private(set) var clearedFlowIDs: Set<String> = []
     @Published var foregroundTarget: ForegroundTargetResponse?
@@ -64,6 +74,34 @@ final class AppState: ObservableObject {
 
     var hasClearedFlows: Bool {
         !clearedFlowIDs.isEmpty
+    }
+
+    var flowSessionID: Int? { selectedFlowSourceID ?? activeSessionID }
+    var selectedFlowSource: CaptureSource? { flowSources.first { $0.id == flowSessionID } }
+
+    func refreshFlowSources() async {
+        let request = UUID()
+        sourcesRequestID = request
+        do {
+            let sources = try await flowAPI.getCaptureSources()
+            guard !Task.isCancelled, sourcesRequestID == request else { return }
+            let retained = selectedFlowSource
+            flowSources = sources
+            if let retained, !sources.contains(where: { $0.id == retained.id }) {
+                flowSources.append(retained)
+            }
+            flowSourcesIssue = nil
+        } catch {
+            guard !Task.isCancelled, sourcesRequestID == request else { return }
+            flowSourcesIssue = AppCopy.IOSCapture.sourcesFailed
+        }
+    }
+
+    func selectFlowSource(_ id: Int?) {
+        guard selectedFlowSourceID != id else { return }
+        guard id == nil || flowSources.contains(where: { $0.id == id }) else { return }
+        selectedFlowSourceID = id
+        resetSelectedFlowPresentation()
     }
 
     init(
@@ -839,29 +877,13 @@ final class AppState: ObservableObject {
         if let sessionID = selectedDevice.activeSession?.id {
             if activeSessionID != sessionID {
                 activeSessionID = sessionID
-                flows = []
-                selectedFlowID = nil
-                selectedFlowDetail = nil
-                selectedFlowCurl = ""
-                flowLoadState = .idle
-                flowDetailLoadState = .idle
-                clearedFlowIDs = []
-                flowRefreshRequestID = nil
-                flowDetailRequestID = nil
+                resetFlowPresentation()
             }
             return sessionID
         }
         if selectedDevice.capture?.health != "running" {
             activeSessionID = nil
-            flows = []
-            selectedFlowID = nil
-            selectedFlowDetail = nil
-            selectedFlowCurl = ""
-            flowLoadState = .idle
-            flowDetailLoadState = .idle
-            clearedFlowIDs = []
-            flowRefreshRequestID = nil
-            flowDetailRequestID = nil
+            resetFlowPresentation()
         }
         return nil
     }
@@ -941,10 +963,19 @@ final class AppState: ObservableObject {
     }
 
     private func resetFlowPresentation() {
+        guard selectedFlowSourceID == nil else { return }
+        resetSelectedFlowPresentation()
+    }
+
+    private func resetSelectedFlowPresentation() {
+        flowCursor = 0
+        pendingFlowIDs = []
+        flowClearedBefore = nil
         flows = []
         selectedFlowID = nil
         selectedFlowDetail = nil
         selectedFlowCurl = ""
+        flowCurlIssue = nil
         flowLoadState = .idle
         flowDetailLoadState = .idle
         clearedFlowIDs = []
@@ -958,7 +989,7 @@ final class AppState: ObservableObject {
     }
 
     func refreshFlows() async {
-        guard let requestedSessionID = activeSessionID else {
+        guard let requestedSessionID = flowSessionID else {
             flowLoadState = .idle
             flows = []
             clearedFlowIDs = []
@@ -968,19 +999,48 @@ final class AppState: ObservableObject {
         }
         let requestID = UUID()
         flowRefreshRequestID = requestID
+        pendingFlowIDs = []
         flowLoadState = .loading
         do {
-            let refreshedFlows = try await flowAPI.getFlows(sessionID: requestedSessionID)
-            guard activeSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
+            var refreshedFlows: [FlowSummary]
+            if selectedFlowSource?.isIOS == true {
+                refreshedFlows = flows
+                var cursor = flowCursor
+                // Bound each refresh; later polls continue the revision journal without rereading bodies.
+                for _ in 0..<5 {
+                    let page = try await flowAPI.getFlowPage(sessionID: requestedSessionID, cursor: cursor)
+                    guard !Task.isCancelled, flowSessionID == requestedSessionID, flowRefreshRequestID == requestID else { return }
+                    var positions = Dictionary(uniqueKeysWithValues: refreshedFlows.enumerated().map { ($0.element.id, $0.offset) })
+                    for flow in page.flows {
+                        pendingFlowIDs.insert(flow.id)
+                        if let boundary = flowClearedBefore, IOSFlowBoundary.predates(flow, boundary: boundary) {
+                            clearedFlowIDs.insert(flow.id)
+                        }
+                        if let index = positions[flow.id] { refreshedFlows[index] = flow }
+                        else if refreshedFlows.count < 10_000 {
+                            positions[flow.id] = refreshedFlows.count
+                            refreshedFlows.append(flow)
+                        }
+                    }
+                    let previous = cursor
+                    cursor = page.nextCursor ?? page.cursor
+                    guard cursor >= previous else { throw APIClientError.invalidResponse }
+                    if page.nextCursor == nil || cursor == previous { break }
+                }
+                flowCursor = cursor
+            } else {
+                refreshedFlows = try await flowAPI.getFlows(sessionID: requestedSessionID)
+            }
+            guard !Task.isCancelled, flowSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
                 return
             }
             flows = refreshedFlows
-            switch captureWorkflowState {
+            if selectedFlowSourceID == nil { switch captureWorkflowState {
             case let .capturing(name, _), let .restored(name):
                 setWorkflowState(.capturing(name: name, flowCount: visibleFlows.count))
             default:
                 break
-            }
+            } }
             if let selectedFlowID, !refreshedFlows.contains(where: { $0.id == selectedFlowID }) {
                 self.selectedFlowID = nil
                 selectedFlowDetail = nil
@@ -990,27 +1050,32 @@ final class AppState: ObservableObject {
             }
             flowLoadState = .loaded
             flowRefreshRequestID = nil
+            pendingFlowIDs = []
         } catch {
-            guard activeSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
+            guard !Task.isCancelled, flowSessionID == requestedSessionID, flowRefreshRequestID == requestID else {
                 return
             }
-            flowLoadState = .failed(error.localizedDescription)
+            flowLoadState = .failed(AppCopy.IOSCapture.flowsFailed)
             flowRefreshRequestID = nil
+            pendingFlowIDs = []
         }
     }
 
     func clearCurrentFlows() {
         clearedFlowIDs.formUnion(flows.map(\.id))
+        clearedFlowIDs.formUnion(pendingFlowIDs)
+        if selectedFlowSource?.isIOS == true { flowClearedBefore = Date() }
         selectedFlowID = nil
         selectedFlowDetail = nil
         selectedFlowCurl = ""
+        flowCurlIssue = nil
         flowDetailLoadState = .idle
         flowDetailRequestID = nil
         showNotice(.success(title: "列表已清空", message: AppCopy.Flow.cleared))
     }
 
     func loadFlowDetail(_ flow: FlowSummary) async {
-        guard let requestedSessionID = activeSessionID else {
+        guard let requestedSessionID = flowSessionID else {
             flowDetailLoadState = .failed(AppCopy.Flow.notStarted)
             return
         }
@@ -1019,6 +1084,7 @@ final class AppState: ObservableObject {
         selectedFlowID = flow.id
         selectedFlowDetail = nil
         selectedFlowCurl = ""
+        flowCurlIssue = nil
         flowDetailLoadState = .loading
         do {
             let detail = try await flowAPI.getFlowDetail(sessionID: requestedSessionID, flowID: flow.id)
@@ -1026,6 +1092,7 @@ final class AppState: ObservableObject {
                 return
             }
             selectedFlowDetail = detail
+            flowDetailLoadState = .loaded
             let curl = try await flowAPI.getFlowCurl(sessionID: requestedSessionID, flowID: flow.id)
             guard isCurrentDetailRequest(requestID, sessionID: requestedSessionID, flowID: flow.id) else {
                 return
@@ -1037,13 +1104,18 @@ final class AppState: ObservableObject {
             guard isCurrentDetailRequest(requestID, sessionID: requestedSessionID, flowID: flow.id) else {
                 return
             }
-            flowDetailLoadState = .failed(error.localizedDescription)
+            if selectedFlowDetail != nil {
+                flowCurlIssue = AppCopy.IOSCapture.curlUnavailable
+                flowDetailLoadState = .loaded
+            } else {
+                flowDetailLoadState = .failed(AppCopy.IOSCapture.detailFailed)
+            }
             flowDetailRequestID = nil
         }
     }
 
     private func isCurrentDetailRequest(_ requestID: UUID, sessionID: Int, flowID: String) -> Bool {
-        activeSessionID == sessionID
+        !Task.isCancelled && flowSessionID == sessionID
             && selectedFlowID == flowID
             && flowDetailRequestID == requestID
             && !clearedFlowIDs.contains(flowID)

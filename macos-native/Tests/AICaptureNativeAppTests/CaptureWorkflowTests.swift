@@ -107,6 +107,17 @@ private actor CaptureForegroundAPISpy: ForegroundTargetAPI {
     }
 }
 
+private actor RecoveryFlowAPI: FlowAPI {
+    let available: Bool
+    init(available: Bool) { self.available = available }
+    func getFlows(sessionID: Int) async throws -> [FlowSummary] {
+        if !available { throw APIClientError.invalidResponse }
+        return []
+    }
+    func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail { throw APIClientError.invalidResponse }
+    func getFlowCurl(sessionID: Int, flowID: String) async throws -> String { throw APIClientError.invalidResponse }
+}
+
 @Suite(.serialized)
 @MainActor
 struct CaptureWorkflowTests {
@@ -348,8 +359,8 @@ struct CaptureWorkflowTests {
         #expect(state.notice?.message == "模拟器网络暂未恢复，重新连接后运行检查会继续处理。")
     }
 
-    @Test
-    func structuredCaptureConflictRecoversSessionStartedDuringRequest() async throws {
+    @Test(arguments: [true, false])
+    func structuredCaptureConflictRecoversSessionStartedDuringRequest(flowsAvailable: Bool) async throws {
         let ready = try device(adbOnline: true, bootCompleted: true, unlocked: true)
         let active = try device(
             adbOnline: true,
@@ -368,6 +379,7 @@ struct CaptureWorkflowTests {
         )
         let state = AppState(
             foregroundAPI: foregroundAPI,
+            flowAPI: RecoveryFlowAPI(available: flowsAvailable),
             captureWorkflowAPI: captureAPI,
             workflowPollInterval: .milliseconds(1)
         )
@@ -375,7 +387,7 @@ struct CaptureWorkflowTests {
         await state.startCaptureWorkflow()
 
         #expect(state.activeSessionID == 77)
-        #expect(state.captureWorkflowState == .restored(name: "Melody"))
+        #expect(state.captureWorkflowState == (flowsAvailable ? .capturing(name: "Melody", flowCount: 0) : .restored(name: "Melody")))
         let calls = await captureAPI.callCounts()
         #expect(calls.startCapture == 1)
     }

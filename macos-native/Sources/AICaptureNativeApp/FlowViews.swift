@@ -9,7 +9,8 @@ struct FlowViews: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
-            if appState.activeSessionID == nil {
+            sourcePicker
+            if appState.flowSessionID == nil {
                 emptyCapture
             } else {
                 flowContent
@@ -18,8 +19,24 @@ struct FlowViews: View {
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task(id: appState.activeSessionID) {
+        .task(id: appState.flowSessionID) {
             await pollFlows()
+        }
+        .task { await appState.refreshFlowSources() }
+    }
+
+    private var sourcePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Picker(AppCopy.IOSCapture.source, selection: Binding(
+                    get: { appState.selectedFlowSourceID }, set: { appState.selectFlowSource($0) }
+                )) {
+                    Text(AppCopy.IOSCapture.currentAndroid).tag(nil as Int?)
+                    ForEach(appState.flowSources) { Text($0.title).tag(Optional($0.id)) }
+                }
+                Button(AppCopy.IOSCapture.refreshSources) { Task { await appState.refreshFlowSources() } }
+            }
+            if let issue = appState.flowSourcesIssue { Text(issue).font(.callout).foregroundStyle(.red) }
         }
     }
 
@@ -69,7 +86,7 @@ struct FlowViews: View {
     private var flowList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(AppCopy.Flow.captureNumber(appState.activeSessionID ?? 0))
+                Text(AppCopy.Flow.captureNumber(appState.flowSessionID ?? 0))
                     .font(.title2.bold())
                 Text("\(filteredFlows.count) / \(appState.visibleFlows.count) 条")
                     .foregroundStyle(.secondary)
@@ -118,7 +135,9 @@ struct FlowViews: View {
     @ViewBuilder
     private var listContent: some View {
         if appState.visibleFlows.isEmpty {
-            Text(AppCopy.Flow.waiting)
+            if appState.flowLoadState == .loading { ProgressView(AppCopy.Flow.syncing).padding() }
+            if case let .failed(message) = appState.flowLoadState { Text(message).foregroundStyle(.red).padding() }
+            Text(appState.selectedFlowSource?.isIOS == true ? AppCopy.IOSCapture.waiting : AppCopy.Flow.waiting)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -159,9 +178,13 @@ struct FlowViews: View {
                 .pickerStyle(.segmented)
                 detailBody(detail)
             } else {
-                Text("选择一个接口查看详情。")
+                if appState.flowDetailLoadState == .loading { ProgressView("正在加载接口详情…") }
+                if case let .failed(message) = appState.flowDetailLoadState {
+                    Text(message).foregroundStyle(.red)
+                } else { Text("选择一个接口查看详情。")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
             }
         }
         .padding(16)
@@ -198,7 +221,7 @@ struct FlowViews: View {
                 CodeBlock(
                     title: "cURL",
                     content: FlowBodyPresentation(
-                        text: appState.selectedFlowCurl.isEmpty ? "尚未生成 cURL" : appState.selectedFlowCurl,
+                        text: appState.flowCurlIssue ?? (appState.selectedFlowCurl.isEmpty ? "正在生成 cURL…" : appState.selectedFlowCurl),
                         isTruncated: false,
                         sizeBytes: 0,
                         fullFileURL: nil
@@ -221,6 +244,9 @@ struct FlowViews: View {
         case .loading:
             return Text(AppCopy.Flow.syncing).foregroundStyle(.orange)
         case .loaded:
+            if let status = appState.selectedFlowSource?.status, status != "running" {
+                return Text("已停止").foregroundStyle(.secondary)
+            }
             return Text(AppCopy.Flow.live).foregroundStyle(.green)
         case .failed:
             return Text("同步中断").foregroundStyle(.red)
@@ -234,14 +260,15 @@ struct FlowViews: View {
     private func selectFlow(_ flow: FlowSummary) {
         Task {
             await appState.loadFlowDetail(flow)
-            if let detail = appState.selectedFlowDetail {
+            if appState.selectedFlowID == flow.id, let detail = appState.selectedFlowDetail {
                 detailTab = preferredDetailTab(for: detail)
             }
         }
     }
 
     private func pollFlows() async {
-        while !Task.isCancelled, appState.activeSessionID != nil {
+        while !Task.isCancelled, appState.flowSessionID != nil {
+            await appState.refreshFlowSources()
             await appState.refreshFlows()
             try? await Task.sleep(for: .seconds(2))
         }

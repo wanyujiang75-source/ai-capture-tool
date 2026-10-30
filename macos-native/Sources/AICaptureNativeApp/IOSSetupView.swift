@@ -5,10 +5,9 @@ import SwiftUI
 
 struct IOSSetupView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var controller = IOSSetupController()
+    @ObservedObject var controller: IOSSetupController
     @State private var ssid = ""
     @State private var confirmsRemoval = false
-    @State private var selectedFlow: IOSSetupFlow?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -22,9 +21,9 @@ struct IOSSetupView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    let presentation = AppCopy.IOSSetup.status(controller.status.phase, count: controller.status.flowCount)
+                    let presentation = AppCopy.IOSCapture.presentation(controller.status)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(controller.busy ? (controller.stopping ? AppCopy.IOSSetup.stopping : AppCopy.IOSSetup.preparing) : presentation.0).font(.headline)
+                        Text(controller.operation?.title ?? presentation.0).font(.headline)
                         Text(presentation.1).foregroundStyle(.secondary)
                         if controller.busy { ProgressView().controlSize(.small) }
                         if let issue = controller.issue { Text(issue).foregroundStyle(.red) }
@@ -44,21 +43,6 @@ struct IOSSetupView: View {
                         Text(AppCopy.IOSSetup.shareHelp).font(.callout).foregroundStyle(.secondary)
                         instructions
                     }
-                    if !controller.status.flows.isEmpty {
-                        Text(AppCopy.IOSSetup.results).font(.headline)
-                        ForEach(controller.status.flows.reversed()) { flow in
-                            Button {
-                                selectedFlow = flow
-                            } label: {
-                                HStack(alignment: .top) {
-                                    Text(flow.method).font(.caption.monospaced()).frame(width: 48)
-                                    Text("\(flow.status)").foregroundStyle(flow.status < 400 ? .green : .orange)
-                                    Text(flow.url).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-                                }.padding(.vertical, 6)
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                    Text(AppCopy.IOSSetup.limited).font(.caption).foregroundStyle(.secondary)
                     if !controller.status.canPrepare {
                         Text(AppCopy.IOSSetup.removeHelp).font(.caption).foregroundStyle(.secondary)
                         Button(AppCopy.IOSSetup.stop) { confirmsRemoval = true }.disabled(controller.busy)
@@ -79,20 +63,6 @@ struct IOSSetupView: View {
             Button(AppCopy.IOSSetup.confirmRemoved) { Task { await controller.stop(phoneConfigurationRemoved: true) } }
             Button(AppCopy.IOSSetup.cancel, role: .cancel) {}
         } message: { Text(AppCopy.IOSSetup.removeHelp) }
-        .sheet(item: $selectedFlow) { flow in
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(flow.url).font(.headline).lineLimit(3)
-                    Spacer()
-                    Button(AppCopy.IOSSetup.close) { selectedFlow = nil }
-                }
-                Text("Request").font(.headline)
-                IOSPreviewText(text: flow.requestBody.isEmpty ? AppCopy.IOSSetup.emptyBody : flow.requestBody)
-                Text("Response").font(.headline)
-                IOSPreviewText(text: flow.responseBody.isEmpty ? AppCopy.IOSSetup.emptyBody : flow.responseBody)
-                if flow.truncated { Text(AppCopy.IOSSetup.truncated).foregroundStyle(.secondary) }
-            }.padding(24).frame(width: 740, height: 580)
-        }
     }
 
     private var instructions: some View {
@@ -119,21 +89,5 @@ struct IOSSetupView: View {
         guard let output = filter.outputImage,
               let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
         return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-    }
-}
-
-private struct IOSPreviewText: NSViewRepresentable {
-    let text: String
-    func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
-        if let view = scroll.documentView as? NSTextView {
-            view.isEditable = false
-            view.isSelectable = true
-            view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        }
-        return scroll
-    }
-    func updateNSView(_ view: NSScrollView, context: Context) {
-        if let editor = view.documentView as? NSTextView, editor.string != text { editor.string = text }
     }
 }

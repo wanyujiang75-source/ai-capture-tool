@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showsRuntimeCheck = false
-    @State private var showsIOSSetup = false
 
     var body: some View {
         NavigationSplitView {
@@ -15,21 +14,22 @@ struct ContentView: View {
         } detail: {
             switch appState.selectedSection {
             case .capture:
-                CaptureView(showsRuntimeCheck: $showsRuntimeCheck)
+                CaptureHomeView(showsRuntimeCheck: $showsRuntimeCheck)
             case .install:
-                DeviceAppView()
+                VStack(spacing: 0) {
+                    if appState.selectedCapturePlatform == .iphone { androidOnlyNotice }
+                    DeviceAppView()
+                }
             case .flows:
                 FlowViews()
             case .logs:
-                LogsView()
+                VStack(spacing: 0) {
+                    if appState.selectedCapturePlatform == .iphone { androidOnlyNotice }
+                    LogsView()
+                }
             }
         }
         .toolbar {
-            ToolbarItem {
-                Button { showsIOSSetup = true } label: {
-                    Label(AppCopy.IOSSetup.title, systemImage: "iphone")
-                }
-            }
             ToolbarItem {
                 Button {
                     showsRuntimeCheck = true
@@ -39,10 +39,9 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showsRuntimeCheck) {
-            RuntimeCheckView()
+            RuntimeCheckView(ios: appState.iosController)
                 .environmentObject(appState)
         }
-        .sheet(isPresented: $showsIOSSetup) { IOSSetupView() }
         .overlay(alignment: .bottomTrailing) {
             if let notice = appState.notice {
                 TransientNoticeView(notice: notice)
@@ -54,6 +53,18 @@ struct ContentView: View {
         .task {
             await appState.refreshRuntimeStatus()
         }
+        .task {
+            while !Task.isCancelled {
+                await appState.iosController.refresh()
+                do { try await Task.sleep(for: .seconds(2)) } catch { break }
+            }
+        }
+    }
+
+    private var androidOnlyNotice: some View {
+        Text(AppCopy.IOSCapture.androidOnly).font(.callout).foregroundStyle(.secondary)
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
     }
 }
 
@@ -91,6 +102,7 @@ private struct TransientNoticeView: View {
 }
 
 private struct RuntimeCheckView: View {
+    @ObservedObject var ios: IOSSetupController
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
@@ -111,9 +123,15 @@ private struct RuntimeCheckView: View {
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 checkCard(title: "本机环境", result: runtimeSummary, ok: runtimeOK)
-                checkCard(title: "模拟器", result: emulatorSummary, ok: emulatorOK)
-                checkCard(title: "网络", result: networkSummary, ok: emulatorOK)
-                checkCard(title: "抓包组件", result: componentSummary, ok: componentOK)
+                if appState.selectedCapturePlatform == .iphone {
+                    checkCard(title: "iPhone", result: AppCopy.IOSCapture.presentation(ios.status).0, ok: ios.status.isConnected && ios.issue == nil)
+                    checkCard(title: "网络", result: ios.issue ?? (ios.status.isConnected ? "手机 HTTPS 验证已通过。" : "请完成手机配置和 HTTPS 验证。"), ok: ios.status.isConnected && ios.issue == nil)
+                    checkCard(title: "抓包组件", result: ios.status.isRecording ? "正在记录目标域名接口。" : "尚未记录新接口。", ok: ios.status.isRecording && ios.issue == nil)
+                } else {
+                    checkCard(title: "模拟器", result: emulatorSummary, ok: emulatorOK)
+                    checkCard(title: "网络", result: networkSummary, ok: emulatorOK)
+                    checkCard(title: "抓包组件", result: componentSummary, ok: componentOK)
+                }
             }
 
             DisclosureGroup("技术详情") {
@@ -124,7 +142,7 @@ private struct RuntimeCheckView: View {
                     if let runtimeDirectory = appState.runtimeDirectory {
                         LabeledContent("运行目录", value: runtimeDirectory.path)
                     }
-                    if let device = appState.selectedDevice {
+                    if appState.selectedCapturePlatform == .android, let device = appState.selectedDevice {
                         LabeledContent("设备标识", value: device.adbSerial ?? device.id)
                         LabeledContent("设备配置", value: device.avdName ?? "-")
                     }
@@ -143,6 +161,7 @@ private struct RuntimeCheckView: View {
                 Button {
                     Task {
                         await appState.refreshRuntimeStatus()
+                        await ios.refresh()
                     }
                 } label: {
                     Label("重新检查", systemImage: "arrow.clockwise")

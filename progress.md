@@ -5,8 +5,8 @@
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | IOS-D1 | DONE | 项目域名、连接/记录分离、统一会话与有界结果 | `goal.md`, `progress.md`, `specs/ios-desktop-integration.md`, `capture_console/ios_*.py`, `capture_console/{app,store,results}.py`, `tests/test_ios_*.py`, `tests/ios_proxy_worker_fixture.py`, `tests/test_console_{api,core}.py` | Python RED/GREEN；真实隔离 HTTP(S) 启停、透传、代际隔离、限额；Android 相关回归 | 项目/记录控制/SQLite有界存储及共用结果路由已实现；最终239项Python回归7.225秒、2项真实隔离代理4.404秒通过，diff检查通过。独立复核三项状态问题及一项恢复重复断连已RED/GREEN修复，最终窄范围复核无剩余发现 | 本地提交并保留分支；下一轮领取 D2，整体验收仍待 D3 |
-| IOS-D2 | TODO | 原生统一抓包入口、接口来源和退出恢复 | `macos-native/Sources/AICaptureNativeApp/`、相关 Swift 测试；本任务 spec/progress | Swift 回归、构建、四导航正常/空/加载/失败视觉验收；切换来源及停止保留连接行为 | 依赖 IOS-D1 的状态/会话/分页契约 | D1 通过后领取 |
-| IOS-D3 | TODO | 实机与最终安装包验收、使用说明 | 相关 Python/Swift 验收测试、打包脚本、`docs/desktop-user-guide.md`、本任务 spec/progress | iPhone PokeHub真实Request/Response及第二受控域名；Android共存；停启/结束恢复；最终包与签名、新用户路径 | 不以本机代理自检替代手机验收；不默认推送远端 | D2 通过后领取 |
+| IOS-D2 | DONE | 原生统一抓包入口、接口来源和退出恢复 | `macos-native/Sources/AICaptureNativeApp/`、相关 Swift 测试（含 `CaptureWorkflowTests.swift`）、`tests/ios_native_ui_fixture.py`；本任务 spec/progress；本地隔离构建与视觉证据 | Swift 回归、构建、四导航兼容及新增流程正常/空/加载/失败视觉验收；切换来源及停止保留连接行为 | 最终116项Swift、构建、运行后严格签名通过；同打包配置8项测试已通过。3项竞态及微秒清空边界RED/GREEN修复；旧测试真实服务依赖已隔离并覆盖成功/失败。原生正常/空/加载/失败、正文/cURL、清空、停启新编号、退出/结束确认均验收；锁屏恢复后补齐最后窗口。详见spec证据，合成UI不是手机证明 | 保留本地分支提交；下一轮D3实机、跨重启历史索引与最终包验收；未推送或发布 |
+| IOS-D3 | TODO | 实机与最终安装包验收、使用说明 | 相关 Python/Swift 验收测试、必要的生命周期兼容修复、打包脚本、`docs/desktop-user-guide.md`、本任务 spec/progress | iPhone PokeHub真实Request/Response及第二受控域名；Android共存；停启/结束恢复与iPhone历史索引跨重启；最终包与签名、新用户路径 | 不以本机代理自检替代手机验收；旧startup/shutdown会删除所有会话索引，交付前需回归和修复。仅本地，不默认推送远端 | D2已通过；下一轮领取并先处理索引兼容性 |
 
 用户已允许正常关闭旧桌面和切换构建，不再受旧版持续运行限制。IOS-TRIAL-1 作为历史试验保留，未完成的手机证明由 IOS-D3 继续完成。
 

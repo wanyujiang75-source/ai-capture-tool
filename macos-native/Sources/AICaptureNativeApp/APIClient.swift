@@ -34,9 +34,19 @@ protocol LocalPackageInstallAPI: Sendable {
 }
 
 protocol FlowAPI: Sendable {
+    func getCaptureSources() async throws -> [CaptureSource]
+    func getFlowPage(sessionID: Int, cursor: Int) async throws -> FlowPage
     func getFlows(sessionID: Int) async throws -> [FlowSummary]
     func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail
     func getFlowCurl(sessionID: Int, flowID: String) async throws -> String
+}
+
+extension FlowAPI {
+    func getCaptureSources() async throws -> [CaptureSource] { [] }
+    func getFlowPage(sessionID: Int, cursor: Int) async throws -> FlowPage {
+        let flows = try await getFlows(sessionID: sessionID)
+        return FlowPage(flows: flows, total: flows.count, cursor: 0, nextCursor: nil)
+    }
 }
 
 protocol CaptureWorkflowAPI: Sendable {
@@ -47,7 +57,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSSetupAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSCaptureAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -87,6 +97,36 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
 
     func stopIOSSetup() async throws -> IOSSetupStatus {
         try await post("api/ios-setup/stop", timeoutInterval: 10, body: ["phone_configuration_removed": true])
+    }
+
+    func getIOSProjects() async throws -> [IOSCaptureProject] {
+        struct Response: Decodable { let projects: [IOSCaptureProject] }
+        let response: Response = try await get("api/ios-setup/projects", timeoutInterval: 10)
+        return response.projects
+    }
+
+    func saveIOSProject(_ draft: IOSProjectDraft) async throws -> IOSCaptureProject {
+        try await post("api/ios-setup/projects", timeoutInterval: 10, body: draft)
+    }
+
+    func startIOSRecording(projectID: String) async throws -> IOSSetupStatus {
+        try await post("api/ios-setup/recording/start", timeoutInterval: 30, body: ["project_id": projectID])
+    }
+
+    func stopIOSRecording() async throws -> IOSSetupStatus {
+        try await post("api/ios-setup/recording/stop", timeoutInterval: 30)
+    }
+
+    func getCaptureSources() async throws -> [CaptureSource] {
+        struct Response: Decodable { let sessions: [CaptureSource] }
+        let response: Response = try await get("api/captures", timeoutInterval: 10)
+        return response.sessions
+    }
+
+    func getFlowPage(sessionID: Int, cursor: Int) async throws -> FlowPage {
+        try await get("api/captures/\(sessionID)/flows", queryItems: [
+            URLQueryItem(name: "cursor", value: String(cursor)), URLQueryItem(name: "limit", value: "200")
+        ], timeoutInterval: 10)
     }
 
     func readWeakNetwork(deviceID: String) async throws -> WeakNetworkStatus {
