@@ -2,6 +2,10 @@
 
 抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 SwiftUI 原生应用，会自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、本地 APK/Jenkins 测试包安装、前台 App 自动识别、抓包启动、接口查看和 cURL 导出。
 
+本地开发版另已接入 iPhone 按项目域名的 HTTP(S) 代理抓包，入口位于“抓包”页的平台选择。
+该能力仍待真实手机业务验收，未发布到 GitHub 下载包。仅使用 iPhone 时不需 Android SDK；
+手机安装、信任和删除测试配置必须由用户本人完成，详见[桌面端使用指南](docs/desktop-user-guide.md#13-iphone-抓包本地预览)。
+
 项目默认不包含历史抓包结果、上传 APK、本机数据库、cookie、token 或账号状态。新数据库会创建一台默认本机抓包设备 `device-1 / AI_Capture_AVD_01 / emulator-5554`；如果已有设备数据库或外部设备配置，不会覆盖。
 
 ## 安装
@@ -37,12 +41,12 @@
 参考 [Apple 官方：打开来自未知开发者的 Mac App](https://support.apple.com/zh-cn/guide/mac-help/-mh40616/mac)。不要关闭 Gatekeeper，也不要通过 `xattr` 移除安全隔离属性。
 
 桌面 App 已内嵌 Python、FastAPI、mitmproxy 和 Frida 客户端运行时，不需要用户手动启动后端。
-新 Mac 仍需具备 Android Studio 或 Android SDK；首次准备环境时，工具会检查 SDK、安装或定位
+使用 Android 的新 Mac 仍需具备 Android Studio 或 Android SDK；首次准备环境时，工具会检查 SDK、安装或定位
 Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 
 安装后的完整操作和排错说明见 [桌面端使用指南](docs/desktop-user-guide.md)。
 
-### 首次抓包
+### 首次 Android 抓包
 
 1. 打开桌面 App。页面默认进入“抓包”，内部服务会自动启动，不需要手动打开网页或后端。
 2. 如果尚未安装应用，先进入“安装应用”，从 Jenkins 选择测试包或点击“选择 APK”。模拟器未启动时，先回到“抓包”点击“启动模拟器”。
@@ -169,8 +173,8 @@ Android SDK 默认从 `$ANDROID_SDK_ROOT` 或 `$HOME/Library/Android/sdk` 读取
 - App 使用证书绑定、内置 CA、双向 TLS 或不信任用户 CA 时，HTTPS 响应可能无法解密。
 - 默认抓包模拟器必须支持 Google Play；公司内部模式默认不强制 Google 登录。设置 `REQUIRE_GOOGLE_LOGIN=1` 后，未登录设备才会被禁止安装 APK、打开 App 或启动抓包。
 - Google 登录、支付、风控等流程仍可能因为代理、证书或设备状态而失败。
-- 真机抓包需要用户自行处理证书安装、USB 调试授权和系统代理限制。
-- iOS 仅保留数据模型和 UI 扩展边界，当前版本不执行 iOS 抓包。
+- Android 真机日志需要 USB 或无线调试授权；iPhone 抓包需要本人安装配置、信任本次测试证书并在结束时删除配置。
+- iPhone 本地预览仅记录经过系统代理的目标域名 HTTP(S)，不提供 iOS 安装、系统日志、弱网或证书绑定绕过；不保证所有应用可捕获。
 
 ## 发布包
 

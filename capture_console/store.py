@@ -887,10 +887,22 @@ class CaptureStore:
                 )
             ]
 
-    def clear_capture_sessions(self) -> None:
+    def reset_capture_sessions_for_restart(self) -> None:
+        """Reset transient Android state without deleting archived iPhone results."""
+        timestamp = now_iso()
         with self.connect() as conn:
-            conn.execute("DELETE FROM capture_sessions")
-            conn.execute("UPDATE capture_devices SET current_session_id=NULL, lease_status='idle', updated_at=?", (now_iso(),))
+            conn.execute("DELETE FROM capture_sessions WHERE platform!='ios' AND mode!='ios-http-proxy'")
+            conn.execute(
+                """
+                UPDATE capture_sessions
+                SET status='failed', stopped_at=COALESCE(stopped_at, ?), updated_at=?,
+                    error=COALESCE(NULLIF(error, ''), ?)
+                WHERE (platform='ios' OR mode='ios-http-proxy')
+                    AND status IN ('starting', 'running', 'stopping')
+                """,
+                (timestamp, timestamp, "本机服务已结束，本次抓包未正常完成；已保存的接口仍可查看。"),
+            )
+            conn.execute("UPDATE capture_devices SET current_session_id=NULL, lease_status='idle', updated_at=?", (timestamp,))
 
     def update_app_version(self, app_id: int, version: Dict[str, Any]) -> Dict[str, Any]:
         fields = {

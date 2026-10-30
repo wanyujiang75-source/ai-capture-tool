@@ -147,7 +147,7 @@ def capture_mode_candidates(target_app: Dict[str, Any], requested_mode: str) -> 
 
 def clear_project_capture_records() -> None:
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-    store.clear_capture_sessions()
+    store.reset_capture_sessions_for_restart()
 
 
 def device_or_404(device_id: str) -> Dict[str, Any]:

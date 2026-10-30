@@ -1835,7 +1835,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
                 status="stopped",
             )
 
-            store.clear_capture_sessions()
+            store.reset_capture_sessions_for_restart()
 
             self.assertEqual(store.list_sessions(), [])
             self.assertEqual(store.list_apps()[0]["package_name"], "com.meta.inno.monopoly_sticker")

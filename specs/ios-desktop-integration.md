@@ -79,7 +79,22 @@
 
 锁屏曾中断结束确认验收；恢复可操作后补齐。最终关闭全部合成实例和服务，恢复真实本机运行目录，状态为 `connection_state=idle`、`recording_state=idle`、无活动 Android 抓包。没有把合成状态留给用户或记为手机验收。
 
-### D3 待处理
+## D3 本地验收记录（2026-10-30，实机待完成）
 
-- 真实 iPhone 安装/信任、PokeHub 与第二受控域名的 Request/Response、Android 共存、手机网络恢复和最终本地安装包均未验收。
-- 发现旧后端 startup/shutdown 调用 `clear_project_capture_records()`，其 `clear_capture_sessions()` 会删除所有平台的记录索引。文件仍在不等于历史列表可恢复；最终交付前需给 iPhone 记录增加跨重启保留回归并修正此兼容问题，不改变 Android 原有新轮次显示语义。
+- 旧后端 startup/shutdown 会删除所有会话索引。三项生命周期回归先全部失败后修复：保留 iPhone 终态记录与正文；未正常结束的活动记录标为失败；已有失败原因保持不变。Android 原有重启清空显示和设备占用重置不变。
+- `tests.test_ios_lifecycle` 加既有相关回归共242项通过，7.749秒；2项隔离真实代理测试通过，4.681秒；8项原生打包测试通过，59.841秒。独立复核未发现问题，另行运行3项生命周期回归通过。
+- 新增 `tests.test_ios_packaged_lifecycle`，只使用指定解压 App 内的 Python、代码和启动脚本，临时 HOME/运行目录、随机回环端口，不继承开发 SDK/Python 路径。三轮真实后端启动覆盖正常关闭与自有测试进程异常中断，验证会话/正文/cURL/项目配置保留、Android旧索引重置、未连接手机不能开始记录；1项集成验收通过，6.771秒。合成归档不是手机流量。
+- Swift 源码未再改动，复用 D2 的116项同源通过记录。最终本地预览包 `AI-Capture-Desktop-20261030-ios-d3-preview-development-arm64.zip` 构建成功，build ID 为 `ios-d3-preview-20261030`。SHA-256 为 `043d498f19c4a4decec2cc8fdb02ca248d0a2a35a699bbb463081a69f507f89a`，校验通过；ZIP 内含中文及英文文件名的安装指南，没有运行数据库、临时手机配置、测试证书、APK或本机日志。
+- 解压到独立目录后，通过全新运行目录实际打开原生桌面：默认 Android 未启动；iPhone 未连接时开始按钮禁用；Wi-Fi 名称为空时不能生成配置；接口页无历史和虚假运行状态。正常退出后端完成清理，无测试进程残留，运行后严格深度签名通过。这是本机隔离环境验收，不等同于另一台实体 Mac。
+- 最后恢复工作树中的新版桌面和真实运行目录，build ID 正确、iPhone idle/无记录，未启动实际手机代理。更新 README、统一安装入口、桌面使用指南及随包说明，明确本地预览与尚未发布边界。未推送、合并或上传 GitHub 包。
+
+可复现的安装包生命周期验收：先正常退出当前桌面，解压该 ZIP，再运行
+`CAPTURE_TEST_IOS_APP_PATH="<解压目录>/抓包工具.app" python3 -m unittest -v tests.test_ios_packaged_lifecycle`。
+测试仅创建/终止自身临时服务，不修改手机与现有运行目录；不需要网络代理、证书安装或 Android SDK。
+
+### 实机缺口
+
+`iPhone14_Test` 可被配对设备列表发现，但尚未获得当前手机 Wi-Fi 名称，桌面也未能自动读到名称。
+已向用户询问名称（不需要密码）。仍需本人安装、信任配置，再验收真实 PokeHub 与第二受控域名
+Request/Response、Android 同时抓包、停止再开始、结束连接后的手机网络恢复。
+这些步骤不能以合成接口、Mac 自检或本机包测试替代，因此 D3 和整体目标未完成。
