@@ -805,6 +805,23 @@ class CaptureStore:
                 )
             return session
 
+    def create_ios_session(self, *, connection_id: str, project_name: str, outdir: str) -> Dict[str, Any]:
+        """Register an iPhone recording without leasing an Android device."""
+        timestamp = now_iso()
+        with self.connect() as conn:
+            try:
+                row = conn.execute(
+                    """INSERT INTO capture_sessions
+                    (platform, device_id, device_name, app_name, package_name, mode, outdir,
+                     status, started_at, created_at, updated_at)
+                    VALUES ('ios', ?, 'iPhone', ?, '', 'ios-http-proxy', ?, 'starting', ?, ?, ?)
+                    RETURNING *""",
+                    ("ios-" + connection_id, project_name, outdir, timestamp, timestamp, timestamp),
+                ).fetchone()
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("当前 iPhone 已有抓包任务，请先停止后再开始。") from exc
+        return dict(row)
+
     def update_session_status(
         self,
         session_id: int,

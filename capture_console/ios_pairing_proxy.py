@@ -11,75 +11,90 @@ import shutil
 import ssl
 import subprocess
 import sys
-import zlib
+import time
 from pathlib import Path
 
 from mitmproxy import certs, http, options
 from mitmproxy.tools.dump import DumpMaster
 
 from .ios_setup import make_profile, process_identity
+from .ios_recording import IOSRecording
 
 
 class PairingMonitor:
     def __init__(self, config):
         self.config = config
-        self.state = {"phase": "waiting_phone", "flow_count": 0, "flows": [],
+        self.state = {"phase": "waiting_phone", "connection_state": "waiting_phone", "flow_count": 0, "flows": [],
                       "profile_path": config["profile_path"], "ssid": config["ssid"],
                       "check_url": "https://capture-check.invalid/" + config["check_token"],
                       "certificate_name": "Capture iPhone Test " + config["check_token"][:6]}
         self.dirty = True
+        self.recording = IOSRecording(config, self.state)
 
     def authenticated(self, flow):
         return flow.metadata.get("proxyauth") == (self.config["username"], self.config["password"])
 
-    def phone(self, flow):
+    def eligible_phone(self, flow):
         peer = flow.client_conn.peername
         if not peer or not self.authenticated(flow):
             return False
         ip = ipaddress.ip_address(peer[0])
         return ip.is_private and not ip.is_loopback and peer[0] != self.config["host"]
 
+    def phone(self, flow):
+        if not self.eligible_phone(flow):
+            return False
+        peer = flow.client_conn.peername[0]
+        if peer != self.state.get("client_ip", peer):
+            self.recording.invalidate_phone()
+            self.dirty = True
+            return False
+        return True
+
     def http_connect(self, flow):
         if self.phone(flow) and self.state["phase"] == "waiting_phone":
             self.state["phase"] = "waiting_trust"
+            self.state["connection_state"] = "waiting_trust"
+            self.dirty = True
+
+    def requestheaders(self, flow):
+        if self.phone(flow):
+            self.recording.requestheaders(flow)
             self.dirty = True
 
     def request(self, flow):
+        self.recording.request(flow)
         if flow.request.host != "capture-check.invalid" or not self.authenticated(flow):
             return
         valid = flow.client_conn.tls and flow.request.path == "/" + self.config["check_token"]
         flow.response = http.Response.make(
             200 if valid else 404,
             "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-            "<h1>连接检查完成</h1><p>HTTPS 已通过。请返回 PokeHub 操作业务页面，桌面端会自动显示收到的接口。</p>"
+            "<h1>连接检查完成</h1><p>HTTPS 已通过。请返回桌面端选择项目并点击开始抓包，再操作手机应用。</p>"
             if valid else "Not found", {"content-type": "text/html; charset=utf-8", "cache-control": "no-store"},
         )
 
+    def responseheaders(self, flow):
+        self.recording.responseheaders(flow)
+
+    def error(self, flow):
+        self.recording.finish(flow)
+        self.dirty = True
+
     def response(self, flow):
-        if not self.phone(flow) or not flow.client_conn.tls or not flow.response:
+        self.recording.finish(flow)
+        self.dirty = True
+        if not self.eligible_phone(flow) or not flow.client_conn.tls or not flow.response:
             return
         probe = (flow.request.host == "capture-check.invalid"
                  and flow.request.path == "/" + self.config["check_token"] and flow.response.status_code == 200)
-        target = flow.request.host in self.config["hosts"]
-        if not probe and not target:
+        if not probe:
             return
         self.state["client_ip"] = flow.client_conn.peername[0]
+        self.state["connection_state"] = "ready"
+        self.state.pop("message", None)
         if self.state["phase"] != "capturing":
             self.state["phase"] = "ready"
-        if target:
-            request, request_truncated = body_preview(flow.request)
-            response, response_truncated = body_preview(flow.response)
-            self.state["phase"] = "capturing"
-            self.state["flow_count"] += 1
-            self.state["flows"].append({
-                "id": flow.id, "method": flow.request.method[:32],
-                "url": f"https://{flow.request.host}{flow.request.path.split('?')[0]}".encode()[:2048].decode("utf-8", "ignore"),
-                "status": flow.response.status_code,
-                "request_body": request,
-                "response_body": response,
-                "truncated": request_truncated or response_truncated,
-            })
-            self.state["flows"] = self.state["flows"][-20:]
         self.dirty = True
 
     def tcp_message(self, flow):
@@ -107,25 +122,6 @@ def owner_is_alive(config):
         return False
 
 
-def body_preview(message):
-    value = message.raw_content
-    if value is None:
-        return "", True
-    encoding = message.headers.get("content-encoding", "identity").lower()
-    if encoding in {"gzip", "deflate"}:
-        try:
-            inflater = zlib.decompressobj(31 if encoding == "gzip" else 15)
-            value = inflater.decompress(value, 16385)
-        except zlib.error:
-            return "压缩正文无法预览。", True
-    elif encoding not in {"identity", ""}:
-        return "此压缩格式暂不提供正文预览。", True
-    # Replacement characters can expand invalid UTF-8 threefold; bound the displayed bytes too.
-    text = (value or b"")[:16384].decode("utf-8", "replace")
-    encoded = text.encode("utf-8")
-    return encoded[:16384].decode("utf-8", "ignore"), len(value) > 16384 or len(encoded) > 16384
-
-
 async def run(config):
     os.umask(0o077)
     confdir = Path(config["confdir"])
@@ -140,22 +136,44 @@ async def run(config):
     opts.update(proxyauth=config["username"] + ":" + config["password"], block_global=True,
                 connection_strategy="lazy", upstream_cert=False, ssl_insecure=False, stream_large_bodies="256k",
                 websocket=False, rawtcp=True,
-                allow_hosts=["^(" + "|".join(re.escape(h) for h in ["capture-check.invalid", *config["hosts"]]) + ")(:443)?$"])
+                allow_hosts=[r"^capture-check\.invalid(:443)?$"])
     monitor = PairingMonitor(config)
     master.addons.add(monitor)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, master.shutdown)
 
+    def switch(domains):
+        hosts = [r"capture-check\.invalid"]
+        hosts.extend((r"[^.:]+(?:\.[^.:]+)*\." + re.escape(h[2:])) if h.startswith("*.") else re.escape(h)
+                     for h in domains)
+        opts.update(allow_hosts=["^(" + "|".join(hosts) + r")(:\d+)?$"])
+        # This master owns only this iPhone proxy, never an Android or foreign listener.
+        proxy = master.addons.get("proxyserver")
+        for handler in list(proxy.connections.values()):
+            for transport in list(handler.transports.values()):
+                if transport.handler:
+                    transport.handler.cancel("iPhone recording mode changed")
+                if transport.writer:
+                    transport.writer.close()
+
     async def maintain():
         try:
             await asyncio.sleep(0.5)
             while True:
-                if os.getppid() != config["parent_pid"] or not owner_is_alive(config):
+                if (os.getppid() != config["parent_pid"] or not owner_is_alive(config)
+                        or time.time() >= config.get("expires_at", float("inf"))):
                     master.shutdown()
                     return
+                control = Path(config.get("control_path", Path(config["state_path"]).with_name("control.json")))
+                if control.exists():
+                    if control.stat().st_size > 65536:
+                        raise ValueError("oversized recording command")
+                    monitor.recording.apply(json.loads(control.read_text()), switch)
+                monitor.recording.check_limit(switch)
+                monitor.dirty = True
                 monitor.flush()
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.2)
         except Exception:
             # Losing status persistence or lifecycle monitoring must stop interception.
             master.shutdown()

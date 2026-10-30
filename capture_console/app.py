@@ -24,7 +24,8 @@ from .foreground import capture_state
 from .http_errors import structured_http_error_body
 from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceError
 from .ios_setup import IOSSetupService
-from .ios_setup_api import ios_setup_router
+from .ios_setup_api import ios_operation, ios_setup_router
+from .ios_results import IOSCaptureArchive
 from .local_config import load_local_config
 from .logcat import LogcatService
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
@@ -74,7 +75,7 @@ logcat_service = LogcatService()
 logcat_reaper_stop_event = threading.Event()
 logcat_reaper_thread: Optional[threading.Thread] = None
 app = FastAPI(title="TraceDeck API", version="1.0.0")
-ios_setup_service = IOSSetupService(RUNTIME_DIR / "ios-setup")
+ios_setup_service = IOSSetupService(RUNTIME_DIR / "ios-setup", store=store)
 app.include_router(ios_setup_router(ios_setup_service))
 
 
@@ -320,6 +321,15 @@ def stop_all_active_captures() -> Dict[str, Any]:
     stopped_count = 0
     for active in list_active_sessions():
         device_id = active.get("device_id") or DEFAULT_DEVICE_ID
+        if active.get("mode") == "ios-http-proxy":
+            try:
+                ios_setup_service.stop_recording(session_id=active["id"])
+                if store.get_session(active["id"])["status"] == "stopped":
+                    stopped_count += 1
+                results.append({"device_id": device_id, "session_id": active["id"], "ok": True})
+            except (ValueError, RuntimeError, OSError):
+                results.append({"device_id": device_id, "session_id": active["id"], "ok": False})
+            continue
         try:
             device_runner = runner_for_device_id(device_id)
         except Exception as exc:
@@ -2673,6 +2683,10 @@ def api_desktop_stop_captures() -> Dict[str, Any]:
 @app.post("/api/captures/{session_id}/stop")
 def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
+    if session.get("mode") == "ios-http-proxy":
+        if session["status"] in {"starting", "running", "stopping"}:
+            ios_operation(ios_setup_service.stop_recording, session_id=session_id)
+        return {"ok": True, "cleanup_ok": True, "session": store.get_session(session_id)}
     device_id = session.get("device_id") or DEFAULT_DEVICE_ID
     device_runner = runner_for_device_id(device_id)
     result, proxy_result = stop_capture_and_clear_proxy(device_runner)
@@ -2698,13 +2712,17 @@ def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
 def api_get_capture(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
     outdir = Path(session["outdir"])
+    if session.get("mode") == "ios-http-proxy":
+        return {"session": session, "flow_count": IOSCaptureArchive(outdir, read_only=True).page(limit=1)["total"]}
     flows = scan_capture(outdir)
     return {"session": session, "flow_count": len(flows)}
 
 
 @app.get("/api/captures/{session_id}/flows")
-def api_get_flows(session_id: int) -> Dict[str, Any]:
+def api_get_flows(session_id: int, cursor: int = 0, limit: int = 200) -> Dict[str, Any]:
     session = session_or_404(session_id)
+    if session.get("mode") == "ios-http-proxy":
+        return IOSCaptureArchive(session["outdir"], read_only=True).page(cursor=cursor, limit=limit)
     flows = scan_capture(Path(session["outdir"]))
     return {"flows": flows}
 
@@ -2713,6 +2731,8 @@ def api_get_flows(session_id: int) -> Dict[str, Any]:
 def api_get_flow_detail(session_id: int, flow_id: str) -> Dict[str, Any]:
     session = session_or_404(session_id)
     try:
+        if session.get("mode") == "ios-http-proxy":
+            return IOSCaptureArchive(session["outdir"], read_only=True).detail(flow_id)
         return get_flow_detail(Path(session["outdir"]), flow_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2722,6 +2742,8 @@ def api_get_flow_detail(session_id: int, flow_id: str) -> Dict[str, Any]:
 def api_get_flow_curl(session_id: int, flow_id: str) -> str:
     session = session_or_404(session_id)
     try:
+        if session.get("mode") == "ios-http-proxy":
+            return IOSCaptureArchive(session["outdir"], read_only=True).curl(flow_id)
         detail = get_flow_detail(
             Path(session["outdir"]),
             flow_id,
@@ -2730,6 +2752,8 @@ def api_get_flow_curl(session_id: int, flow_id: str) -> str:
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail={"user_message": str(exc)}) from exc
     return build_curl(detail)
 
 

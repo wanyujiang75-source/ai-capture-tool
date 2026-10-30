@@ -1,5 +1,21 @@
 # 进度记录
 
+## 2026-10-30 iPhone 统一桌面接入
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-D1 | DONE | 项目域名、连接/记录分离、统一会话与有界结果 | `goal.md`, `progress.md`, `specs/ios-desktop-integration.md`, `capture_console/ios_*.py`, `capture_console/{app,store,results}.py`, `tests/test_ios_*.py`, `tests/ios_proxy_worker_fixture.py`, `tests/test_console_{api,core}.py` | Python RED/GREEN；真实隔离 HTTP(S) 启停、透传、代际隔离、限额；Android 相关回归 | 项目/记录控制/SQLite有界存储及共用结果路由已实现；最终239项Python回归7.225秒、2项真实隔离代理4.404秒通过，diff检查通过。独立复核三项状态问题及一项恢复重复断连已RED/GREEN修复，最终窄范围复核无剩余发现 | 本地提交并保留分支；下一轮领取 D2，整体验收仍待 D3 |
+| IOS-D2 | TODO | 原生统一抓包入口、接口来源和退出恢复 | `macos-native/Sources/AICaptureNativeApp/`、相关 Swift 测试；本任务 spec/progress | Swift 回归、构建、四导航正常/空/加载/失败视觉验收；切换来源及停止保留连接行为 | 依赖 IOS-D1 的状态/会话/分页契约 | D1 通过后领取 |
+| IOS-D3 | TODO | 实机与最终安装包验收、使用说明 | 相关 Python/Swift 验收测试、打包脚本、`docs/desktop-user-guide.md`、本任务 spec/progress | iPhone PokeHub真实Request/Response及第二受控域名；Android共存；停启/结束恢复；最终包与签名、新用户路径 | 不以本机代理自检替代手机验收；不默认推送远端 | D2 通过后领取 |
+
+用户已允许正常关闭旧桌面和切换构建，不再受旧版持续运行限制。IOS-TRIAL-1 作为历史试验保留，未完成的手机证明由 IOS-D3 继续完成。
+
+IOS-D1 验证记录：首批测试确认缺少项目模块、记录控制和共享路由；实现后测试覆盖连接已验证但不自动录制、命令版本确认、停止后连接保留、重新开始隔离旧回调、Android/iPhone并存、分页与正文预览限额、磁盘异常、元数据限额、配置保存上限和配置到期清理。
+审查复现了失败状态仍满足ACK、连接清理改写历史状态、手机换地址仍报告可抓包三项问题，已先添加失败回归再修复。追加了全局停止入口保护失败历史记录的回归。旧试验长URL测试超过新增128KiB元数据准入限制，已将正常输入与超限拒绝拆为独立验收。
+复核进一步发现重新验证期间的CONNECT/请求头事件会重复重置连接；新增事件顺序回归确认3次重置而非2次后，修复为等待验证状态下幂等，最终全部相关测试通过。复核工具首次因模型容量失败，重试后完成独立审查；最终评审仅覆盖生命周期修复，存储/分页由主执行者及边界测试验证。
+真实代理测试使用临时本地HTTP/TLS服务、独立认证代理及一次性测试CA；仅测试子进程将本机请求视为合成手机，生产代码仍排除本机自检。验证未认证请求407、目标域名Request/Response、非目标域名不记录、停止后HTTP/HTTPS透传、复用原配置重新开始、记录限额后透传、桌面退出回收和恢复标记。此证据不能替代真实iPhone安装/信任/业务验收。
+本轮未改动现有手机配置、旧桌面和Android运行任务，未推送或发布安装包。
+
 ## 2026-10-29 iOS 真机可行性试验
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

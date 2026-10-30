@@ -14,12 +14,50 @@ class IOSStopPayload(BaseModel):
     phone_configuration_removed: bool = False
 
 
+class IOSProjectPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str | None = None
+    name: str = Field(min_length=1, max_length=80)
+    domains: list[str] = Field(min_length=1, max_length=64)
+
+
+class IOSRecordingPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str
+
+
+def ios_operation(operation, *args, **kwargs):
+    try:
+        return operation(*args, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(400, detail={"user_message": str(exc), "recovery_action": "检查手机连接"}) from exc
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(503, detail={"user_message": "手机连接或本地记录异常，请检查连接后重试。",
+                                         "recovery_action": "检查手机连接"}) from exc
+
+
 def ios_setup_router(service):
     router = APIRouter(prefix="/api/ios-setup")
 
     @router.get("")
     def status():
         return service.status()
+
+    @router.get("/projects")
+    def projects():
+        return {"projects": ios_operation(service.projects.list)}
+
+    @router.post("/projects")
+    def save_project(payload: IOSProjectPayload):
+        return ios_operation(service.projects.save, project_id=payload.id, name=payload.name, domains=payload.domains)
+
+    @router.post("/recording/start")
+    def start_recording(payload: IOSRecordingPayload):
+        return ios_operation(service.start_recording, payload.project_id)
+
+    @router.post("/recording/stop")
+    def stop_recording():
+        return ios_operation(service.stop_recording)
 
     @router.post("/prepare")
     def prepare(payload: IOSPreparePayload):

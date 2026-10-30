@@ -4,6 +4,7 @@ import gzip
 import os
 import plistlib
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,6 +73,22 @@ class IOSMonitorTests(unittest.TestCase):
         self.monitor.flush()
         return json.loads(Path(self.cfg["state_path"]).read_text())
 
+    def record(self, flow):
+        if self.monitor.state['recording_state'] == 'idle':
+            probe = self.flow(host='capture-check.invalid', path='/check-secret')
+            self.monitor.request(probe)
+            self.monitor.response(probe)
+            self.monitor.recording.apply({'revision': 1, 'action': 'start', 'session_id': 1,
+                                          'outdir': str(Path(self.tmp.name) / 'captures' / 'one'),
+                                          'project': {'id': 'test', 'name': 'Test', 'domains': ['poke.example']}}, Mock())
+        self.monitor.requestheaders(flow)
+        flow.request.stream(flow.request.raw_content)
+        self.monitor.request(flow)
+        self.monitor.responseheaders(flow)
+        flow.response.stream(flow.response.raw_content)
+        self.monitor.response(flow)
+        return self.monitor.recording.archive.detail(flow.id)
+
     def test_mac_selfcheck_and_unauthenticated_client_do_not_mark_phone_ready(self):
         for flow in [self.flow(client="192.168.1.10"), self.flow(client="127.0.0.1"), self.flow(auth=False)]:
             self.monitor.response(flow)
@@ -99,19 +116,18 @@ class IOSMonitorTests(unittest.TestCase):
         for _ in range(25):
             flow = self.flow()
             flow.response.content = b"x" * 32768
-            self.monitor.response(flow)
+            detail = self.record(flow)
         state = self.state()
-        self.assertEqual((state["phase"], state["flow_count"], len(state["flows"])), ("capturing", 25, 20))
-        self.assertLessEqual(len(state["flows"][0]["response_body"].encode()), 16384)
-        self.assertTrue(state["flows"][0]["truncated"])
+        self.assertEqual((state["phase"], state["flow_count"], len(state["flows"])), ("capturing", 25, 0))
+        self.assertLessEqual(len(detail["response_text"].encode()), 256 * 1024)
         self.assertNotIn("password", state)
-        self.assertNotIn("request_headers", state["flows"][0])
+        self.assertNotIn("request_headers", state)
 
     def test_non_utf8_preview_still_respects_byte_budget(self):
         flow = self.flow()
-        flow.response.content = b"\xff" * 16384
-        self.monitor.response(flow)
-        self.assertLessEqual(len(self.state()["flows"][0]["response_body"].encode()), 16384)
+        flow.response.content = b"\xff" * 300000
+        detail = self.record(flow)
+        self.assertLessEqual(len(detail["response_text"].encode()), 256 * 1024)
 
     def test_connect_only_reports_waiting_for_trust(self):
         self.monitor.http_connect(self.flow())
@@ -120,23 +136,22 @@ class IOSMonitorTests(unittest.TestCase):
     def test_gzip_response_is_readable_and_decompression_is_bounded(self):
         flow = self.flow()
         flow.response.headers["content-encoding"] = "gzip"
-        flow.response.raw_content = gzip.compress(b'{"value":"' + b"a" * 200000 + b'"}')
-        self.monitor.response(flow)
-        preview = self.state()["flows"][0]
-        self.assertTrue(preview["response_body"].startswith('{"value":"'))
-        self.assertLessEqual(len(preview["response_body"].encode()), 16384)
-        self.assertTrue(preview["truncated"])
+        flow.response.raw_content = gzip.compress(b'{"value":"' + b"a" * 2000000 + b'"}')
+        detail = self.record(flow)
+        self.assertTrue(detail["response_text"].startswith('{"value":"'))
+        self.assertLessEqual(len(detail["response_text"].encode()), 256 * 1024)
+        self.assertTrue(detail["response_body"]["truncated"])
 
     def test_serialized_state_stays_bounded_for_control_bytes_and_long_urls(self):
         for _ in range(25):
-            flow = self.flow(path="/" + "x" * 65536)
+            flow = self.flow(path="/" + "x" * 16384)
             flow.request.content = b"\x00" * 16384
             flow.response.content = b"\x00" * 16384
-            self.monitor.response(flow)
+            detail = self.record(flow)
         state = self.state()
         self.assertEqual(state["flow_count"], 25)
         self.assertLess(Path(self.cfg["state_path"]).stat().st_size, 1_500_000)
-        self.assertLessEqual(len(state["flows"][-1]["url"].encode()), 2048)
+        self.assertEqual(detail["url"], flow.request.url)
 
     def test_unsupported_upgrades_do_not_retain_tcp_message_history(self):
         flow = SimpleNamespace(messages=[SimpleNamespace(content=b"hello")])
@@ -153,6 +168,30 @@ class IOSMonitorTests(unittest.TestCase):
 
 
 class IOSWorkerTests(unittest.TestCase):
+    def test_connection_expiry_stops_proxy_without_desktop_polling(self):
+        original_mask = os.umask(0o077)
+        self.addCleanup(os.umask, original_mask)
+
+        class Master:
+            def __init__(self, *args, **kwargs):
+                self.done = asyncio.Event()
+                self.addons = Mock()
+
+            async def run(self):
+                await self.done.wait()
+
+            def shutdown(self):
+                self.done.set()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = config(Path(tmp))
+            cfg.update(parent_pid=os.getppid(), expires_at=time.time() - 1)
+            with patch('capture_console.ios_pairing_proxy.DumpMaster', Master), \
+                    patch('capture_console.ios_pairing_proxy.options.Options', return_value=Mock()), \
+                    patch('capture_console.ios_pairing_proxy.owner_is_alive', return_value=True):
+                asyncio.run(asyncio.wait_for(run(cfg), timeout=2))
+            self.assertFalse(Path(cfg['confdir']).exists())
+
     def test_state_write_failure_stops_proxy_and_still_deletes_secrets(self):
         original_mask = os.umask(0o077)
         self.addCleanup(os.umask, original_mask)
@@ -309,6 +348,26 @@ class IOSAPITests(unittest.TestCase):
         result = self.post("/api/ios-setup/prepare", json={"ssid": "Office", "desktop_pid": os.getpid()})
         self.assertEqual(result.status_code, 503)
         self.assertNotIn("secret", result.text)
+
+    def test_recording_stop_does_not_require_removing_phone_configuration(self):
+        self.service.stop_recording.return_value = {'recording_state': 'stopped', 'connection_state': 'ready'}
+        result = self.post('/api/ios-setup/recording/stop', json={})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()['connection_state'], 'ready')
+        self.service.stop.assert_not_called()
+
+    def test_project_validation_and_recording_start(self):
+        self.service.projects.save.return_value = {'id': 'new', 'name': 'Example', 'domains': ['example.com']}
+        result = self.post('/api/ios-setup/projects', json={'name': 'Example', 'domains': ['example.com']})
+        self.assertEqual(result.status_code, 200)
+        self.service.start_recording.return_value = {'recording_state': 'recording', 'session_id': 1}
+        result = self.post('/api/ios-setup/recording/start', json={'project_id': 'new'})
+        self.assertEqual(result.status_code, 200)
+        self.service.start_recording.assert_called_once_with('new')
+        self.service.start_recording.side_effect = RuntimeError('secret password')
+        result = self.post('/api/ios-setup/recording/start', json={'project_id': 'new'})
+        self.assertEqual(result.status_code, 503)
+        self.assertNotIn('secret', result.text)
 
     def test_prepare_payload_is_forwarded_and_unknown_fields_rejected(self):
         self.service.prepare.return_value = {"phase": "waiting_phone", "flow_count": 0, "flows": []}
