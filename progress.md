@@ -1,12 +1,26 @@
 # 进度记录
 
+## 2026-11-02 iPhone 配置流程优化规划
+
+以下为本次规划任务及后续任务池；本轮只交付 IOS-A0，不领取实现任务。
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-A0 | DONE | 评审 iPhone 自动配置流程并形成优化计划书 | `goal.md`, `progress.md`, `specs/ios-desktop-integration.md`, `specs/ios-setup-automation-plan.md` | 首次/重连/停止/退出分流；导入能力验证门槛、安全边界、真实手机证据与任务验收齐全；文档自审及 diff 检查通过 | 已完成代码/官方资料核对、8项风险评审、6阶段任务和验收矩阵；只读复核session 77 ready/recording、26条；文档自审、占位/敏感信息扫描及diff检查通过。未运行构建/产品测试，未改手机或当前连接 | 交付规划；本轮不实施、不推送。后续先执行A1，无损导入未验证前不承诺全自动 |
+| IOS-A1 | TODO | 验证小火箭安全增量导入与撤销能力 | `specs/ios-setup-automation-plan.md`、计划所列隔离兼容夹具及证据 | 节点与精确域名免手填导入，重复导入不重复，原节点/DNS/FINAL与其他流量不变；关闭测试配置恢复；记录支持版本与证据 | 尚未证明自动导入；当前成功来自人工配置，不算通过 | 按计划第6节先完成兼容性试验；不修改当前生产配置 |
+| IOS-A2 | TODO | 分离证书、网络路由与短期交付，支持受限复用 | 计划第6节 A2 所列 Python/Swift/测试文件 | 24小时有效期内重开不换CA；下载凭据过期/撤销有效；私钥不交付；端口冲突不杀进程；旧状态不能伪造ready | 待A1确定可支持的导入方式 | 先RED测试，再实现身份与安全交付契约 |
+| IOS-A3 | TODO | 提供模式化配置导入与分层诊断 | 计划第6节 A3 所列导入/诊断模块及测试 | 普通Wi-Fi与保留小火箭模式分离；配置生成免手填；检查域名通过不等于应用接口已收到；错误可定位至有证据的阶段 | 依赖A1/A2；不得承诺任意第三方VPN | 实现已验收适配器及只读诊断 |
+| IOS-A4 | TODO | 原生向导与精准状态文案 | 计划第6节 A4 所列 Swift/测试文件 | 当前动作唯一；实际手机HTTPS回调推动状态；无重复配置/凭据展示；开始抓包有明确用户意图；正常/空/加载/失败视觉验收 | 复用四导航与既有接口页 | 实现首次/重连向导及错误恢复入口 |
+| IOS-A5 | TODO | 停止、重连、断开与异常退出恢复 | 计划第6节 A5 所列生命周期与测试文件 | 停止只停记录；重开不自动录制；失效配置提示准确；手机恢复与本机清理分开确认；Android不受影响 | 不得把关闭Mac代理当作手机已恢复 | 验证重复停启、地址变化、过期与崩溃路径 |
+| IOS-A6 | TODO | 新用户真机、回归与本地安装包验收 | 计划第6节 A6 所列测试、说明及打包文件 | 计划第7节矩阵全部有结果；PokeHub与第二受控域名真实Req/Resp；Android共存；新用户不手填技术参数；包无密钥配置与抓包数据 | 第二台Mac/第二台iPhone未实测时必须保留缺口 | 完成端到端与安装说明；未另获发布请求前不上传 |
+
 ## 2026-10-30 iPhone 统一桌面接入
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | IOS-D1 | DONE | 项目域名、连接/记录分离、统一会话与有界结果 | `goal.md`, `progress.md`, `specs/ios-desktop-integration.md`, `capture_console/ios_*.py`, `capture_console/{app,store,results}.py`, `tests/test_ios_*.py`, `tests/ios_proxy_worker_fixture.py`, `tests/test_console_{api,core}.py` | Python RED/GREEN；真实隔离 HTTP(S) 启停、透传、代际隔离、限额；Android 相关回归 | 项目/记录控制/SQLite有界存储及共用结果路由已实现；最终239项Python回归7.225秒、2项真实隔离代理4.404秒通过，diff检查通过。独立复核三项状态问题及一项恢复重复断连已RED/GREEN修复，最终窄范围复核无剩余发现 | 本地提交并保留分支；下一轮领取 D2，整体验收仍待 D3 |
 | IOS-D2 | DONE | 原生统一抓包入口、接口来源和退出恢复 | `macos-native/Sources/AICaptureNativeApp/`、相关 Swift 测试（含 `CaptureWorkflowTests.swift`）、`tests/ios_native_ui_fixture.py`；本任务 spec/progress；本地隔离构建与视觉证据 | Swift 回归、构建、四导航兼容及新增流程正常/空/加载/失败视觉验收；切换来源及停止保留连接行为 | 最终116项Swift、构建、运行后严格签名通过；同打包配置8项测试已通过。3项竞态及微秒清空边界RED/GREEN修复；旧测试真实服务依赖已隔离并覆盖成功/失败。原生正常/空/加载/失败、正文/cURL、清空、停启新编号、退出/结束确认均验收；锁屏恢复后补齐最后窗口。详见spec证据，合成UI不是手机证明 | 保留本地分支提交；下一轮D3实机、跨重启历史索引与最终包验收；未推送或发布 |
-| IOS-D3 | BLOCKED | 实机与最终安装包验收、使用说明 | `capture_console/{app,store}.py`及必要生命周期修复、相关 Python/Swift 验收测试、打包脚本、`README.md`、`INSTALL.md`、`docs/desktop-user-guide.md`、`release/安装说明.md`、本任务 spec/progress | iPhone PokeHub真实Request/Response及第二受控域名；Android共存；停启/结束恢复与iPhone历史索引跨重启；最终包与签名、新用户路径 | 本地回归与包验收证据不变。配置已送达；实际Safari检查失败，API仍waiting_phone/idle、无session且0条。2026-11-02新截图明确显示当前Wi-Fi代理关闭；USB只读GetProfileList确认本次配置已安装且IsActive=true，UUID与本地文件一致，排除仅接收未安装。本地Wi-Fi名称、Manual代理参数均与本次连接一致；未取得手机重新连接后的生效证据 | 保持当前配置，请用户关闭再开启Wi-Fi并连接原网络，检查代理状态并刷新验证页；此为待验证假设而非已修复。若仍关闭，继续定位配置与连接绑定；不改DNS、重装证书、绕过准入或发布 |
+| IOS-D3 | BLOCKED | 实机与最终安装包验收、使用说明 | `capture_console/{app,store}.py`及必要生命周期修复、相关 Python/Swift 验收测试、打包脚本、`README.md`、`INSTALL.md`、`docs/desktop-user-guide.md`、`release/安装说明.md`、本任务 spec/progress | iPhone PokeHub真实Request/Response及第二受控域名；Android共存；停启/结束恢复与iPhone历史索引跨重启；最终包与签名、新用户路径 | 2026-11-02已补齐手机HTTPS及PokeHub实际业务Req/Resp：保留小火箭VPN并人工添加精确域名规则后，#77记录由5条增至26条；桌面已检查200的JSON正文。本轮只读复核仍ready/recording、26条。证据见spec追加记录；未重新运行旧回归，也未把人工配置视为自动配置成功 | 剩余真实第二域名、Android同时抓包、停启/彻底恢复及新包新用户验收需恢复实机执行，本轮规划不操作手机。先交付IOS-A0；后续与IOS-A6合并核验清单，不能宣称D3完成 |
 
 用户已允许正常关闭旧桌面和切换构建，不再受旧版持续运行限制。IOS-TRIAL-1 作为历史试验保留，未完成的手机证明由 IOS-D3 继续完成。
 
