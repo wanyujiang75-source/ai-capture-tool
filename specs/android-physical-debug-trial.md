@@ -93,3 +93,14 @@
 - 全局HTTP代理仍为`null`，默认网络184，VPN transport仍存在。未Root、修改VPN/系统代理/证书、安装采集VPN或重新安装应用；没有持续日志采集器。
 - 仅移除本轮UI工具新增的`tcp:64291 -> localabstract:mobilecli-server`转发，复核原`tcp:23761 -> tcp:10156`、`tcp:36166 -> tcp:10157`均保留。PokeHub未关闭。
 - ANDROID-D1再次记录BLOCKED：等待用户自行进入业务首页，同时Release无已验证的免Root诊断通道。安装成功与抓包成功分别报告；只有实际取得业务请求响应后才可验收通过。
+
+## 登录后只读业务试验（2026-11-03 16:58至16:59）
+
+- 用户自行登录后，USB前台和元素检查确认测试包`com.test.tcgp`显示卡牌列表。进入SP1-027卡牌详情，切换“谁在寻找”和卡牌的“训练家”，返回后查看市场的“训练家”并做一次下拉手势，最后返回卡牌列表。页面显示卡牌与无匹配帖子/训练家的空状态；仅凭页面可打开不推断业务请求已成功返回。
+- 未点击发布、交换提交、购买、同步数据或账号设置。返回卡牌页时出现新手引导，用返回键退出；应用留在卡牌列表，没有退出账号或关闭应用。不再次安装，也不宣称覆盖安装已保留原登录态。
+- 目标PID5891从16:58:28起的Logcat快照为136行/13764字节（135条记录，首条16:58:28.985、末条16:59:46.482）。检查了请求/响应/状态码/异常/VM服务标记和日志标签，取得Firebase日志上报与Adjust广告收入上报的URL、Adjust的成功响应文字，但没有可对应的PokeHub业务URL、方法、状态码和Request/Response正文。统计SDK日志不计为业务抓包；原始快照只留本机临时目录，不提交凭据或正文。
+- 结合已验证的Release构建、`debuggable=false`和`run-as`拒绝，当前没有可用的Flutter调试采集证据。只读核对`scripts/start_frida_server.sh:74`附近逻辑：现有启动路径要求uid=0或su；未执行该脚本、Root检测命令或自动环境准备流程，不以试验名义修改设备。
+- 后续免Root候选路径是正确的Flutter Debug包和USB调试连接，再验证其实际业务流量是否被DevTools Network记录；不是保证任意Release/原生SDK流量都可读取。[Flutter构建模式](https://docs.flutter.dev/testing/build-modes)明确Debug启用调试/服务扩展而Release禁用；[Network视图](https://docs.flutter.dev/tools/devtools/network)覆盖`dart:io`及接入`http_profile`的流量。本轮没有触发新构建或改动Jenkins。
+- 收尾验证：系统HTTP代理`null`、默认网络184、VPN transport存在，均与基线一致；没有Root、证书/代理/VPN修改，没有替代VPN采集器或持续Logcat。仅移除本轮工具新增`tcp:65282 -> localabstract:mobilecli-server`，原两项转发保留，未操作iOS连接。
+
+结论：安装、启动和登录后的只读页面验证完成，完整业务接口抓取未通过。原登录阻塞已解除，ANDROID-D1仍为BLOCKED，原因改为当前Release在已授权限制内没有已验证的采集通道；下一步需要Debug构建或应用内诊断支持，不再让用户反复调整手机网络。

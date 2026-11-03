@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-D1 | BLOCKED | 检查Jenkins包并在一加真机安全安装PokeHub Release、验证免Root接口采集 | `goal.md`, `progress.md`, `specs/android-physical-debug-trial.md`；本地临时APK/脱敏诊断；指定一加上的com.test.tcgp及自有USB转发（仅需要时） | 安全安装并运行；有界诊断区分普通日志与真实Req/Resp；有完整证据才算抓取通过；不Root或改VPN/代理/证书，不卸载/清数据/重签；移除自有临时转发 | #588安装/摘要校验已通过，run-as确认不可调试。解锁后16:54确认前台com.test.tcgp仍在登录页，已请用户自行登录。新增有界日志34条记录，无完整业务Req/Resp证据，不能验收抓包通过。系统代理null、默认网络184、VPN transport存在均与基线相同；新增tcp:64291已移除，仅保留原两项转发。登录态保留未通过验证，安装时间变化见spec | 用户自行登录进入首页后继续只读业务页面试验；若Release仍不提供业务诊断，需真正Flutter Debug包或应用内诊断支持，不突破当前Root/VPN/代理/证书边界 |
+| ANDROID-D1 | BLOCKED | 检查Jenkins包并在一加真机安全安装PokeHub Release、验证免Root接口采集 | `goal.md`, `progress.md`, `specs/android-physical-debug-trial.md`；本地临时APK/脱敏诊断；指定一加上的com.test.tcgp及自有USB转发（仅需要时） | 安全安装并运行；有界诊断区分普通日志与真实Req/Resp；有完整证据才算抓取通过；不Root或改VPN/代理/证书，不卸载/清数据/重签；移除自有临时转发 | #588安装/摘要校验通过，用户登录后卡牌列表/详情/寻找帖子/训练家页面已查看。16:58:28至16:59:46有界日志135条记录，仅应用状态及统计SDK请求响应线索，没有完整业务Req/Resp。Release不可调试；只读确认现有Frida启动脚本要求Root，未执行。代理null、网络184、VPN transport与基线一致；新增tcp:65282已移除、原两项转发保留 | 安全范围内试验已完成但抓包未通过；需要真正Flutter Debug构建及USB诊断验收，或应用内请求诊断支持。无需继续反复登录或改VPN；不擅自触发Jenkins构建、Root或重签 |
 
 ## 2026-11-02 iPhone 配置流程优化规划
 
