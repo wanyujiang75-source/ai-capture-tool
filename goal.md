@@ -1,5 +1,11 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-03 Charles兼容连接试验
+
+用户要求解决本机Charles上游7890不可达并尝试一加PokeHub抓包，继续禁止修改Charles上游配置、Mac或手机VPN、节点和订阅，不Root、不重签或清除应用数据。仅恢复一个独立任务CHARLES-D1：可用仅监听loopback的临时TCP转发将空闲7890接入现有7897服务，不重启旧Clash，不创建开机服务；Charles关闭或试验超时后回收自有转发。详情见`specs/charles-android-trial.md`。证书信任和手机网络配置若成为必要条件，先说明影响，不擅自执行。
+
+验收分别记录：Charles联网HTTP/HTTPS；手机是否实际连接Charles；PokeHub业务Request/Response是否可见；现有代理、VPN和USB转发未变。缺少手机证据时不得标记整体完成。不修改产品代码、不构建桌面、不推送或发布。
+
 验证当前 `codex/desktop-one-click-ready` 工作树可以交付为 macOS 本机桌面应用，并形成以下闭环：桌面端自启动本机后端、一键环境准备、Google Play 模拟器准入、网络与 Frida 检查、Jenkins/本地 APK 安装、应用启动、实时抓包、请求与响应查看、停止后的资源清理，以及可下载发行包完整性。
 
 ## 当前增量目标：桌面端交互与精准文案 V1.1
