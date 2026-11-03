@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "purpose": "Synthetic A1 inputs, not a Shadowrocket import format",
+  "live_import_allowed": false,
+  "cases": [
+    {
+      "id": "initial",
+      "revision": 1,
+      "node_name": "Capture-A1-Compatibility",
+      "protocol": "http",
+      "host": "192.0.2.10",
+      "port": 9190,
+      "username": "fixture-only-user",
+      "password": "fixture-only-not-a-real-secret",
+      "domains": ["capture-a1-check.invalid", "capture-a1-app.invalid"]
+    },
+    {
+      "id": "special-characters",
+      "revision": 1,
+      "node_name": "Capture-A1 & \u6d4b\u8bd5",
+      "protocol": "http",
+      "host": "192.0.2.10",
+      "port": 9190,
+      "username": "fixture-only-user",
+      "password": "fixture-only-a:b@c/?#%&=+\"\\ \u6d4b\u8bd5",
+      "domains": ["capture-a1-check.invalid", "capture-a1-app.invalid"]
+    },
+    {
+      "id": "updated-endpoint",
+      "revision": 2,
+      "node_name": "Capture-A1-Compatibility",
+      "protocol": "http",
+      "host": "192.0.2.10",
+      "port": 9191,
+      "username": "fixture-only-user",
+      "password": "fixture-only-revision-two",
+      "domains": ["capture-a1-check.invalid", "capture-a1-app.invalid"]
+    }
+  ]
+}
