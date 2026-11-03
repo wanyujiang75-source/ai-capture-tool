@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-03 一加真机免Root试验
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-D1 | BLOCKED | 检查Jenkins PokeHub Debug包并在一加真机安全安装、验证接口采集 | `goal.md`, `progress.md`, `specs/android-physical-debug-trial.md`；本地临时APK/脱敏诊断；指定一加设备上的目标包及自有USB转发（仅满足准入后） | 构建产物与实际debuggable/运行模式证据；安装不卸载、不覆盖无关应用；有真实请求响应才算抓取通过；不Root或改VPN/代理/证书；移除自有临时转发 | 当前可见39个Jenkins任务未发现独立PokeHub Debug任务；PokeHub仅保留#583-588，6个日志均为release/assembleRelease。已下载#588核验：PokeHub/com.test.tcgp/1.0.0(1)，debuggable=false，Flutter AOT库；v2签名有效但Debug签名不代表Debug模式。APK摘要与检查范围见spec；未安装、未建转发、未改VPN或Root | 需要真正的PokeHub Flutter Debug产物后再继续安装和业务Req/Resp验证。任务有BUILD_MODE参数，但未触发构建或修改Jenkins；不以Release或重签包替代 |
+
 ## 2026-11-02 iPhone 配置流程优化规划
 
 以下为规划及实施任务池。2026-11-02已交付IOS-A0；2026-11-03按用户请求只领取IOS-A1，其他任务不同时实施。
