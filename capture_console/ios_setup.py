@@ -1,10 +1,10 @@
 """Isolated, opt-in iPhone proxy setup; never mutates device or Mac settings."""
 
 import ipaddress
+from datetime import datetime, timezone
 import json
 import os
 import plistlib
-import secrets
 import shutil
 import socket
 import subprocess
@@ -17,6 +17,8 @@ from pathlib import Path
 
 from .ios_projects import IOSProjects
 from .ios_results import IOSCaptureArchive
+from .ios_pairing_identity import IOSPairingIdentity
+from .ios_keychain import IOSPairingError
 
 POKEHUB_HOSTS = ["yqctnvcripabohfhzgya.supabase.co"]
 
@@ -44,11 +46,13 @@ def make_profile(config, certificate):
     def payload(kind, name, **values):
         return {"PayloadType": kind, "PayloadVersion": 1,
                 "PayloadIdentifier": identifier + "." + kind,
-                "PayloadUUID": str(uuid.uuid4()), "PayloadDisplayName": name, **values}
+                "PayloadUUID": str(uuid.uuid5(uuid.NAMESPACE_URL, identifier + '.' + kind)),
+                "PayloadDisplayName": name, **values}
+    lifetime = ({'RemovalDate': datetime.fromtimestamp(config['expires_at'], timezone.utc).replace(tzinfo=None)}
+                if config.get('expires_at') else {'DurationUntilRemoval': 86400})
     return plistlib.dumps(payload(
-        "Configuration", "抓包工具 iPhone 临时配置", PayloadRemovalDisallowed=False,
-        DurationUntilRemoval=86400,
-        PayloadDescription="仅用于授权应用测试。会配置当前 Wi-Fi 代理和测试证书；结束连接后请删除此描述文件。24 小时后自动移除。",
+        "Configuration", "抓包工具 iPhone 测试配置", PayloadRemovalDisallowed=False, **lifetime,
+        PayloadDescription="仅用于授权应用测试。含测试证书及当前Wi-Fi代理；同一Mac重连可复用，到期自动移除。电脑退出后请停用测试路由；不再使用时删除此配置。",
         PayloadContent=[
             payload("com.apple.wifi.managed", "测试网络", SSID_STR=ssid, EncryptionType="Any",
                     AutoJoin=True, ProxyType="Manual", ProxyServer=config["host"],
@@ -78,11 +82,12 @@ def local_wifi_address():
 class IOSSetupService:
     command_timeout = 5
 
-    def __init__(self, root, host_provider=local_wifi_address, *, store=None):
+    def __init__(self, root, host_provider=local_wifi_address, *, store=None, keychain=None):
         self.root = Path(root)
         self.host_provider = host_provider
         self.store = store
         self.projects = IOSProjects(self.root.parent / "ios-projects.json")
+        self.identity = IOSPairingIdentity(self.root, keychain=keychain)
         self.session = None
         self.revision = 0
         self.last_network_check = 0
@@ -101,20 +106,25 @@ class IOSSetupService:
             if (name.startswith("session-") and Path(name).name == name
                     and candidate.is_dir() and not candidate.is_symlink()):
                 self.directory = candidate
+        if self.identity.path.exists():
+            self.last.update(phase='failed', connection_state='needs_cleanup', **self.identity.resume_state())
 
     def status(self):
         with self.lock:
             if self.process:
                 if self.process.poll() is not None:
                     self._set_session_status("failed")
-                    return {**self.last, "phase": "failed", "connection_state": "needs_cleanup",
-                            "recording_state": "failed", "profile_path": None,
-                            "message": "测试代理已退出，请先删除手机测试配置，再重新准备。"}
+                    self.shutdown()
+                    self.last.update(recording_state='failed', message='测试代理已退出，请重新连接；旧版配置需先恢复手机网络。')
+                    return dict(self.last)
                 path = Path(self.config["state_path"])
                 try:
                     if path.stat().st_size >= 2_000_000:
                         raise ValueError("oversized status")
                     self.last = json.loads(path.read_text())
+                    if self.config.get('route_changed') and self.last.get('connection_state') == 'ready':
+                        self.identity.confirm_route()
+                        self.config['route_changed'] = False
                     if (self.session and self.last.get("session_id") == self.session["id"]
                             and self.last.get("recording_state") in {"stopped", "limit_reached", "failed"}):
                         self._set_session_status("failed" if self.last["recording_state"] == "failed" else "stopped")
@@ -134,7 +144,7 @@ class IOSSetupService:
                         self._set_session_status("failed")
                         self.shutdown()
                         self.last.update(phase="failed", connection_state="needs_cleanup", recording_state="failed",
-                                         message="网络地址已改变或连接配置已过期，请在手机删除旧配置后重新连接。")
+                                         message="本机网络已改变或证书已到期。请重新连接检查；同一证书有效期内无需重新信任。")
             return dict(self.last)
 
     def prepare(self, ssid, owner_pid=None):
@@ -144,7 +154,7 @@ class IOSSetupService:
                 if self.config["ssid"] != ssid:
                     raise ValueError("已有连接配置，请先从手机删除旧配置并结束测试，再更换 Wi-Fi。")
                 return self.status()
-            if self.directory or self.marker.exists():
+            if (self.directory or self.marker.exists()) and not self.identity.path.exists():
                 raise ValueError("上次测试已中断，请先删除手机配置并结束测试，再重新准备。")
             self.session = None
             owner_pid = owner_pid or os.getpid()
@@ -155,17 +165,36 @@ class IOSSetupService:
             ip = ipaddress.ip_address(host)
             if not ip.is_private or ip.is_loopback or ip.is_link_local or ip.version != 4:
                 raise ValueError("没有可供 iPhone 连接的局域网地址，请检查 Mac Wi-Fi。")
-            with socket.socket() as probe:
-                probe.bind((host, 0))
-                port = probe.getsockname()[1]
+            identity = self.identity.load()
+            reused = identity is not None
+            port = identity['port'] if reused else 0
+            try:
+                with socket.socket() as probe:
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    probe.bind((host, port))
+                    probe.listen(1)
+                    port = probe.getsockname()[1]
+            except OSError:
+                raise IOSPairingError('ios_pairing_port', f'抓包端口 {port} 被占用或当前网络不可用，工具不会结束其他程序。请检查后重新连接。') from None
+            if identity is None:
+                identity = self.identity.create(port)
+            route_changed = False
+            if self.identity.path.exists():
+                previous = json.loads(self.identity.path.read_text())
+                route_changed = (previous.get('route_pending', False) or previous.get('host') != host
+                                 or previous.get('ssid') != ssid)
+            self.identity.remember(identity, ssid, host, route_pending=route_changed)
+            if self.directory:
+                self.shutdown()
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             self.directory = Path(tempfile.mkdtemp(prefix="session-", dir=self.root))
             self.marker.write_text(self.directory.name)
             self.marker.chmod(0o600)
             self.config = {
                 "host": host, "port": port, "ssid": ssid, "username": "ios",
-                "password": secrets.token_urlsafe(24), "check_token": secrets.token_hex(16),
-                "parent_pid": os.getpid(), "expires_at": time.time() + 86400,
+                "password": identity['password'], "check_token": identity['check_token'],
+                "parent_pid": os.getpid(), "expires_at": identity['expires_at'],
+                "persistent_identity": True, "identity_reused": reused, "route_changed": route_changed,
                 "owner_pid": owner_pid, "owner_identity": owner_identity,
                 "confdir": str(self.directory / "ca"),
                 "profile_path": str(self.directory / "iPhone.mobileconfig"),
@@ -173,12 +202,17 @@ class IOSSetupService:
                 "control_path": str(self.directory / "control.json"),
                 "capture_root": str((self.root.parent / "captures").resolve()),
             }
-            config_path = self.directory / "config.json"
-            config_path.write_text(json.dumps(self.config))
-            config_path.chmod(0o600)
             self.last = {"phase": "preparing", "connection_state": "preparing", "recording_state": "idle",
                          "session_id": None, "flow_count": 0, "flows": []}
             try:
+                ca_dir = Path(self.config['confdir'])
+                ca_dir.mkdir(mode=0o700)
+                descriptor = os.open(ca_dir / 'mitmproxy-ca.pem', os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                with os.fdopen(descriptor, 'w') as stream:
+                    stream.write(identity['pem'])
+                config_path = self.directory / "config.json"
+                config_path.write_text(json.dumps(self.config))
+                config_path.chmod(0o600)
                 with (self.directory / "worker.log").open("ab") as log:
                     self.process = subprocess.Popen(
                         [sys.executable, "-m", "capture_console.ios_pairing_proxy", str(config_path)],
@@ -188,15 +222,14 @@ class IOSSetupService:
                 deadline = time.monotonic() + 15
                 while time.monotonic() < deadline:
                     state = self.status()
-                    if state["phase"] == "waiting_phone":
+                    if state["phase"] in {"waiting_phone", "waiting_trust", "ready"}:
                         return state
                     if state["phase"] == "failed":
                         break
                     time.sleep(0.1)
                 raise RuntimeError("未能启动 iPhone 测试代理，请检查运行组件后重试。")
             except Exception:
-                self.stop()
-                self.last["phase"] = "failed"
+                self.shutdown()
                 raise
 
     def _set_session_status(self, status):
@@ -233,7 +266,7 @@ class IOSSetupService:
         self._set_session_status("failed")
         self.shutdown()
         self.last.update(phase="failed", connection_state="needs_cleanup", recording_state="failed")
-        raise RuntimeError("手机连接中断，已停止本次抓包。请删除手机中的测试配置后重新连接。")
+        raise RuntimeError("手机连接中断，已停止本次抓包。请重新连接并检查手机HTTPS。")
 
     def start_recording(self, project_id):
         with self.lock:
@@ -280,13 +313,14 @@ class IOSSetupService:
             self._set_session_status("stopped")
             if self.marker.exists():
                 self.last.update(phase="failed", connection_state="needs_cleanup", recording_state="stopped",
-                                 profile_path=None, check_url=None)
+                                 profile_path=None, check_url=None, **self.identity.resume_state())
             if self.directory and self.directory.exists():
                 shutil.rmtree(self.directory)
 
     def stop(self):
         with self.lock:
             self.shutdown()
+            self.identity.clear()
             self.last = {"phase": "stopped", "connection_state": "idle", "recording_state": "stopped",
                          "session_id": None, "flow_count": 0, "flows": []}
             self.marker.unlink(missing_ok=True)

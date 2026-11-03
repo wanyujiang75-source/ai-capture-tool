@@ -1,5 +1,13 @@
 # 进度记录
 
+## 2026-11-03 iPhone 长期证书复用
+
+IOS-C1必要验收修复范围补充：`macos-native/Tests/AICaptureNativeAppTests/RuntimeManagerTests.swift`。完整测试及单独运行均在既有NSWindow测试退出时SIGSEGV；NSZombieEnabled定位为`-[NSWindow release]: message sent to deallocated instance`。仅修正该测试的窗口所有权，不改变产品行为、不跳过测试。
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-C1 | DONE | 独立一年期身份、Keychain保管、跨重启复用并修正桌面重连操作 | `goal.md`, `progress.md`, `specs/ios-certificate-reuse.md`, `specs/ios-setup-automation-plan.md`, `capture_console/{ios_keychain,ios_pairing_identity,ios_setup,ios_setup_api,ios_pairing_proxy}.py`, `tests/test_ios_{identity,keychain,setup,setup_integration}.py`, `tests/ios_native_ui_fixture.py`, `macos-native/Sources/AICaptureNativeApp/{IOSSetupController,IOSSetupView,IOSSetupCopy,IOSCaptureView,IOSCaptureCopy}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{IOSSetupTests,RuntimeManagerTests}.swift`, `docs/desktop-user-guide.md`, `release/安装说明.md`；隔离测试运行目录/自有Keychain测试条目和本地App构建 | 相同CA/凭据/端口跨24小时及3次重启；退出回收明文材料，不恢复ready/录制；真实TLS、撤销、到期、Keychain拒绝、占用端口、旧版状态保护；Python/Swift与构建签名通过 | 相关Python253项、真实TLS与隔离Keychain4项、Swift119项通过；独立审查四项风险均RED复现并修复，复审无遗留具体发现。最终App内嵌后端15项身份测试、严格签名及隔离原生窗口检查通过。既有NSWindow测试重复释放已修正，未跳过测试；详细证据见规格 | 本地实现和构建完成，未推送/发包；旧手机证书仍需一次人工迁移，真实手机重连未在本轮验收；其他IOS任务状态不变 |
+
 ## 2026-11-03 Charles兼容连接试验
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

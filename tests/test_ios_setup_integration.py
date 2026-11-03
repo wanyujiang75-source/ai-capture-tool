@@ -23,10 +23,65 @@ from cryptography.x509.oid import NameOID
 
 from capture_console.ios_setup import IOSSetupService
 from capture_console.ios_results import IOSCaptureArchive
+from capture_console.ios_pairing_identity import IOSPairingIdentity
+from capture_console.ios_setup import local_wifi_address
+import socket
+from tests.test_ios_identity import MemoryKeychain
 
 
 @unittest.skipUnless(os.environ.get("CAPTURE_TEST_IOS_PROXY") == "1", "opt-in LAN proxy test")
 class IOSSetupIntegrationTests(unittest.TestCase):
+    def test_same_trust_and_credentials_survive_three_proxy_restarts_after_two_days(self):
+        with tempfile.TemporaryDirectory(prefix='ios-reuse-wire-') as tmp:
+            root = Path(tmp) / 'ios-setup'
+            keychain = MemoryKeychain()
+            host = local_wifi_address()
+            with socket.socket() as available:
+                available.bind((host, 0))
+                port = available.getsockname()[1]
+            identity = IOSPairingIdentity(root, keychain=keychain, clock=lambda: time.time() - 2 * 86400)
+            saved = identity.create(port)
+            identity.remember(saved, 'Synthetic Reuse Only', host)
+            cert = x509.load_pem_x509_certificate(saved['pem'].encode())
+            trust = ssl.create_default_context(cadata=cert.public_bytes(serialization.Encoding.PEM).decode())
+            auth = 'Basic ' + base64.b64encode(f"{saved['username']}:{saved['password']}".encode()).decode()
+            service = None
+            try:
+                for _ in range(3):
+                    service = IOSSetupService(root, keychain=keychain)
+                    self.assertTrue(service.status()['can_resume'])
+                    state = service.prepare('Synthetic Reuse Only')
+                    self.assertEqual(state['phase'], 'waiting_phone')
+                    self.assertTrue(state['identity_reused'])
+                    self.assertEqual(service.config['port'], port)
+                    with self.assertRaises(ValueError):
+                        service.start_recording('pokehub')
+                    profile = plistlib.loads(Path(state['profile_path']).read_bytes())
+                    self.assertEqual(profile['PayloadContent'][1]['PayloadContent'],
+                                     cert.public_bytes(serialization.Encoding.DER))
+                    conn = http.client.HTTPSConnection(host, port, context=trust, timeout=5)
+                    conn.set_tunnel('capture-check.invalid', 443, headers={'Proxy-Authorization': auth})
+                    try:
+                        conn.request('GET', '/' + saved['check_token'])
+                        response = conn.getresponse()
+                        self.assertEqual(response.status, 200)
+                        self.assertIn(b'HTTPS', response.read())
+                    finally:
+                        conn.close()
+                    self.assertEqual(service.status()['phase'], 'waiting_phone')
+                    worker = service.process
+                    directory = service.directory
+                    service.shutdown()
+                    self.assertIsNotNone(worker.poll())
+                    self.assertFalse(directory.exists())
+                    self.assertEqual(identity.load(), saved)
+                service.stop()
+                self.assertIsNone(keychain.data)
+                self.assertFalse((root / 'identity.json').exists())
+            finally:
+                if service:
+                    service.stop()
+
     def test_real_http_tls_stop_passthrough_restart_and_scope(self):
         class Origin(BaseHTTPRequestHandler):
             def do_POST(self):
@@ -65,7 +120,7 @@ class IOSSetupIntegrationTests(unittest.TestCase):
             plain = ThreadingHTTPServer(('127.0.0.1', 0), Origin)
             plain_thread = threading.Thread(target=plain.serve_forever, daemon=True)
             plain_thread.start()
-            service = IOSSetupService(root / 'setup')
+            service = IOSSetupService(root / 'setup', keychain=MemoryKeychain())
             original_popen = subprocess.Popen
 
             def spawn(args, **kwargs):
@@ -172,7 +227,8 @@ class IOSSetupIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="ios-setup-acceptance-") as tmp:
             # A separately owned inert process stands in for the desktop lifecycle.
             desktop = subprocess.Popen(["/bin/sleep", "60"])
-            service = IOSSetupService(Path(tmp) / "ios-setup")
+            keychain = MemoryKeychain()
+            service = IOSSetupService(Path(tmp) / "ios-setup", keychain=keychain)
             try:
                 state = service.prepare("Acceptance Test Only", owner_pid=desktop.pid)
                 cfg = service.config
@@ -208,10 +264,9 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                 for name in ["ca", "config.json", "iPhone.mobileconfig"]:
                     self.assertFalse((directory / name).exists(), name)
                 self.assertTrue(service.marker.exists())
-                restarted = IOSSetupService(service.root)
+                restarted = IOSSetupService(service.root, keychain=keychain)
                 self.assertEqual(restarted.status()["phase"], "failed")
-                with self.assertRaises(ValueError):
-                    restarted.prepare("Other Network")
+                self.assertTrue(restarted.status()['can_resume'])
                 restarted.stop()
                 self.assertFalse(service.marker.exists())
                 self.assertFalse(directory.exists())

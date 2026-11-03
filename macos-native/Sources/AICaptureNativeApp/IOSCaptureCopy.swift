@@ -42,11 +42,20 @@ extension AppCopy {
         static let waiting = "等待接口，请在 iPhone 中操作目标应用。"
         static let androidOnly = "此页面仅支持 Android。iPhone 应用请在手机安装；iPhone 运行日志暂不支持。"
         static let quitTitle = "退出前请恢复 iPhone 网络"
-        static let quitHelp = "iPhone 可能仍使用本次测试配置。请先删除“抓包工具 iPhone 临时配置”，并恢复曾手动设置的 Wi-Fi 代理。退出会关闭电脑端连接，工具无法自动删除手机配置。"
+        static let quitHelp = "退出会停止电脑端代理。请先停用本工具专用测试路由，恢复曾手动设置的 Wi-Fi 代理，保留原 VPN。新版证书与本机钥匙串身份会保留，下次可重新连接；旧临时配置失效后仍需移除。工具无法自动修改手机路由。"
         static let cancelQuit = "返回处理"
         static let confirmQuit = "继续退出"
 
         static func presentation(_ status: IOSSetupStatus) -> (String, String) {
+            if status.canResume == true {
+                return ("iPhone 连接已暂停", "证书与专用连接信息已保留。点击“连接 iPhone”后重新连接，再在手机验证；不会自动恢复抓包。")
+            }
+            if status.requiresPhoneSetup && status.identityReused == true {
+                if status.routeChanged == true {
+                    return ("请更新手机抓包地址", "Mac 的地址或网络已改变，证书无需重新信任。请只更新本工具专用测试路由后验证，原 VPN 保持不变。")
+                }
+                return ("等待手机重新验证", AppCopy.IOSSetup.reuseHelp)
+            }
             if !status.isConnected { return AppCopy.IOSSetup.status(status.phase, count: status.flowCount) }
             let name = status.project?.name ?? "所选项目"
             switch status.recordingState {

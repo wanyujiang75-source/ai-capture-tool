@@ -14,6 +14,7 @@ from mitmproxy import connection, http
 
 from capture_console.ios_setup import IOSSetupService, make_profile, validate_ssid
 from capture_console.ios_pairing_proxy import PairingMonitor, owner_is_alive, run
+from tests.test_ios_identity import MemoryKeychain
 
 
 def config(root):
@@ -221,6 +222,9 @@ class IOSWorkerTests(unittest.TestCase):
 
 class IOSServiceTests(unittest.TestCase):
     def setUp(self):
+        keychain = patch('capture_console.ios_pairing_identity.MacOSPairingKeychain', side_effect=lambda _: MemoryKeychain())
+        keychain.start()
+        self.addCleanup(keychain.stop)
         identity = patch("capture_console.ios_setup.process_identity", return_value="test desktop identity")
         identity.start()
         self.addCleanup(identity.stop)

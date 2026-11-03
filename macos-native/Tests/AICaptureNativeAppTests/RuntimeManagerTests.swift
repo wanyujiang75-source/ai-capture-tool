@@ -538,6 +538,7 @@ struct RuntimeManagerTests {
             defer: false
         )
         window.identifier = NSUserInterfaceItemIdentifier("ai-capture-main-window")
+        window.isReleasedWhenClosed = false
         window.orderOut(nil)
         defer {
             window.close()

@@ -58,7 +58,7 @@ struct IOSCaptureView: View {
                     Button(AppCopy.IOSCapture.viewResults) { Task { await showResults() } }
                         .disabled(controller.status.sessionID == nil || controller.busy)
                     Spacer()
-                    if !controller.status.canPrepare {
+                    if !controller.status.canPrepare || controller.status.identityReused == true {
                         Button(AppCopy.IOSSetup.stop, role: .destructive) { confirmsRemoval = true }
                             .disabled(controller.busy)
                     }

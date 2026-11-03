@@ -27,6 +27,9 @@ class PairingMonitor:
         self.state = {"phase": "waiting_phone", "connection_state": "waiting_phone", "flow_count": 0, "flows": [],
                       "profile_path": config["profile_path"], "ssid": config["ssid"],
                       "check_url": "https://capture-check.invalid/" + config["check_token"],
+                      "identity_reused": config.get('identity_reused', False),
+                      "route_changed": config.get('route_changed', False),
+                      "certificate_expires_at": config.get('expires_at'),
                       "certificate_name": "Capture iPhone Test " + config["check_token"][:6]}
         self.dirty = True
         self.recording = IOSRecording(config, self.state)
@@ -125,9 +128,13 @@ def owner_is_alive(config):
 async def run(config):
     os.umask(0o077)
     confdir = Path(config["confdir"])
-    confdir.mkdir(mode=0o700)
-    certs.CertStore.create_store(confdir, "mitmproxy", 2048, organization="Capture Tool",
-                                cn="Capture iPhone Test " + config["check_token"][:6])
+    confdir.mkdir(mode=0o700, exist_ok=True)
+    if config.get('persistent_identity'):
+        if not (confdir / 'mitmproxy-ca.pem').is_file():
+            raise ValueError('Saved iPhone identity missing; refusing certificate rotation')
+    else:
+        certs.CertStore.create_store(confdir, "mitmproxy", 2048, organization="Capture Tool",
+                                    cn="Capture iPhone Test " + config["check_token"][:6])
     ca = certs.CertStore.from_store(confdir, "mitmproxy", 2048)
     public_der = ssl.PEM_cert_to_DER_cert(ca.default_ca.to_pem().decode("ascii"))
     Path(config["profile_path"]).write_bytes(make_profile(config, public_der))

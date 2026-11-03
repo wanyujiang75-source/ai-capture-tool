@@ -32,6 +32,10 @@ struct IOSSetupStatus: Decodable, Sendable {
     var recordingState: IOSRecordingState?
     var sessionID: Int?
     var project: IOSCaptureProject?
+    var canResume: Bool?
+    var identityReused: Bool?
+    var routeChanged: Bool?
+    var certificateExpiresAt: Double?
 
     enum CodingKeys: String, CodingKey {
         case phase, flows, ssid
@@ -39,12 +43,14 @@ struct IOSSetupStatus: Decodable, Sendable {
         case certificateName = "certificate_name"
         case connectionState = "connection_state", recordingState = "recording_state"
         case sessionID = "session_id", project
+        case canResume = "can_resume", identityReused = "identity_reused", routeChanged = "route_changed"
+        case certificateExpiresAt = "certificate_expires_at"
     }
     var isConnected: Bool { connectionState.map { $0 == .ready } ?? (phase == .ready || phase == .capturing) }
     var isRecording: Bool { recordingState.map { $0 == .recording } ?? (phase == .capturing) }
     var hasCapturedTraffic: Bool { isRecording && flowCount > 0 }
     var requiresPhoneSetup: Bool { phase == .waitingPhone || phase == .waitingTrust }
-    var canPrepare: Bool { phase == .idle || phase == .stopped }
+    var canPrepare: Bool { phase == .idle || phase == .stopped || canResume == true }
     var configuredSSID: String? { canPrepare ? nil : ssid }
 }
 
@@ -69,6 +75,7 @@ final class IOSSetupController: ObservableObject {
     private var generation = UUID()
     private var readRequestID = UUID()
     private var projectGeneration = UUID()
+    private var operationFailed = false
 
     init(api: any IOSSetupAPI = APIClient()) { self.api = api }
 
@@ -95,7 +102,7 @@ final class IOSSetupController: ObservableObject {
             let result = try await api.readIOSSetup()
             guard !Task.isCancelled, current == generation, request == readRequestID, !busy else { return }
             status = result
-            issue = nil
+            if !operationFailed { issue = nil }
         } catch {
             guard !Task.isCancelled, current == generation, request == readRequestID else { return }
             issue = AppCopy.IOSSetup.failed
@@ -176,8 +183,12 @@ final class IOSSetupController: ObservableObject {
         busy = true
         operation = kind
         issue = nil
+        operationFailed = false
         defer { busy = false; operation = nil }
         do { status = try await action() }
-        catch { issue = failure }
+        catch {
+            operationFailed = true
+            issue = AppCopy.IOSSetup.pairingFailure(error, fallback: failure)
+        }
     }
 }

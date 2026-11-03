@@ -28,6 +28,13 @@ class Fixture:
         self.project = {"id": "visual-only", "name": "[合成验收] 示例项目", "domains": ["example.test"]}
 
     def status(self):
+        if self.mode in {"paused", "reused", "changed"}:
+            paused = self.mode == "paused"
+            return {"phase": "failed" if paused else "waiting_phone", "connection_state": "needs_cleanup" if paused else "waiting_phone",
+                    "recording_state": "stopped", "flow_count": 0, "flows": [], "can_resume": paused,
+                    "identity_reused": True, "route_changed": self.mode == "changed", "ssid": "[合成验收] Office",
+                    "certificate_name": "Capture iPhone Test visual-only",
+                    "profile_path": None if paused else str(self.runtime / "ios-setup/session-visual/iPhone.mobileconfig")}
         return {"phase": "capturing" if self.recording else ("ready" if self.connected else "stopped"),
                 "connection_state": "ready" if self.connected else "idle",
                 "recording_state": "recording" if self.recording else "stopped" if self.session else "idle",
@@ -36,7 +43,7 @@ class Fixture:
 
     def reply(self, method, path, body):
         if path == "/__scenario" and method == "PUT":
-            if body.get("mode") not in {"normal", "empty", "loading", "failed"}:
+            if body.get("mode") not in {"normal", "empty", "loading", "failed", "paused", "reused", "changed"}:
                 return 400, {}
             self.mode = body["mode"]
             return 200, {"mode": self.mode, "synthetic": True}
@@ -47,6 +54,9 @@ class Fixture:
         if self.mode == "failed":
             return 503, {"detail": {"user_message": "synthetic private error HTTP 409"}}
         if path == "/api/ios-setup":
+            return 200, self.status()
+        if path == "/api/ios-setup/prepare" and method == "POST":
+            self.mode = "reused"
             return 200, self.status()
         if path == "/api/ios-setup/projects":
             return 200, {"projects": [] if self.mode == "empty" else [self.project]}

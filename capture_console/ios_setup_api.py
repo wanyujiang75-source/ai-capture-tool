@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from .ios_keychain import IOSPairingError
 
 
 class IOSPreparePayload(BaseModel):
@@ -29,6 +30,9 @@ class IOSRecordingPayload(BaseModel):
 def ios_operation(operation, *args, **kwargs):
     try:
         return operation(*args, **kwargs)
+    except IOSPairingError as exc:
+        raise HTTPException(400, detail={"code": exc.code, "user_message": str(exc),
+                                         "recovery_action": "检查连接后重试"}) from exc
     except ValueError as exc:
         raise HTTPException(400, detail={"user_message": str(exc), "recovery_action": "检查手机连接"}) from exc
     except (OSError, RuntimeError) as exc:
@@ -61,17 +65,12 @@ def ios_setup_router(service):
 
     @router.post("/prepare")
     def prepare(payload: IOSPreparePayload):
-        try:
-            return service.prepare(payload.ssid, owner_pid=payload.desktop_pid)
-        except ValueError as exc:
-            raise HTTPException(400, detail={"user_message": str(exc)}) from exc
-        except (OSError, RuntimeError) as exc:
-            raise HTTPException(503, detail={"user_message": "无法准备 iPhone 连接，请检查本机网络与运行组件。"}) from exc
+        return ios_operation(service.prepare, payload.ssid, owner_pid=payload.desktop_pid)
 
     @router.post("/stop")
     def stop(payload: IOSStopPayload):
         if not payload.phone_configuration_removed:
             raise HTTPException(409, detail={"user_message": "请先在 iPhone 删除本次测试描述文件，再结束测试，避免手机断网。"})
-        return service.stop()
+        return ios_operation(service.stop)
 
     return router

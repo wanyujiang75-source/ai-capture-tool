@@ -14,7 +14,8 @@ struct IOSSetupView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(AppCopy.IOSSetup.title).font(.title.bold())
-                    Text(AppCopy.IOSSetup.summary).foregroundStyle(.secondary)
+                    Text(controller.status.identityReused == true ? AppCopy.IOSSetup.reconnectSummary : AppCopy.IOSSetup.summary)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(AppCopy.IOSSetup.close) { dismiss() }
@@ -34,16 +35,15 @@ struct IOSSetupView: View {
                     if controller.status.canPrepare {
                         TextField(AppCopy.IOSSetup.wifi, text: $ssid).textFieldStyle(.roundedBorder)
                         Text(AppCopy.IOSSetup.wifiHelp).font(.callout).foregroundStyle(.secondary)
-                        Button(AppCopy.IOSSetup.prepare) { Task { await controller.prepare(ssid: ssid) } }
+                        Button(controller.status.canResume == true ? AppCopy.IOSSetup.reconnect : AppCopy.IOSSetup.prepare) { Task { await controller.prepare(ssid: ssid) } }
                             .buttonStyle(.borderedProminent).disabled(controller.busy || ssid.isEmpty)
                     }
+                    Text(AppCopy.IOSSetup.lifetimeHelp).font(.callout).foregroundStyle(.secondary)
                     if let profile = controller.profileURL {
-                        ShareLink(item: profile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
-                            .buttonStyle(.borderedProminent)
-                        Text(AppCopy.IOSSetup.shareHelp).font(.callout).foregroundStyle(.secondary)
+                        if controller.status.identityReused != true { shareInstructions(profile) }
                         instructions
                     }
-                    if !controller.status.canPrepare {
+                    if !controller.status.canPrepare || controller.status.identityReused == true {
                         Text(AppCopy.IOSSetup.removeHelp).font(.caption).foregroundStyle(.secondary)
                         Button(AppCopy.IOSSetup.stop) { confirmsRemoval = true }.disabled(controller.busy)
                     }
@@ -52,7 +52,10 @@ struct IOSSetupView: View {
         }
         .padding(26).frame(width: 820, height: 700)
         .task {
-            ssid = CWWiFiClient.shared().interface()?.ssid() ?? ""
+            await controller.refresh()
+            if ssid.isEmpty {
+                ssid = CWWiFiClient.shared().interface()?.ssid() ?? controller.status.ssid ?? ""
+            }
             while !Task.isCancelled {
                 await controller.refresh()
                 if let configured = controller.status.configuredSSID { ssid = configured }
@@ -68,10 +71,16 @@ struct IOSSetupView: View {
     private var instructions: some View {
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
-                Text(AppCopy.IOSSetup.install).font(.headline)
-                Text(AppCopy.IOSSetup.installHelp)
-                Text(AppCopy.IOSSetup.trust).font(.headline)
-                Text(AppCopy.IOSSetup.trustHelp(controller.status.certificateName ?? "Capture iPhone Test"))
+                if controller.status.identityReused == true {
+                    DisclosureGroup(AppCopy.IOSSetup.reinstall) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let profile = controller.profileURL { shareInstructions(profile) }
+                            installationInstructions
+                        }
+                    }
+                } else {
+                    installationInstructions
+                }
                 Text(AppCopy.IOSSetup.verify).font(.headline)
                 Text(AppCopy.IOSSetup.verifyHelp)
             }.font(.callout)
@@ -80,6 +89,23 @@ struct IOSSetupView: View {
                     .padding(8).background(.white)
                     .accessibilityLabel(AppCopy.IOSSetup.verify)
             }
+        }
+    }
+
+    private func shareInstructions(_ profile: URL) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ShareLink(item: profile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
+                .buttonStyle(.borderedProminent)
+            Text(AppCopy.IOSSetup.shareHelp).font(.callout).foregroundStyle(.secondary)
+        }
+    }
+
+    private var installationInstructions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(AppCopy.IOSSetup.install).font(.headline)
+            Text(AppCopy.IOSSetup.installHelp)
+            Text(AppCopy.IOSSetup.trust).font(.headline)
+            Text(AppCopy.IOSSetup.trustHelp(controller.status.certificateName ?? "Capture iPhone Test"))
         }
     }
 
