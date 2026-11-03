@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-D1 | BLOCKED | 检查Jenkins PokeHub Debug包并在一加真机安全安装、验证接口采集 | `goal.md`, `progress.md`, `specs/android-physical-debug-trial.md`；本地临时APK/脱敏诊断；指定一加设备上的目标包及自有USB转发（仅满足准入后） | 构建产物与实际debuggable/运行模式证据；安装不卸载、不覆盖无关应用；有真实请求响应才算抓取通过；不Root或改VPN/代理/证书；移除自有临时转发 | 当前可见39个Jenkins任务未发现独立PokeHub Debug任务；PokeHub仅保留#583-588，6个日志均为release/assembleRelease。已下载#588核验：PokeHub/com.test.tcgp/1.0.0(1)，debuggable=false，Flutter AOT库；v2签名有效但Debug签名不代表Debug模式。APK摘要与检查范围见spec；未安装、未建转发、未改VPN或Root | 需要真正的PokeHub Flutter Debug产物后再继续安装和业务Req/Resp验证。任务有BUILD_MODE参数，但未触发构建或修改Jenkins；不以Release或重签包替代 |
+| ANDROID-D1 | BLOCKED | 检查Jenkins包并在一加真机安全安装PokeHub Release、验证免Root接口采集 | `goal.md`, `progress.md`, `specs/android-physical-debug-trial.md`；本地临时APK/脱敏诊断；指定一加上的com.test.tcgp及自有USB转发（仅需要时） | 安全安装并运行；有界诊断区分普通日志与真实Req/Resp；有完整证据才算抓取通过；不Root或改VPN/代理/证书，不卸载/清数据/重签；移除自有临时转发 | #588与原同名PokeHub签名/版本一致，adb install -r返回Success，手机APK摘要匹配下载包，已启动。run-as确认不可调试；685行启动日志只取得初始化和统计SDK线索，未获得完整业务Req/Resp。手机锁屏，页面与登录态待核对；firstInstallTime变化已在spec记录，不伪称数据保留验收通过。VPN/系统代理未改；只清理本轮UI工具新增转发，原两项保留 | 等用户解锁后验证实际页面与日志是否有可用业务详情；在未Root、不改VPN/代理/证书的边界内试验，不以安装或日志成功代替抓包成功 |
 
 ## 2026-11-02 iPhone 配置流程优化规划
 
