@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| CHARLES-D1 | BLOCKED | 保持上游和VPN配置不变，恢复Charles联网并验证一加PokeHub采集条件 | `goal.md`, `progress.md`, `specs/charles-android-trial.md`；本机临时loopback转发、Charles UI、指定一加诊断及自有临时USB反向转发/公开证书文件 | HTTP/HTTPS联网分层验证；必须实际取得PokeHub Req/Resp才能整体通过；未经新增授权不改手机代理或证书；不改上游/VPN；仅回收自有临时进程 | 17:26启动PID44191，仅127.0.0.1:7890透传现有7897；Mac HTTP 200，显式CA的HTTPS 200/verify 0；一加经独立USB反向转发同样HTTP/HTTPS 200、577字节、verify 0。Wi-Fi直连Charles返回空响应，原因未定；不是PokeHub业务证据。临时USB反向转发41539、UI转发58012、手机临时CA文件均已清除，原两项USB转发保留；全局代理null、VPN仍连接、Mac代理仍7897 | 等待用户确认是否允许临时手机HTTP代理及本人安装测试CA，再验证真实PokeHub；不保证Release接受代理/证书。兼容转发保留至18:26:04或Charles退出，以先发生者为准；不是永久修复或整体验收完成 |
+| CHARLES-D1 | BLOCKED | 保持上游和VPN配置不变，恢复Charles联网并验证一加PokeHub采集条件 | `goal.md`, `progress.md`, `specs/charles-android-trial.md`；本机临时loopback转发、Charles UI、指定一加诊断及自有临时USB反向转发/公开证书文件 | HTTP/HTTPS联网分层验证；必须实际取得PokeHub Req/Resp才能整体通过；未经新增授权不改手机代理或证书；不改上游/VPN；仅回收自有临时进程 | 17:26临时透传完成Mac/一加USB HTTP和HTTPS 200、verify 0对照，但未取得PokeHub业务接口。17:32用户明确拒绝手机代理和测试CA；核对PID44191身份后SIGTERM退出0，7890无监听；Charles 8888及原7897保留。反向转发为空、原23761/36166保留；手机全局代理null、VPN CONNECTED、Mac系统代理7897；临时证书文件早已删除，未安装到系统 | 试验已停止并完成自有资源清理；保持用户限制，不重试或反复索取相同授权。当前配置下没有已验证的PokeHub明文采集通道，不标记整体DONE |
 
 ## 2026-11-03 一加真机免Root试验
 
