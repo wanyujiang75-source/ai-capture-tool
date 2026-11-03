@@ -44,6 +44,13 @@ class ImportProbeTests(unittest.TestCase):
         self.assertEqual(self.request("HEAD", "/a1.module")[::2], (200, b""))
         self.assertEqual(self.server.downloads, 0)
 
+    def test_sgmodule_alias_changes_filename_but_not_payload(self):
+        status, headers, body = self.request("GET", "/a1.sgmodule")
+        self.assertEqual((status, body), (200, self.body))
+        self.assertEqual(headers["Content-Disposition"], 'attachment; filename="a1.sgmodule"')
+        self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
+        self.assertEqual(self.request("GET", "/a1.sgmodule?x=1")[0], 404)
+
     def test_unknown_paths_queries_and_mutations_are_rejected(self):
         for path in ["/", "/a1.module?token=x", "/../config.json", "/%2e%2e/config.json"]:
             self.assertEqual(self.request("GET", path)[0], 404)
@@ -73,6 +80,16 @@ class ImportProbeTests(unittest.TestCase):
         endpoint = urlsplit(result.stdout.splitlines()[0])
         with self.assertRaises(OSError):
             socket.create_connection((endpoint.hostname, endpoint.port), timeout=1)
+
+    def test_cli_does_not_replace_an_existing_listener(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "tests.ios_import_probe", "--host", "127.0.0.1",
+             "--port", str(self.server.server_port), "--ttl", "1"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Address already in use", result.stderr)
+        self.assertEqual(self.request("GET", "/a1.module")[::2], (200, self.body))
 
 
 if __name__ == "__main__":

@@ -36,12 +36,13 @@ class ProbeHandler(BaseHTTPRequestHandler):
         pass
 
     def respond(self, include_body):
-        if self.path != "/a1.module":
+        filenames = {"/a1.module": "a1.module", "/a1.sgmodule": "a1.sgmodule"}
+        if self.path not in filenames:
             self.send_error(404)
             return
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Disposition", 'attachment; filename="a1.module"')
+        self.send_header("Content-Disposition", f'attachment; filename="{filenames[self.path]}"')
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(self.server.body)))
         self.end_headers()
@@ -74,12 +75,15 @@ class ProbeServer(ThreadingHTTPServer):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True, type=validate_host)
+    parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--ttl", type=int, default=900)
     args = parser.parse_args()
     if not 1 <= args.ttl <= 900:
         parser.error("ttl must be 1..900 seconds")
+    if not 0 <= args.port <= 65535:
+        parser.error("port must be 0..65535")
     body = (Path(__file__).parent / "fixtures/ios_setup_import/empty.module").read_bytes()
-    with ProbeServer((args.host, 0), body) as server:
+    with ProbeServer((args.host, args.port), body) as server:
         host, port = server.server_address
         print(f"http://{host}:{port}/a1.module", flush=True)
         print(f"metadata_only=true expires_in_seconds={args.ttl}", flush=True)
