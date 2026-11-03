@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-03 iPhone 新证书迁移实测
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-C2 | BLOCKED | 启动新版桌面、迁移本工具证书并验证指定iPhone的PokeHub | `goal.md`, `progress.md`, `specs/ios-certificate-migration.md`；现有新版App、真实运行目录与本工具Keychain条目、私有临时公开配置及指定手机UI/USB只读诊断 | 版本匹配；旧配置已移除；新CA/期限匹配且无Wi-Fi/VPN载荷；手机HTTPS实际验证；PokeHub业务Request/Response进入桌面；VPN与原节点/配置不变；无凭据入库 | 新版ios-c1-reuse-20261103已启动真实运行目录，严格签名通过；指定USB设备在线，profile查询Acknowledged且无已安装profile；旧桌面状态needs_cleanup/idle，无会话。Mac直连业务域名TLS验证0、根路径404仅证明可达，不计业务成功。手机无自动化agent，未安装；USB截图可用。尚未清理旧标记、创建新身份或开始录制 | 等待用户确认Wi-Fi代理关闭、原VPN连接和普通网络正常并停在小火箭首页；确认后继续同一任务，迁移证书/更新专用节点并实测。未改任何手机配置或VPN |
+
 ## 2026-11-03 iPhone 长期证书复用
 
 IOS-C1必要验收修复范围补充：`macos-native/Tests/AICaptureNativeAppTests/RuntimeManagerTests.swift`。完整测试及单独运行均在既有NSWindow测试退出时SIGSEGV；NSZombieEnabled定位为`-[NSWindow release]: message sent to deallocated instance`。仅修正该测试的窗口所有权，不改变产品行为、不跳过测试。
