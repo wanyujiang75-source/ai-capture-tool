@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| IOS-C2 | BLOCKED | 启动新版桌面、迁移本工具证书并验证指定iPhone的PokeHub | `goal.md`, `progress.md`, `specs/ios-certificate-migration.md`；现有新版App、真实运行目录与本工具Keychain条目、私有临时公开配置及指定手机UI/USB只读诊断 | 版本匹配；旧配置已移除；新CA/期限匹配且无Wi-Fi/VPN载荷；手机HTTPS实际验证；PokeHub业务Request/Response进入桌面；VPN与原节点/配置不变；无凭据入库 | 新版ios-c1-reuse-20261103已启动真实运行目录，严格签名通过；指定USB设备在线，profile查询Acknowledged且无已安装profile；旧桌面状态needs_cleanup/idle，无会话。Mac直连业务域名TLS验证0、根路径404仅证明可达，不计业务成功。手机无自动化agent，未安装；USB截图可用。尚未清理旧标记、创建新身份或开始录制 | 等待用户确认Wi-Fi代理关闭、原VPN连接和普通网络正常并停在小火箭首页；确认后继续同一任务，迁移证书/更新专用节点并实测。未改任何手机配置或VPN |
+| IOS-C2 | BLOCKED | 启动新版桌面、迁移本工具证书并验证指定iPhone的PokeHub | `goal.md`, `progress.md`, `specs/ios-certificate-migration.md`；现有新版App、真实运行目录与本工具Keychain条目、私有临时公开配置、仅固定文字且自动关闭的局域网诊断端点及指定手机UI/USB只读诊断 | 版本匹配；旧配置已移除；新CA/期限匹配且无Wi-Fi/VPN载荷；手机HTTPS实际验证；PokeHub业务Request/Response进入桌面；停止后保留连接且不新增记录；VPN/原节点不变，仅授权的专用节点更新与检查规则补回；临时日志恢复；无凭据入库 | 一年期证书-only配置安装一致；更新专用节点旧端口、按新增授权补回缺失的检查规则后，信任截图和真实手机HTTPS回调均通过。原生开始PokeHub #78，164条快照均属项目域名，其中96条200；版本配置请求20字节、响应2142字节均完整JSON，桌面实际展示Request/Response。19:05仍录制、166条；停止验收遇Mac锁屏，未绕过UI或撤销证书。未修改原VPN节点/订阅/DNS/默认路由 | 等待Mac解锁完成原生停止与后续访问不记录验收，并核对临时小火箭代理日志关闭；已保存本轮业务采集证据，不推送，不能将整个任务记为DONE |
 
 ## 2026-11-03 iPhone 长期证书复用
 

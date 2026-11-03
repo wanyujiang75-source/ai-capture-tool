@@ -2,6 +2,8 @@
 
 ## 2026-11-03 iPhone 新证书迁移与 PokeHub 实测
 
+本轮诊断后的明确授权例外：当前规则列表搜索不到capture-check，用户同意只补回本工具的`DOMAIN / capture-check.invalid / Capture-Mac`检查规则。不得修改其他已有规则、原节点、订阅、DNS、FINAL或切换/关闭VPN。该例外仅限本工具检查域名，不扩大到其他域名或路由。
+
 按用户最新请求只领取IOS-C2：启动IOS-C1新版桌面端，核对指定iPhone14_Test后迁移本工具证书并验证PokeHub真实Request/Response。手机VPN保持开启，不修改原节点、订阅、DNS、默认路由或现用配置；只允许更新此前专门添加的Capture-Mac连接。手机安装/信任和凭据输入由用户完成。交付仅含本工具公开CA与检查入口的派生描述文件，不含Wi-Fi/VPN配置或私钥。验收记录桌面版本、旧配置移除、新证书一致性、真实手机HTTPS检查、PokeHub业务响应与停止/继续边界，不用本机自检代替真机证据。不推送或发布，详见`specs/ios-certificate-migration.md`。
 
 ## 2026-11-03 iPhone 证书与连接复用
