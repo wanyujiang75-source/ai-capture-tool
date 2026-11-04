@@ -15,7 +15,7 @@ extension AppCopy {
         static let preparing = "正在准备 iPhone 连接…"
         static let stopping = "正在结束 iPhone 连接…"
         static let share = "发送配置到 iPhone"
-        static let shareHelp = "仅在首次安装或配置已移除时发送给自己的测试 iPhone。保留小火箭 VPN 时使用专用抓包节点和域名规则，不覆盖原配置；当前版本仍需人工确认这些设置。"
+        static let shareHelp = "此配置包含 Wi-Fi 代理设置。保留小火箭 VPN 时，请先按使用说明生成并发送仅含证书和检查入口的副本，再临时选择 Capture-Mac 节点和“代理”模式统一接入，无需逐个添加域名。结束后手动恢复原节点和路由，不编辑原配置。"
         static let install = "1. 接收并安装配置"
         static let installHelp = "在 iPhone 接收文件，进入“设置 → 通用 → VPN 与设备管理”安装“抓包工具 iPhone 测试配置”。旧临时配置不能自动升级，首次迁移需移除旧配置。若要求 Wi-Fi 密码，只在手机上输入。"
         static let trust = "2. 信任本次测试证书"

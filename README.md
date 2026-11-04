@@ -2,9 +2,10 @@
 
 抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 SwiftUI 原生应用，会自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、本地 APK/Jenkins 测试包安装、前台 App 自动识别、抓包启动、接口查看和 cURL 导出。
 
-本地开发版另已接入 iPhone 按项目域名的 HTTP(S) 代理抓包，入口位于“抓包”页的平台选择。
-该能力仍待真实手机业务验收，未发布到 GitHub 下载包。仅使用 iPhone 时不需 Android SDK；
-手机安装、信任和删除测试配置必须由用户本人完成，详见[桌面端使用指南](docs/desktop-user-guide.md#13-iphone-抓包本地预览)。
+新版预发布包包含 iPhone 真机 HTTP(S) 抓包，入口位于“抓包”页的平台选择。
+支持小火箭 VPN 保持开启、通过专用节点统一接入，不用逐个添加应用域名；已验证 PokeHub、MelodyCraft、Wishly、StickerHub。
+仅使用 iPhone 不需要 Android SDK、越狱或 Root。首次证书安装/信任与手机转发切换仍需本人操作，
+不同设备及所有应用的兼容性并非保证，详见[iPhone 前置准备与完整操作](docs/desktop-user-guide.md#13-iphone-真机抓包)。
 
 项目默认不包含历史抓包结果、上传 APK、本机数据库、cookie、token 或账号状态。新数据库会创建一台默认本机抓包设备 `device-1 / AI_Capture_AVD_01 / emulator-5554`；如果已有设备数据库或外部设备配置，不会覆盖。
 
@@ -45,6 +46,18 @@
 Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 
 安装后的完整操作和排错说明见 [桌面端使用指南](docs/desktop-user-guide.md)。
+
+### 首次 iPhone 抓包
+
+1. 下载包含 iPhone 功能的新预发布包，Mac 与 iPhone 接入可互通的 Wi-Fi；Mac 本身须能访问待测服务。
+2. 在“抓包”选择“iPhone”并“准备连接”；保留小火箭时按指南生成“仅证书＋检查入口”副本，发给自己的手机安装并信任，不使用含Wi-Fi代理的原文件。
+3. 使用小火箭时，首次按[连接参数读取与节点设置](docs/desktop-user-guide.md#133-小火箭首次设置与统一接入)创建本机专用 `Capture-Mac` 节点；不要复制他人的连接凭据。
+4. 记录原节点和路由模式，VPN 保持开启，临时选择 `Capture-Mac` 和“代理”；手机检查页通过后在桌面点击“开始抓包”。
+5. 操作待测应用，在“接口”查看 Request、Response 和 cURL。换应用无需重新安装证书或添加域名。
+6. 完成后“停止抓包”，在手机恢复原节点和原路由模式，确认网络正常，再退出桌面。停止记录不会自动恢复手机网络。
+
+此方式经 Mac 出网，可能改变出口 IP；测试期间不要操作无关敏感应用。首次准备完成后可复用证书和节点，
+日常只需重新连接、临时转发、检查、抓包与恢复。包内 `安装说明.md` / `INSTALL.md` 也包含完整流程。
 
 ### 首次 Android 抓包
 
@@ -173,8 +186,8 @@ Android SDK 默认从 `$ANDROID_SDK_ROOT` 或 `$HOME/Library/Android/sdk` 读取
 - App 使用证书绑定、内置 CA、双向 TLS 或不信任用户 CA 时，HTTPS 响应可能无法解密。
 - 默认抓包模拟器必须支持 Google Play；公司内部模式默认不强制 Google 登录。设置 `REQUIRE_GOOGLE_LOGIN=1` 后，未登录设备才会被禁止安装 APK、打开 App 或启动抓包。
 - Google 登录、支付、风控等流程仍可能因为代理、证书或设备状态而失败。
-- Android 真机日志需要 USB 或无线调试授权；iPhone 抓包需要本人安装配置、信任本次测试证书并在结束时删除配置。
-- iPhone 本地预览仅记录经过系统代理的目标域名 HTTP(S)，不提供 iOS 安装、系统日志、弱网或证书绑定绕过；不保证所有应用可捕获。
+- Android 真机日志需要 USB 或无线调试授权；iPhone 抓包需要本人安装配置、信任测试证书，日常停止后恢复手机转发，彻底停用时再移除配置。
+- iPhone 记录经代理送入的 HTTP(S)，无需逐域名配置，但不提供 iOS 安装、系统日志、弱网或证书绑定绕过；不保证所有应用可捕获。
 
 ## 发布包
 

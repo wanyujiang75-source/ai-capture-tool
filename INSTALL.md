@@ -14,9 +14,10 @@
 
 桌面端 V1 仅支持 **macOS 14 或更高版本、Apple Silicon（arm64）**。使用 Android 模拟器建议至少 16 GB 内存和 25 GB 可用磁盘空间。
 
-iPhone 接入当前为尚待实机业务验收、未发布到 GitHub 的本地预览功能。若使用包含“iPhone”入口的本地包，
-可跳过 Android SDK 和模拟器准备，按[桌面端 iPhone 指南](docs/desktop-user-guide.md#13-iphone-抓包本地预览)操作。
-手机安装、信任和删除临时配置必须本人完成；Mac 自检或界面可打开不代表已抓到手机接口。
+iPhone 真机抓包已包含在新版预发布包中。仅使用 iPhone 可跳过 Android SDK 和模拟器准备，
+按[iPhone 前置准备与完整操作](docs/desktop-user-guide.md#13-iphone-真机抓包)完成证书、节点和手机连接检查。
+已在同一测试机验证 PokeHub、MelodyCraft、Wishly、StickerHub；不是所有设备/应用的兼容性保证。
+手机安装、信任和转发切换必须本人完成；Mac 自检或界面可打开不代表已抓到手机接口。
 
 ## 路径 A：让 Codex 辅助安装（推荐）
 
@@ -26,13 +27,13 @@ iPhone 接入当前为尚待实机业务验收、未发布到 GitHub 的本地�
 请阅读并严格按照下面的安装指南，在这台 Mac 上安装和验收抓包工具：
 https://github.com/wanyujiang75-source/ai-capture-tool/blob/main/INSTALL.md
 
-请优先从该仓库的 GitHub Releases 下载最新的 macOS Apple Silicon 桌面 ZIP，不要从第三方地址下载。先检查 macOS 版本、CPU 架构、磁盘空间、已有安装和 Android SDK；下载后校验 Release 提供的 SHA-256，再安装到 /Applications。若没有写入 /Applications 的权限，安装到当前用户的 ~/Applications。
+请优先从该仓库的 GitHub Releases 下载最新的 macOS Apple Silicon 桌面 ZIP，不要从第三方地址下载。先检查 macOS 版本、CPU 架构、磁盘空间和已有安装；仅在我要使用 Android 时检查 Android SDK。下载后校验 Release 提供的 SHA-256，再安装到 /Applications。若没有写入 /Applications 的权限，安装到当前用户的 ~/Applications。
 
 如已安装旧版，必须保留 ~/Library/Application Support/AI抓包工具/ 和现有 Android AVD，不删除抓包历史、APK、账号或登录态。优先选择文件名不含 development 的正式包；如果目前只有 development 预发布包，要明确说明风险，并在真正打开该开发包前让我完成 macOS 必需的安全确认。
 
-安装后启动桌面端，验证应用进程和 http://127.0.0.1:7001/api/status；随后检查 Android SDK、Google Play 模拟器、网络和 Frida 准入，并把自动完成项、需要我手动处理的步骤和最终验收结果汇总给我。
+安装后启动桌面端，验证应用进程和 http://127.0.0.1:7001/api/status。Android 按指南检查 SDK、Google Play 模拟器、网络和抓包组件；iPhone 按仓库使用指南第13节准备本机连接，由我在手机安装和信任证书、临时切换专用节点并完成HTTPS检查。不要用Mac自检冒充手机验收。把自动完成项、手动步骤和真实验收结果汇总给我。
 
-禁止关闭 Gatekeeper、禁止删除 quarantine 属性来绕过安全检查、禁止保存或代填管理员密码、禁止执行 wipe-data、pm clear、uninstall 或删除本机运行数据。遇到系统授权、Android SDK License、Google 登录、模拟器解锁或安全确认时，再明确告诉我需要接管哪一步。
+禁止关闭 Gatekeeper、禁止删除 quarantine 属性来绕过安全检查、禁止保存或代填管理员密码、禁止执行 wipe-data、pm clear、uninstall 或删除本机运行数据。iPhone VPN 保持开启，不编辑原节点、订阅、DNS或配置文件；临时转发前记录原选择，结束后恢复并检查联网。不得把节点密码/配置文件上传、写入仓库或聊天。遇到系统授权、证书信任、Android SDK License、Google登录或手机操作时，明确告诉我需要接管哪一步。
 ```
 
 Codex 可以自动完成：
@@ -49,6 +50,7 @@ Codex 可以自动完成：
 - 接受 Android SDK License。
 - 在 macOS“隐私与安全性”中允许内部开发包首次运行。
 - 解锁模拟器、登录 Google 账号或完成 App 内登录。
+- 在 iPhone 安装和信任本机测试证书、首次设置专用节点，以及每次测试前后的转发选择与恢复。
 
 ## 路径 B：手动下载安装
 
@@ -95,10 +97,10 @@ open "macos-native/build/抓包工具.app"
 
 ## 路径 D：升级已有版本
 
-1. 在桌面端停止当前抓包并退出应用。
+1. 在桌面端停止当前抓包。若使用 iPhone，先恢复手机原节点/路由及曾手动设置的 Wi-Fi 代理，确认手机联网正常，再退出应用。
 2. 按路径 A 或路径 B 下载并校验新版本。
 3. 把 `/Applications/抓包工具.app` 更新为新版本；从旧名称升级时，新旧 App 可短暂并存，验收新版后再删除 `/Applications/AI抓包工具.app`。不要删除应用数据目录或 Android AVD。
-4. 启动新版本，确认“环境”页显示内部服务已就绪。
+4. 启动新版本，通过工具栏“运行检查”确认本机服务正常。iPhone 重新连接并完成手机检查，不会自动继续录制。
 
 升级 App 不会要求删除以下数据目录：
 
@@ -147,6 +149,18 @@ open "macos-native/build/抓包工具.app"
 8. 完成后回到“抓包”页点击“停止抓包”，再正常关闭模拟器和桌面 App。
 
 安装后的产品操作、数据位置和故障处理见 [桌面端使用指南](docs/desktop-user-guide.md)。
+
+## iPhone 首次准备与日常使用
+
+前置条件：测试 iPhone 已安装目标应用；Mac 与手机可在局域网互通；Mac 能访问目标服务。无需 Android SDK、Root、越狱或 iPhone 镜像。使用小火箭统一接入时，VPN 始终开启，但出口会使用 Mac 的网络路径，可能不同于原节点。
+
+首次使用按[指南第13节](docs/desktop-user-guide.md#13-iphone-真机抓包)准备连接，运行本机命令读取参数并生成“仅证书＋检查入口”副本，隔空投送后安装/信任，再创建专用 `Capture-Mac` HTTP 节点。命令不修改网络/原文件/钥匙串，但会在下载目录创建副本；不是自动导入。不要安装含Wi-Fi代理的原文件或照抄他人IP、端口、密码。
+
+日常顺序：打开桌面并重新连接 → 记录原选择 → 手机临时选择 Capture-Mac＋代理（VPN开启）→ 手机HTTPS检查通过 → 桌面开始抓包 → 操作应用 → 查看接口 → 停止抓包 → 恢复原选择并确认联网 → 退出桌面。
+
+同一Mac和手机可复用一年有效期内的证书/节点，换应用无需配置业务域名；新手机须单独安装/信任和设置节点，换Mac或本机身份丢失需重新准备，地址变化需核对专用节点。不是每次抓包都重新装证书。
+
+“停止抓包”只停止记录，不会自动恢复手机路由。iPhone暂不支持桌面安装应用、运行日志或弱网；证书绑定、自定义加密和非HTTP(S)协议不保证可读。下载ZIP内的两个安装说明也包含离线可用的完整步骤。
 
 ## 安全边界
 

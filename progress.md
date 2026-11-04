@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 iOS 说明与安装包发布
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-R1 | DOING | 发布已验收的iPhone统一接入与新手说明 | `goal.md`, `progress.md`, `specs/ios-release-20261104.md`, `README.md`, `INSTALL.md`, `docs/desktop-user-guide.md`, `release/安装说明.md`, `release/notes-20261104.md`, `macos-native/Sources/AICaptureNativeApp/IOSSetupCopy.swift`；现有打包产物、GitHub main/功能分支/新预发布资产 | 前置条件/一次性节点/重连/恢复完整无矛盾；相关Python、Swift、隔离TLS、包迁移运行与签名通过；无用户数据/凭据；远端源码和包摘要可核对 | 已读取现有源码/打包脚本；确认旧README/包内说明仍有未发布和逐域名要求，当前分支可从origin/main快进，主工作区用户未跟踪文档保留 | 更新说明和旧提示，运行回归、打包验证后再推送发布；不改变手机网络，不接管其他任务 |
+
 ## 2026-11-04 iPhone 多应用兼容实测
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
