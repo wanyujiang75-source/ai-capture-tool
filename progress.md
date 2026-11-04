@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 断点功能调研与计划
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| BP-P1 | DONE | 调研并交付请求/响应断点计划书 | `goal.md`, `progress.md`, `specs/breakpoint-plan.md` | 官方依据可追溯；核对实际转发链路；交互、字段范围、流式/大包/并发/失联/退出/原始与有效数据明确；阶段任务与验收可执行；不实施功能 | Charles/Proxyman/Fiddler官方资料、mitmproxy事件/API及本机12.2.3源码核对完成；形成交互、5阶段任务与验收矩阵。自审修正阶段恢复语义/租约/非法头转换；独立只读评审的头暂停内部队列风险已纳入BP-0。三文件格式与范围检查通过，无真实连接凭据；未构建、运行代理或修改产品/手机 | 交付计划供评审；实现尚未开始，后续首先执行BP-0隔离能力与内存原型；本轮仅本地文档提交，不推送发包 |
+
 ## 2026-11-04 接口列表过滤
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
