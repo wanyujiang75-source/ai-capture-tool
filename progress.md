@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| IOS-C2 | BLOCKED | 启动新版桌面、迁移本工具证书并验证指定iPhone的PokeHub | `goal.md`, `progress.md`, `specs/ios-certificate-migration.md`；现有新版App、真实运行目录与本工具Keychain条目、私有临时公开配置、仅固定文字且自动关闭的局域网诊断端点及指定手机UI/USB只读诊断 | 版本匹配；旧配置已移除；新CA/期限匹配且无Wi-Fi/VPN载荷；手机HTTPS实际验证；PokeHub业务Request/Response进入桌面；停止后保留连接且不新增记录；VPN/原节点不变，仅授权的专用节点更新与检查规则补回；临时日志恢复；无凭据入库 | 一年期证书-only配置安装一致；更新专用节点旧端口、按新增授权补回缺失的检查规则后，信任截图和真实手机HTTPS回调均通过。原生开始PokeHub #78，164条快照均属项目域名，其中96条200；版本配置请求20字节、响应2142字节均完整JSON，桌面实际展示Request/Response。19:05仍录制、166条；停止验收遇Mac锁屏，未绕过UI或撤销证书。未修改原VPN节点/订阅/DNS/默认路由 | 等待Mac解锁完成原生停止与后续访问不记录验收，并核对临时小火箭代理日志关闭；已保存本轮业务采集证据，不推送，不能将整个任务记为DONE |
+| IOS-C2 | DONE | 启动新版桌面、迁移本工具证书并验证指定iPhone的PokeHub | `goal.md`, `progress.md`, `specs/ios-certificate-migration.md`；现有新版App、真实运行目录与本工具Keychain条目、私有临时公开配置、仅固定文字且自动关闭的局域网诊断端点及指定手机UI/USB只读诊断 | 版本匹配；旧配置已移除；新CA/期限匹配且无Wi-Fi/VPN载荷；手机HTTPS实际验证；PokeHub业务Request/Response进入桌面；停止后保留连接且不新增记录；VPN/原节点不变，仅授权的专用节点更新与检查规则补回；临时日志恢复；无凭据入库 | 一年期证书-only配置安装一致，手机HTTPS及PokeHub真实业务Req/Resp通过。2026-11-04原生按钮停止#78，页面/API为stopped、connection ready；手机目标域名只读访问返回预期响应且有代理连接，重新打开PokeHub后仍166条。接口页显示166/166已停止，版本配置20/2142字节完整JSON仍可读，8项只读断言通过；USB截图确认临时代理日志关闭。原VPN节点/订阅/DNS/默认路由未修改，证书和连接保留 | 本轮迁移实测完成，仅本地证据提交；无损自动导入、切换节点、跨重启手机及新用户整体验收仍按其他IOS任务推进，不视为本任务已全部覆盖，不推送或发包 |
 
 ## 2026-11-03 iPhone 长期证书复用
 
