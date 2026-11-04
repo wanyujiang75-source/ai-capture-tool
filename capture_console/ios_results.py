@@ -72,7 +72,12 @@ class IOSCaptureArchive:
         if len(data.encode()) > 128 * 1024:
             self._limit("metadata_limit")
             return
-        summary = json.dumps({key: meta[key] for key in SUMMARY_KEYS}, ensure_ascii=False)
+        summary_fields = {key: meta[key] for key in SUMMARY_KEYS}
+        for kind in ("request", "response"):
+            content_type = next((value for name, value in meta[kind + "_headers"]
+                                 if name.lower() == "content-type"), "")
+            summary_fields[kind + "_content_type"] = content_type.split(";", 1)[0].strip().lower()[:256]
+        summary = json.dumps(summary_fields, ensure_ascii=False)
         try:
             with self.connect() as conn:
                 revision = conn.execute("SELECT COALESCE(MAX(revision), 0)+1 FROM flows").fetchone()[0]

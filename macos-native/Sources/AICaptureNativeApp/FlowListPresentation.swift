@@ -8,13 +8,11 @@ struct FlowBodyPresentation: Equatable {
 }
 
 enum FlowListPresentation {
-    static func filtered(_ flows: [FlowSummary], query: String) -> [FlowSummary] {
+    static func filtered(_ flows: [FlowSummary], query: String, scope: FlowTrafficScope = .all) -> [FlowSummary] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalizedQuery.isEmpty else {
-            return flows
-        }
         return flows.filter { flow in
-            [flow.url, flow.host, flow.path, flow.method, flow.status]
+            guard scope == .all || FlowTrafficFilter.isInterface(flow) else { return false }
+            return normalizedQuery.isEmpty || [flow.url, flow.host, flow.path, flow.method, flow.status]
                 .compactMap { $0?.lowercased() }
                 .contains { $0.contains(normalizedQuery) }
         }

@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 接口列表过滤
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| FLOW-F1 | BLOCKED | 增加可恢复的仅看接口筛选 | `goal.md`, `progress.md`, `specs/flow-interface-filter.md`, `macos-native/Sources/AICaptureNativeApp/{FlowTrafficFilter,FlowListPresentation,FlowViews,Models,AppCopy,AppState}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{FlowTrafficFilterTests,FlowListPresentationTests}.swift`, `capture_console/{results,ios_results}.py`, `tests/{test_flow_summary_types,test_ios_results,ios_native_ui_fixture}.py`, `docs/desktop-user-guide.md`；本地构建/隔离UI | 分类及摘要RED/GREEN；搜索/恢复全部/失败请求/清空/实时更新/异步详情回归；Python/Swift通过；原生按钮、计数、空态及搜索视觉验收；不改手机或采集、不发布 | 代码/说明/本地App完成；摘要及分类RED/GREEN，Python199项、另iOS75项（重叠）及隔离HTTPS3项通过，Swift126项通过，严格签名通过。Mac锁屏导致原生窗口验收未完成，不能记DONE；已关闭自有合成验收进程，7001释放，未改手机网络 | 用户解锁后继续隔离UI按钮/计数/搜索/空态/增量与详情验收；代码仅本地保存，未推送或发包 |
+
 ## 2026-11-04 iOS 说明与安装包发布
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

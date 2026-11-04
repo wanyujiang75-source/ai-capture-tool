@@ -209,6 +209,8 @@ def _flow_from_row(outdir: Path, row: Dict[str, str]) -> Dict[str, Any]:
         "response_bin": row.get("response_bin", ""),
         "has_request_json": request_json.exists(),
         "has_response_json": response_json.exists(),
+        "request_content_type": _normalized_content_type(summary.get("request_content_type"))[:256],
+        "response_content_type": _normalized_content_type(summary.get("response_content_type"))[:256],
         **_summary_timing(summary, meta),
     }
 

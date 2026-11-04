@@ -1061,6 +1061,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func reconcileFlowSelection(visibleIDs: Set<String>) {
+        guard let selectedFlowID, !visibleIDs.contains(selectedFlowID) else { return }
+        self.selectedFlowID = nil
+        selectedFlowDetail = nil
+        selectedFlowCurl = ""
+        flowCurlIssue = nil
+        flowDetailLoadState = .idle
+        flowDetailRequestID = nil
+    }
+
     func clearCurrentFlows() {
         clearedFlowIDs.formUnion(flows.map(\.id))
         clearedFlowIDs.formUnion(pendingFlowIDs)

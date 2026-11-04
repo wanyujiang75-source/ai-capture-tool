@@ -43,9 +43,29 @@ class Fixture:
 
     def reply(self, method, path, body):
         if path == "/__scenario" and method == "PUT":
-            if body.get("mode") not in {"normal", "empty", "loading", "failed", "paused", "reused", "changed"}:
+            if body.get("mode") not in {"normal", "empty", "loading", "failed", "paused", "reused", "changed",
+                                       "filter", "filter-update", "filter-empty"}:
                 return 400, {}
             self.mode = body["mode"]
+            if self.mode.startswith("filter"):
+                self.session, self.recording = 9100, False
+                stamp = datetime.now(timezone.utc).isoformat()
+                examples = [
+                    ("api", "GET", "200", "https://example.test/v1/profile", "application/json"),
+                    ("auth", "POST", "401", "https://example.test/api/login", "application/json"),
+                    ("pending", "GET", "NO_RESPONSE", "https://example.test/unknown", ""),
+                    ("image", "GET", "200", "https://images.example.test/photo-123", "image/jpeg"),
+                    ("page", "GET", "200", "https://example.test/welcome", "text/html"),
+                    ("stats", "POST", "200", "https://app-measurement.com/collect", "application/json"),
+                ]
+                if self.mode == "filter-update":
+                    examples += [("new-api", "POST", "200", "https://example.test/v1/new", "application/json"),
+                                 ("new-image", "GET", "200", "https://example.test/new.png", "image/png")]
+                if self.mode == "filter-empty":
+                    examples = examples[3:]
+                self.flows = [{"id": ident, "method": verb, "status": status, "url": url,
+                               "host": urlparse(url).hostname, "path": urlparse(url).path, "time": stamp,
+                               "response_content_type": mime} for ident, verb, status, url, mime in examples]
             return 200, {"mode": self.mode, "synthetic": True}
         if path == "/api/status":
             return 200, {"desktop": {"enabled": True, "build_id": self.build_id}}
@@ -89,7 +109,8 @@ class Fixture:
                 return 200, {"flows": flows, "total": len(flows), "cursor": 1, "next_cursor": None}
             if path.endswith("/curl"):
                 return 200, "curl 'https://example.test/visual/response?source=synthetic'"
-            return 200, {"id": "visual-1", "url": self.flows[0]["url"], "method": "POST", "status": "200",
+            flow = next((item for item in self.flows if item['id'] == path.split('/')[-1]), self.flows[0])
+            return 200, {"id": flow['id'], "url": flow["url"], "method": flow['method'], "status": flow['status'],
                          "request_body_kind": "json", "response_body_kind": "json",
                          "request_text": '{"fixture": "request"}', "response_text": '{"synthetic": true, "result": "ok"}'}
         if path == "/api/package-sources/jenkins/packages":

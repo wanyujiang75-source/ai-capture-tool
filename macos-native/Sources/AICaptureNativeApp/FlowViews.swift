@@ -5,6 +5,7 @@ struct FlowViews: View {
     @EnvironmentObject private var appState: AppState
     @State private var detailTab = "request"
     @State private var searchText = ""
+    @State private var onlyInterfaces = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -23,6 +24,9 @@ struct FlowViews: View {
             await pollFlows()
         }
         .task { await appState.refreshFlowSources() }
+        .onChange(of: filteredFlows.map(\.id)) { _, ids in
+            appState.reconcileFlowSelection(visibleIDs: Set(ids))
+        }
     }
 
     private var sourcePicker: some View {
@@ -94,6 +98,19 @@ struct FlowViews: View {
                 stateText(appState.flowLoadState)
             }
             searchField
+            HStack(spacing: 10) {
+                Toggle(isOn: $onlyInterfaces) {
+                    Label(AppCopy.Flow.onlyInterfaces, systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .toggleStyle(.button)
+                .help(AppCopy.Flow.filterExplanation)
+                if onlyInterfaces {
+                    Text(AppCopy.Flow.filteredCount(appState.visibleFlows.count - interfaceFlows.count))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
             listContent
         }
         .padding(16)
@@ -142,7 +159,7 @@ struct FlowViews: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
         } else if filteredFlows.isEmpty {
-            Text(AppCopy.Flow.noSearchResults)
+            Text(onlyInterfaces ? AppCopy.Flow.noFilteredResults : AppCopy.Flow.noSearchResults)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
@@ -160,7 +177,11 @@ struct FlowViews: View {
     }
 
     private var filteredFlows: [FlowSummary] {
-        FlowListPresentation.filtered(appState.visibleFlows, query: searchText)
+        FlowListPresentation.filtered(onlyInterfaces ? interfaceFlows : appState.visibleFlows, query: searchText)
+    }
+
+    private var interfaceFlows: [FlowSummary] {
+        FlowListPresentation.filtered(appState.visibleFlows, query: "", scope: .interfaces)
     }
 
     private var flowDetail: some View {

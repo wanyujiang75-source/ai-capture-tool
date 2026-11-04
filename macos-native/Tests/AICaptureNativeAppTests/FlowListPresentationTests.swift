@@ -267,6 +267,45 @@ struct FlowListPresentationTests {
         #expect(state.flowDetailLoadState == .idle)
     }
 
+    @Test
+    func filteringWhileDetailLoadsInvalidatesHiddenSelection() async throws {
+        let flow = try makeFlow(id: "image", path: "/avatar.png")
+        let api = DelayedFlowAPI()
+        let state = AppState(flowAPI: api)
+        state.activeSessionID = 22
+        state.flows = [flow]
+        let task = Task { await state.loadFlowDetail(flow) }
+        await api.waitForDetailRequest()
+        state.reconcileFlowSelection(visibleIDs: [])
+        await api.completeDetailRequest(with: try makeFlowDetail(id: flow.id))
+        await task.value
+        #expect(state.selectedFlowID == nil)
+        #expect(state.selectedFlowDetail == nil)
+        #expect(state.selectedFlowCurl.isEmpty)
+        #expect(state.flowDetailLoadState == .idle)
+        #expect(state.visibleFlows.map(\.id) == [flow.id])
+    }
+
+    @Test
+    func filteringRetainsVisibleSelectionAndClearBaseline() async throws {
+        let apiFlow = try makeFlow(id: "api", path: "/v1/users")
+        let image = try makeFlow(id: "image", path: "/avatar.png")
+        let api = FlowAPISpy(flows: [apiFlow, image])
+        let state = AppState(flowAPI: api)
+        state.activeSessionID = 22
+        state.flows = [apiFlow, image]
+        state.selectedFlowID = apiFlow.id
+        state.selectedFlowDetail = try makeFlowDetail(id: apiFlow.id)
+        state.reconcileFlowSelection(visibleIDs: [apiFlow.id])
+        #expect(state.selectedFlowDetail?.id == apiFlow.id)
+        state.clearCurrentFlows()
+        let fresh = try makeFlow(id: "fresh", path: "/v1/new")
+        await api.setFlows([apiFlow, image, fresh])
+        await state.refreshFlows()
+        #expect(FlowListPresentation.filtered(state.visibleFlows, query: "", scope: .interfaces).map(\.id) == ["fresh"])
+        #expect(FlowListPresentation.filtered(state.visibleFlows, query: "", scope: .all).map(\.id) == ["fresh"])
+    }
+
     private func makeFlows() throws -> [FlowSummary] {
         try JSONDecoder().decode(
             [FlowSummary].self,

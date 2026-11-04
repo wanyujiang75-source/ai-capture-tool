@@ -655,6 +655,8 @@ struct FlowSummary: Decodable, Identifiable {
     let kind: String?
     let hasRequestJSON: Bool?
     let hasResponseJSON: Bool?
+    let requestContentType: String?
+    let responseContentType: String?
     let totalDurationMs: String?
 
     private enum CodingKeys: String, CodingKey {
@@ -670,6 +672,8 @@ struct FlowSummary: Decodable, Identifiable {
         case kind
         case hasRequestJSON = "has_request_json"
         case hasResponseJSON = "has_response_json"
+        case requestContentType = "request_content_type"
+        case responseContentType = "response_content_type"
         case totalDurationMs = "total_duration_ms"
     }
 
@@ -687,6 +691,8 @@ struct FlowSummary: Decodable, Identifiable {
         kind = container.decodeFlexibleString(forKey: .kind)
         hasRequestJSON = try container.decodeIfPresent(Bool.self, forKey: .hasRequestJSON)
         hasResponseJSON = try container.decodeIfPresent(Bool.self, forKey: .hasResponseJSON)
+        requestContentType = container.decodeFlexibleString(forKey: .requestContentType)
+        responseContentType = container.decodeFlexibleString(forKey: .responseContentType)
         totalDurationMs = container.decodeFlexibleString(forKey: .totalDurationMs)
     }
 }

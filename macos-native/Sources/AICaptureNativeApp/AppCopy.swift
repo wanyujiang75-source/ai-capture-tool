@@ -86,6 +86,10 @@ enum AppCopy {
     }
 
     enum Flow {
+        static let onlyInterfaces = "仅看接口"
+        static let filterExplanation = "隐藏静态资源、网页及已识别的统计和系统检查请求；未知请求仍保留。仅影响显示，不删除记录。"
+        static let noFilteredResults = "没有符合条件的接口，请关闭“仅看接口”或更换搜索关键词。"
+        static func filteredCount(_ count: Int) -> String { "已过滤 \(count) 条" }
         static let clearList = "清空列表"
         static let clearExplanation = "仅清空当前显示；抓包不会停止，新接口仍会继续出现。"
         static let notStarted = "尚未开始抓包"

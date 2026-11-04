@@ -64,6 +64,27 @@ class IOSArchiveTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
+    def test_summary_types_update_with_headers_and_remain_readable_in_old_archives(self):
+        archive = IOSCaptureArchive(self.root)
+        flow = make_flow()
+        flow.request.headers['Content-Type'] = ' Application/JSON; charset=utf-8 '
+        archive.begin(flow)
+        first = archive.page()
+        self.assertEqual((first['flows'][0].get('request_content_type'),
+                          first['flows'][0].get('response_content_type')), ('application/json', ''))
+        flow.response.headers['Content-Type'] = ' IMAGE/PNG; charset=binary '
+        archive.headers(flow)
+        changed = archive.page(cursor=first['cursor'])
+        self.assertEqual(changed['flows'][0]['response_content_type'], 'image/png')
+        flow.response.headers['Content-Type'] = 'x' * 10000
+        archive.finish(flow)
+        self.assertEqual(archive.page()['flows'][0]['response_content_type'], 'x' * 256)
+        with archive.connect() as conn:
+            old = {k: v for k, v in first['flows'][0].items() if not k.endswith('_content_type')}
+            conn.execute('UPDATE flows SET summary=?', (json.dumps(old),))
+        archive.close()
+        self.assertEqual(IOSCaptureArchive(self.root, read_only=True).page()['flows'], [old])
+
     def test_request_then_response_updates_same_record_and_preserves_full_url(self):
         archive = IOSCaptureArchive(self.root)
         flow = make_flow()
