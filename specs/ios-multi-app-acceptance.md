@@ -29,6 +29,8 @@ Tech Stack: 既有SwiftUI、FastAPI、mitmproxy。
 
 ## Procedure
 
+2026-11-04授权已补齐：用户明确允许临时切换全局路由为代理并选择已有Capture-Mac，测试后恢复。先读取原选择基线；这不是允许编辑原节点或配置文件，也不允许关闭VPN。不得把转发选择改变或Mac出口等同于沿用原VPN出口。对本次授权范围，以下旧的“默认路由不改”约束仅表示不修改原配置文件/FINAL，测试结束仍必须恢复原路由模式。
+
 本轮统一接入续验：先读取小火箭当前路由/节点选择作为恢复基线，不导出订阅或凭据。候选是临时切换全局转发模式与已有Capture-Mac选择，而非新增域名规则；必须先获得这项临时选择变更的明确允许，原配置文件/节点参数保持不变。选择变化不等于原VPN出口不变，需明确由Mac出网。手机VPN不关闭；Mac停止录制后保持透传，恢复原选择并验证手机联网，再结束本轮。未获允许时只读诊断，不继续重复0条的应用试验。
 
 1. 只读核对当前连接、手机身份、已安装版本及可用域名线索，Android历史域名只能作为候选，不冒充iOS实际来源。
@@ -68,9 +70,11 @@ Tech Stack: 既有SwiftUI、FastAPI、mitmproxy。
 
 PokeHub只读版本配置POST返回200，Request为20字节，Response为4165字节，两者为完整可解析JSON且均未截断。原生接口页搜索该路径并实际查看Request/Response。#84停止后再次冷启动PokeHub，归档仍为65条，connection_state=ready、recording_state=stopped；旧#78保持166条，#80-83未被删除。
 
-Current task remains BLOCKED for three-app business acceptance. No tested traffic reached the Mac for those apps; without changing the phone's existing VPN routing, desktop-only filter removal cannot prove or force that ingress. Do not infer certificate pinning or application incompatibility from zero records. Next work must validate one general, reversible ingress path with the original VPN configuration preserved, not resume per-domain setup. No automatic phone taps or network changes were performed, and no code was pushed or release uploaded.
+At the end of the first attempt the task was BLOCKED for three-app business acceptance. No tested traffic reached the Mac for those apps; without changing the phone's existing VPN routing, desktop-only filter removal could not prove or force that ingress. Zero records did not establish certificate pinning or application incompatibility. This historical blocker is superseded by the authorized general ingress results below; no per-domain rules were added and no code was pushed or release uploaded.
 
 ### General Ingress Follow-up (2026-11-04)
+
+本轮授权后基线：USB截图确认小火箭首页VPN开启，全局路由为“配置”；当前节点显示名已记录在本机私有验收截图中，测试后须按该名称恢复，不能拿“代理分组”页的间接选择代替首页节点。Capture-Mac既有节点可见。用户已收到两步临时选择指引，但尚未观察到实际切换；桌面保持ready/stopped、#84共65条。不得提前记录三款成功或声称已恢复。原节点参数、订阅、规则和配置文件不编辑。
 
 用户继续要求统一接入、不逐域名配置。本轮恢复DOING并只读核对：iPhone14_Test仍在线；USB启动既有小火箭后截图确认停在代理日志页，日志记录关闭；原生桌面显示抓包已停止、手机连接保留。只读API为ready/stopped、#84、65条，未开始新记录。
 
@@ -79,3 +83,27 @@ Mac通过不使用环境HTTP代理的HEAD请求检查已知服务域名：Melody
 候选接入为小火箭临时全局代理选择已有Capture-Mac，VPN保持开启、原配置文件/节点参数/订阅不改，测试后恢复原选择。这会改变当前路由选择，可能更换出口IP，且范围可能包含手机后台HTTP(S)；不能冒充原VPN出口原样保留。已通过一个异步问题说明这项必要例外，尚未收到明确答复。因此本轮未操作手机设置、未新增规则/证书/代理、未录制无关流量，任务回写BLOCKED等待该实质边界明确；不反复复现原路线的0条。
 
 本轮仅更新目标/验收记录，无产品代码变化，不重跑已有构建或将历史自动化结果当作新手机验收。`git diff --check`通过；原生桌面继续打开、连接保留、录制停止。若用户不允许当前转发选择有任何临时变化，应明确该限制下无法强制统一接入，不能偷偷采用替代全局配置。
+
+### Authorized General Ingress Results (2026-11-04)
+
+用户随后明确允许临时选择切换，并实际将首页切到Capture-Mac、全局路由代理；USB截图核对VPN仍开启。
+没有新增业务域名规则、改动原节点参数/订阅/配置文件、重装证书或安装手机自动化组件。
+桌面沿用ios-c3-general-20261104，连接ready；各轮均由原生界面开始/停止，USB冷启动对应既有应用。
+
+| Application | Record | Stopped count | Verified business POST | HTTP | Request/Response bytes |
+| --- | --- | --- | --- | --- | --- |
+| MelodyCraft | #85 | 32 | /aisong/portal/config/batch | 200 | 56 / 160 |
+| Wishly | #86 | 22 | /manifest/config/common/batch | 200 | 37 / 246 |
+| StickerHub | #87 | 75 | /rest/v1/rpc/get_albums_v2 | 200 | 25 / 4427 |
+
+三个样本均通过只读详情断言：Request/Response为完整JSON对象、未截断、HTTP200；原生接口页分别搜索路径、选择行并切换Request/Response，UI标题确认两侧JSON展示。USB截图分别确认MelodyCraft创作页、Wishly首页、StickerHub画册页加载。没有手动提交生成、购买、消息、资料编辑或其他写操作；应用冷启动自行发送的活跃/初始化/SDK请求保留在本地记录中。
+
+数量是本次窗口全部记录，包含SDK与可能的后台请求，不宣称逐应用进程隔离。StickerHub还自动捕获到不同的只读副本服务域名，未为其新增规则，证明本次无需逐域名准入；这些域名仅用于验收归属，不写回路由。三轮均停止，后端connection_state=ready、recording_state=stopped，未结束连接或撤销身份。
+
+恢复过程：11:20的USB截图仍为Capture-Mac/代理，因此当时保持DOING和桌面透传，没有声称已经恢复。
+11:27用户确认已恢复原“配置”模式和节点、VPN开启；USB截图在首页下方确认原美国节点的选中标记与基线一致。
+该截图中顶部路由与VPN开关已滚出可视区域，因此二者采用用户明确确认，不伪称从截图读取。未改订阅、节点参数、规则、DNS或原配置文件。
+随后通过USB在手机Safari打开带本轮新查询标记的HTTPS示例网页；第二次截图确认正文已加载，无证书警告或连接错误，不把首次加载中的空白截图当作失败。
+三条归档断言均返回true：#85 stopped/32、#86 stopped/22、#87 stopped/75；恢复联网未增加记录。connection_state保持ready、recording_state为stopped，旧#78/#84仍保留。
+
+本次任务完成，统一接入由用户必要的两项选择配合验证，不是全自动手机控制，也不是保持原出口的多级代理。未新增产品代码，复用先前同一构建的自动化与签名证据；本轮补齐真实手机、原生Request/Response、停止及人工恢复后的联网验收。说明同步到`docs/desktop-user-guide.md`的13.3.1与13.4，文档diff/任务表校验通过后仅本地提交，不推送或发布。截图与原始正文留在本机，不加入仓库。
