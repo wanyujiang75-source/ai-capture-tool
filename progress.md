@@ -4,9 +4,22 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| BP-0 | BLOCKED | 补齐四项评审契约并验证真实代理传输能力 | `goal.md`, `progress.md`, `specs/breakpoint-plan.md`, `specs/breakpoint-bp0-acceptance.md`, `tests/test_breakpoint_transport.py`, `tests/fixtures/breakpoints/**` | loopback 隔离 HTTP/1.1/2、暂停前后证据、压缩/未知长度/慢正文/并发/100 MiB/内存及清理检查；不安全模式明确禁用；相关既有本地回归和差异检查；不改产品/手机/VPN | 四项评审已补齐；18项能力实验和37项既有回归通过，但严格安全门槛3项失败：公开flow.kill无法及时关闭收集中的连接；100MiB头暂停增加约129-138MiB峰值；H2透传基线/候选均超64MiB。独立复核的夹具问题已修正，4项头暂停和严格3项均重跑，结论未变；不删安全检查、不改依赖或产品。详见验收记录；7001仍为原be6d0543b498/idle，无测试worker残留 | 保留原型与NO-GO证据；下一步仍在BP-0解决可维护的收集取消和背压方案后重跑严格门槛，不进入BP-1、不接真机、不改VPN/原配置、不推送发包 |
+| BP-0 | DONE | 修复隔离原型的收集取消和有界传输 | `goal.md`, `progress.md`, `specs/breakpoint-plan.md`, `specs/breakpoint-bp0-acceptance.md`, `tests/test_breakpoint_transport.py`, `tests/test_breakpoint_guard.py`, `tests/fixtures/breakpoints/**` | 真实H1/H2慢正文绝对/空闲期限取消并回收；H2同连接其他流不受影响；100MiB请求/响应暂停或自动降级及慢消费者额外RSS<64MiB、字节哈希完整；原有18项及37项回归；默认关闭/版本不符拒绝适配；自有进程清理 | 最终严格36项49.116秒通过；18项负对照/能力实验34.860秒、37项既有回归0.875秒通过；默认54项中49跳过/5契约通过。100MiB约3.2-4.4MiB、20路约21.2MiB；取消/背压/断连/TLS/GOAWAY与哈希通过。独立复核问题均RED/GREEN修复。前后现有服务build/idle/null一致；自有进程和临时目录回收，历史NO-GO保留。详见验收规格 | 准入BP-1，仅本地提交；生产接线仍属于BP-2，未验证协议/组合不启用，不推送发包 |
+| BP-1 | TODO | 实现独立断点状态、预算和认证控制契约 | 新 `capture_console/breakpoints/{__init__,models,engine,validation,ipc,api}.py`；`capture_console/app.py`仅组装；新 `tests/test_breakpoint_{engine,api,ipc}.py`；`goal.md`, `progress.md`, `specs/breakpoint-plan.md` | `python -m unittest tests.test_breakpoint_engine tests.test_breakpoint_api tests.test_breakpoint_ipc -v`；匹配/单次占用/双阶段/期限/预算/鉴权/幂等/失联与停止竞争RED/GREEN；既有37项回归；不接真实传输或手机，不改VPN | BP-0门槛已通过；需继承版本及协议边界，不能直接复制私有层到生产。尚未领取或开始实现 | 下一轮按单任务规则领取，无需再询问常规审批；先补引擎与控制面的失败测试 |
 
 BP-0 首轮记录：HTTP/1.1/2 双阶段改写、gzip/deflate/br 原样及改写、未知长度越界、并发20名额和origin排除通过。慢正文负对照确认公开 flow.kill 调用后连接仍不结束。10项首次全跑有2项失败：头暂停测试第二轮误把第一轮已转发记录计入“尚未转发”，属夹具断言范围错误；H2 100 MiB 透传 worker RSS 超64 MiB，属需与关闭断点基线对照的能力风险，不能降低门槛冒充通过。继续同一 DOING，拆分每协议独立worker、补响应头与基线对照后记录禁用结论；没有产品改动。
+
+BP-0 续修中的复核：首版适配24项通过后，独立复核发现上游并发排队未计账、远端RST信用残留、聚合背压阻塞其他流、夹具接收循环被慢流阻塞四项边界。新增RED已复现：取消后credits仍为{1:7}、健康同连接流3秒未完成、上游只允许1流时排队上传半秒接收36,864,000字节。修复为逐流预算（包含stream_queue）、取消未发送队列和RST/GOAWAY清理；夹具按消费返回逐流窗口，控制帧不等待消费者。定向4项3.805秒通过，上游排队限制到294,912字节后背压、取消后源站不收到该请求。完整严格矩阵与原基线重跑中，仍保持DOING；未动产品、VPN或设备。
+
+补充退出路径：上游GOAWAY/EOF时含未获并发名额的排队请求，新增用例RED暴露ResponseProtocolError缺少code导致代理异常、仅部分请求结束。补全错误码，并在上游ID映射外发送未admit流的错误通知；定向用例0.996秒通过。错误证据扩为最多4096字符异常尾部，失败时临时目录清理由独立cleanup保证。最终28项严格矩阵复跑中，未把此前27项通过当作新增用例已通过。
+
+第二轮补强：28项通过后，DATA+GOAWAY同批输入的信用返还触发ProtocolError，空/细碎DATA在暂停和发送队列累积4001/4000项，新增RED后修复CLOSED检查、空事件过滤和16KiB合并；31项45.376秒通过。复核夹具Wire同类GOAWAY错误也新增独立RED并修复。另对H1内存波动补源站延迟TLS场景，复现1604个排队事件；新增仅测试handler实例的H1读取节流（不改全局类），恢复TLS后100MiB哈希完整、额外RSS3,833,856 bytes，1.926秒通过。第一版延迟TLS夹具不能回放已收ClientHello，改为延迟TCP转发桥；初次夹具清理顺序错误导致wait_closed挂起，仅向已核对的自有测试进程发SIGINT，父/worker均退出，修正为先关连接再有界等待。继续DOING，最终矩阵和退出门槛复跑，不回避这些失败记录。
+
+第三轮退出复核：H1读取节流阻挡EOF，源站握手永久停顿且客户端断开时缺少独立退出路径。新增RED在3秒等待取消事件超时（1项4.461秒失败）；补不因事件唤醒续期的10秒绝对读取等待上限，仅回收该H1连接及其自有上游，停止已流式/未命中收集计时，避免唤醒刷新底层空闲看门狗。断连回收/握手恢复后100MiB完整转发/等待期间退出三项4.987秒通过，内存增量4,177,920 bytes。完整矩阵未重跑前仍DOING。
+
+最终复核补正：35项严格测试48.419秒、18项原对照34.860秒、37项既有回归0.875秒通过后，审查发现响应头入队但response对象尚未创建时，收集计时两处解引用None。新增真实HTTPFlow/HttpStream定时契约测试，在未占用/已占用两子场景分别RED复现AttributeError；补消息对象防护、等待实际创建，创建后流式状态正常退订计时，GREEN1项0.002秒。此单项是状态契约复现，不冒充真实网络竞态观测；36项最终严格矩阵重新运行中，仍DOING。
+
+最终收口：36项49.116秒全部通过；限定静态复核确认None response修复，无剩余具体P1/P2。18项原对照及37项回归对应文件/依赖未再变化，复用上述结果；默认opt-out重新执行54项0.018秒（5契约通过、49跳过，无代理）。7001仍为be6d0543b498/running/idle/null；自有worker枚举为空，回归临时目录唯一数据库及目录已删除。BP-0写DONE，BP-1仅TODO，不接入产品、不碰手机/VPN、不发包。
 
 ## 2026-11-04 接口过滤发布
 

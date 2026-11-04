@@ -20,8 +20,11 @@ from tests.fixtures.breakpoints.wire import Origin, certificates, client
 
 @unittest.skipUnless(os.environ.get('CAPTURE_TEST_BREAKPOINT_TRANSPORT') == '1', 'opt-in BP-0 loopback test')
 class BreakpointTransportTests(unittest.IsolatedAsyncioTestCase):
+    guarded = False
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='capture-bp0-')
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.origin = Origin()
         self.clients = []
@@ -39,6 +42,8 @@ class BreakpointTransportTests(unittest.IsolatedAsyncioTestCase):
             env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
         self.port = (await self.event('ready'))['port']
         self.ca = self.root / 'ca' / 'mitmproxy-ca-cert.pem'
+        if self.guarded:
+            await self.configure(guard=True)
 
     async def cleanup(self):
         for task in self.background:
@@ -65,7 +70,6 @@ class BreakpointTransportTests(unittest.IsolatedAsyncioTestCase):
         if hasattr(self, 'port'):
             with self.assertRaises(OSError):
                 await asyncio.open_connection('127.0.0.1', self.port)
-        self.tmp.cleanup()
 
     async def event(self, kind, *, stage=None, timeout=8):
         async def read():

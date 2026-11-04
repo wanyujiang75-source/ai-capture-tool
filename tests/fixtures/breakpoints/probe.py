@@ -10,9 +10,11 @@ import json
 import logging
 import resource
 import sys
+import weakref
 from pathlib import Path
 
 from mitmproxy import http, options
+from mitmproxy.net.http.http1 import expected_http_body_size
 from mitmproxy.tools.dump import DumpMaster
 from tests.fixtures.breakpoints.decoding import editable
 
@@ -23,7 +25,7 @@ def emit(kind, **fields):
 
 class ErrorEvidence(logging.Handler):
     def emit(self, record):
-        emit('addon_error', message=record.getMessage()[:256])
+        emit('addon_error', message=logging.Formatter().format(record)[-4096:])
 
 
 class Probe:
@@ -34,10 +36,19 @@ class Probe:
         self.pending = {}
         self.timers = {}
         self.peak_active = 0
+        self.guards = weakref.WeakSet()
 
     def running(self):
         ports = self.master.addons.get('proxyserver').listen_addrs()
         emit('ready', port=ports[0][1])
+
+    def next_layer(self, nextlayer):
+        if self.config.get('guard'):
+            from tests.fixtures.breakpoints.guard import install
+            install(nextlayer, self, emit)
+            from tests.fixtures.breakpoints.guard import GuardLayer
+            if isinstance(nextlayer.layer, GuardLayer):
+                self.guards.add(nextlayer.layer)
 
     def matched(self, flow):
         return (self.config['enabled'] and flow.request.scheme == self.config.get('scheme', 'https')
@@ -62,10 +73,24 @@ class Probe:
         self.active[flow.id] = dict(self.config)
         self.peak_active = max(self.peak_active, len(self.active))
         emit('collecting', id=flow.id, stage='request', path=flow.request.path)
-        if self.config.get('collect_timeout'):
+        if self.config.get('collect_timeout') and not self.config.get('guard'):
             self.timers[flow.id] = asyncio.create_task(self.expire(flow))
         if self.config['mode'] == 'headers' and self.config['stage'] in {'request', 'both'}:
-            await self.pause(flow, 'request')
+            if not self.header_bypass(flow, 'request'):
+                await self.pause(flow, 'request')
+
+    def header_bypass(self, flow, stage):
+        if not self.active[flow.id].get('guard'):
+            return False
+        message = getattr(flow, stage)
+        size = expected_http_body_size(flow.request, flow.response if stage == 'response' else None)
+        if message.is_http2 and 'content-length' not in message.headers:
+            size = 0 if flow.metadata.get(f'bp0_end_{stage}') else None
+        if size is None or size < 0 or size >= 128 * 1024:
+            message.stream = True
+            emit('header_bypass', id=flow.id, stage=stage, reason='large_or_unknown_body')
+            return True
+        return False
 
     async def expire(self, flow):
         await asyncio.sleep(self.active[flow.id]['collect_timeout'])
@@ -105,8 +130,9 @@ class Probe:
     async def responseheaders(self, flow):
         config = self.active.get(flow.id)
         if config and config['mode'] == 'headers' and config['stage'] in {'response', 'both'}:
-            await self.pause(flow, 'response')
-        elif config and config.get('collect_timeout'):
+            if not self.header_bypass(flow, 'response'):
+                await self.pause(flow, 'response')
+        elif config and config.get('collect_timeout') and not config.get('guard'):
             self.timers[flow.id] = asyncio.create_task(self.expire(flow))
 
     async def response(self, flow):
@@ -135,12 +161,20 @@ class Probe:
             data = json.loads(line)
             action = data['action']
             if action == 'config':
+                if data['values'].get('guard'):
+                    from tests.fixtures.breakpoints.guard import check_version
+                    check_version()
                 self.config.update(data['values'])
                 emit('configured')
             elif action == 'stats':
                 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 emit('stats', maxrss_bytes=rss if sys.platform == 'darwin' else rss * 1024,
-                     active=len(self.active), pending=len(self.pending), peak_active=self.peak_active)
+                     active=len(self.active), pending=len(self.pending), peak_active=self.peak_active,
+                     connections=len(self.master.addons.get('proxyserver').connections),
+                     queued_events=sum(len(stream._paused_event_queue) for guard in self.guards
+                                       for stream in guard.streams.values()) +
+                                   sum(len(queue) for guard in self.guards for conn in guard.h2_layers
+                                       for queue in getattr(conn, 'stream_queue', {}).values()))
             elif action == 'resolve':
                 flow = self.pending[data['id']]
                 message = getattr(flow, data['stage'])

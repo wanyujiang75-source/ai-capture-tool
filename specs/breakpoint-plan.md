@@ -1,6 +1,6 @@
 # 抓包工具断点功能调研与实施计划 V1
 
-日期：2026-11-04。交付状态：四项评审已修订，BP-0 已建立隔离原型并完成首轮能力实验；收集取消与内存安全准入未通过，暂停产品接入。详情见 `breakpoint-bp0-acceptance.md`，不是断点功能已交付。
+日期：2026-11-04。交付状态：四项评审已修订；BP-0续修的36项严格隔离测试通过，允许后续领取BP-1引擎/控制任务。原addon-only的NO-GO保留；安全适配仅为mitmproxy 12.2.3测试原型，不接入当前产品。详情见 `breakpoint-bp0-acceptance.md`，不是断点功能已交付。
 
 ## 1. 结论与边界
 
@@ -174,7 +174,7 @@ paused -> aborted / timed_out / disconnected
 
 - 每个阶段唯一终态；worker 用原子决策处理“点击继续、超时、停止、客户端断开”的竞争。终止后取消等待与定时器，不能仅改 UI 状态留下悬挂协程。
 - 默认暂停 30 秒，可选 15/30/60 秒，硬上限 60 秒，不无限续期。默认超时保留原始内容并继续，不悄悄发送未确认的编辑草稿。应用自身可能更早超时，此时结束断点且不自动重发。
-- 收集正文独立采用单调时钟：总时限 10 秒、连续无数据 3 秒，二者均不能被编辑或心跳重置，不能等进入编辑器才开始计时。超时优先原样切回流式；仅当公开 API 已验证能无损恢复时使用，否则终止本次连接、释放占用并报告原因。若公开 API 无法及时恢复或结束收集，该候选模式不得接入产品，不允许只设置 flow.error 却留住连接和内存。BP-0 测试可缩短时间但不删除计时语义。
+- 收集正文独立采用单调时钟：总时限 10 秒、连续无数据 3 秒，二者均不能被编辑、心跳或空 DATA 重置，不能等进入编辑器才开始计时。超时仅在已验证可无损恢复时切回流式，否则结束目标请求、释放占用并报告原因；H1 关闭目标连接，H2 只取消该流，不能关闭共享连接牵连其他请求。addon-only 的 flow.kill 不满足该契约，必须禁用该候选。BP-0 续修使用显式版本校验的隔离传输适配（见下节）；没有通过适配安全矩阵时仍不得接入产品，不修改安装的依赖源码。测试可缩短时间但不删除计时语义。
 - 最多 20 个在途断点名额，覆盖匹配预留、collecting、暂停、应用决策和双阶段之间等待响应，不能只数 UI 队列。所有缓冲中和待处理正文合计预算 16 MiB，需在接收/解压前预留预算；规则最多 100 条，摘要分页最多 50 条，决策去重记录有数量/期限上限。达到限制后新命中原样通过并显示原因。收集超时/断连释放名额；尚未进入任何可编辑暂停的“仅下一次”占用归还规则，已进入暂停后不因超时重新启用。
 - 编辑副本的头最多 200 项/64 KiB，URL 最长 8 KiB；超限原始报文不因编辑器限制而被切断，而是禁用该次编辑并按原链路处理。IPC/事件只发送有界摘要，不能把未设上限的原始头塞入列表。
 - 双阶段按原请求匹配快照执行，即使请求路径被改也不会意外漏掉原定响应断点。批量关闭/停止时对这些在途 flow 跳过后续断点。
@@ -203,11 +203,24 @@ paused -> aborted / timed_out / disconnected
 
 ## 7. 分阶段实施任务
 
+### BP-0 续修约束（2026-11-04）
+
+原始 addon-only 候选的 NO-GO 证据保留。续修只在测试子进程通过公开 `next_layer` 入口选择显式版本适配，不修改 site-packages 或全局 monkey patch；内部 HTTP 层不是稳定公共 API，校验 mitmproxy 12.2.3 并拒绝其他版本。当前矩阵还绑定 h2 4.3.0 / h11 0.16.0 / Brotli 1.2.0；后续升级任一依赖须重新验证，不能把原型直接复制到产品当作无风险接线。[事件入口](https://docs.mitmproxy.org/stable/api/events.html)
+
+- 收集取消以传输事件真正结束请求；绝对/空闲时限分别覆盖已知长度滴流、未知长度停发与响应停发，不能只设置 flow.error。
+- 完整编辑保留 256 KiB 正文界限。头暂停只允许已知且小于 128 KiB 的正文；大包/未知长度在暂停前明确跳过头编辑并原样流式传输，不再把大包头暂停作为默认兜底。H2 无 Content-Length 时按 END_STREAM 判断空正文，不能套用 H1 的无正文规则。
+- H2 初始流窗口 65535 字节、每连接最多32并发流；按流计账暂停队列、上游并发名额等待队列和发送缓冲，以256 KiB水位停止返还该流信用，独立返还连接窗口以保持其他流前进。水位不等于整个worker的精确分配上限，还存在已发放窗口、TLS/解释器开销；必须通过64 MiB额外RSS门槛，不能只查引擎数组。
+- H1 在等待上游握手等阻塞事件期间也可能积压大包。测试适配仅扩展自有worker中对应handler实例的读取循环排空检查，按来源读任务、256 KiB水位等待队列下降；不阻塞上游TLS、定时器或hook，不暂停整个事件派发器，H2仍使用逐流窗口。一次持续背压等待最多10秒（事件唤醒不得续期），超时结束目标H1来源；客户端来源同时回收它拥有的上游握手，不能遗留GetConnection等待。已流式/未命中正文不再产生收集计时唤醒。该实例扩展同样是版本相关内部契约，BP-2必须审查，不是修改安装的包或全局类。验收必须包括延迟TLS后无损恢复、握手不恢复时客户端断开后的有界回收、等待中的正常退出。超出期限是明确结束请求，不能描述成无限慢消费者也能无损继续。
+- 空 DATA 不增加事件队列或延长空闲期限；相邻正文碎片合并为最多16 KiB块，保留独立 END_STREAM/EOM 语义。远端 RST、DATA+RST、GOAWAY、DATA+GOAWAY 和 EOF 也要清理信用与未发送队列，不能等消费者恢复才回收。
+- 安全测试包含同一H2连接慢消费者与健康大流并行、上游MAX_CONCURRENT_STREAMS=1的排队上传/取消、20路慢消费者、100 MiB请求/响应与哈希、暂停/解压/异常退出及版本拒绝；未通过不进入下一阶段。
+
+本轮支持证据仅为隔离 TLS H1->H1 / H2->H2。H3、混合协议、Android exporter/iPhone归档组合、真实设备及全局生产配额属于后续验收，未验证模式不启用断点。生产传输接入仍属于 BP-2；BP-1只先实现状态/预算/控制契约，本轮不改用户正在使用的代理。
+
 以下是执行顺序及验收门槛。本轮仅领取 BP-0，四项评审补充为其必要前置修订；后续逐项写入任务池、一次领取一项，正常细节无需重复审批。BP-0 可交付有实测证据的“不支持/禁用”结论，但不能因此声称产品准入通过。
 
 | 阶段 | 文件范围（新文件为拟新增） | 交付与验收门槛 |
 | --- | --- | --- |
-| BP-0 能力原型 | 新 `tests/test_breakpoint_transport.py`、`tests/fixtures/breakpoints/`、`specs/breakpoint-bp0-acceptance.md`；本规格与目标/进度 | loopback 隔离 client/proxy/origin 证明请求在放行前未到源站、响应在放行前未到客户端；HTTP/1.1/2、压缩、未知长度、超限、慢速收集/名额释放及并发均有实际证据；特别验证头暂停时对端持续发送大包的内部队列/背压和整体 RSS，无法证明有界则不启用该模式；确定正文模式与降级策略，未通过不接真机 |
+| BP-0 能力原型 | 新 `tests/test_breakpoint_transport.py`、`tests/test_breakpoint_guard.py`、`tests/fixtures/breakpoints/`、`specs/breakpoint-bp0-acceptance.md`；本规格与目标/进度 | loopback 隔离 client/proxy/origin 证明请求在放行前未到源站、响应在放行前未到客户端；HTTP/1.1/2、压缩、未知长度、超限、慢速收集/名额释放及并发均有实际证据；特别验证头暂停时对端持续发送大包的内部队列/背压和整体 RSS，无法证明有界则不启用该模式；确定正文模式与降级策略，未通过不接真机 |
 | BP-1 引擎和控制 | 新 `capture_console/breakpoints/{models,engine,validation,ipc,api}.py`、包初始化；`app.py` 仅组装；新 `tests/test_breakpoint_{engine,api,ipc}.py` | 规则匹配、单次占用、双阶段、倒计时、鉴权、幂等、客户端断开、队列预算、停止竞争全部 RED/GREEN；未经认证不能读取正文或修改流量 |
 | BP-2 双平台适配与归档 | 新 `capture_console/breakpoints/{addon,archive}.py`；上述 Android 启动/停止脚本、runner/exporter/results；`ios_pairing_proxy.py`、`ios_recording.py`、`ios_setup.py`、`ios_results.py`；新 `tests/test_breakpoint_{adapters,archive}.py` | Android 两模式和 iPhone 分别对照源站与客户端；原始/有效正文与 cURL 一致，超限透传不丢数据；停止/配额/退出可收敛，旧记录可读 |
 | BP-3 原生交互 | 新 `BreakpointModels.swift`、`BreakpointController.swift`、`BreakpointViews.swift`、`BreakpointCopy.swift`；`FlowViews.swift`、`Models.swift`、`APIClient.swift`、AppState/RuntimeManager 最小接线；对应新 Swift tests | 正常/等待/空/失败界面、键盘和多行复制；源切换/清空/过滤不丢待处理；停止清理和错误提示准确；按钮状态与真实确认一致 |
@@ -217,6 +230,7 @@ paused -> aborted / timed_out / disconnected
 
 ```bash
 CAPTURE_TEST_BREAKPOINT_TRANSPORT=1 python -m unittest tests.test_breakpoint_transport -v
+CAPTURE_TEST_BREAKPOINT_TRANSPORT=1 CAPTURE_REQUIRE_BP0_SAFE=1 python -m unittest tests.test_breakpoint_guard -v
 python -m unittest tests.test_breakpoint_engine tests.test_breakpoint_api tests.test_breakpoint_ipc -v
 python -m unittest tests.test_breakpoint_adapters tests.test_breakpoint_archive tests.test_breakpoint_e2e -v
 python -m unittest tests.test_ios_capture tests.test_ios_results tests.test_ios_lifecycle tests.test_exporter_timing -v
@@ -236,7 +250,7 @@ Python 使用已安装 `requirements-console.txt` 的隔离环境；集成测试
 | 请求/响应终止 | 请求阶段源站未执行；响应阶段客户端连接结束，但明确记录源站已执行；不伪造成功 |
 | 双阶段/并发规则 | 下一次只占一个 flow；两阶段各停一次；非命中接口不等编辑，无全局事件循环堵塞 |
 | origin 隔离 | 相同 host/path/method 的 HTTP/HTTPS、不同端口仅精确 origin 命中；缺省端口等价，不扩大到其他环境 |
-| 慢正文与占用 | 小于 256 KiB 但始终不结束、间歇滴流、完全停发均在收集绝对/空闲期限内收敛；公开 API 不能安全收敛则禁用该模式；收集加暂停合计不超过 20，未暂停的单次占用归还 |
+| 慢正文与占用 | 小于 256 KiB 但始终不结束、间歇滴流、完全停发均在收集绝对/空闲期限内收敛；无已验证的安全适配则禁用该模式；H2不关闭共享连接；收集加暂停合计不超过20，未暂停的单次占用归还 |
 | 长度与编码 | gzip/deflate/br、中文/emoji、重复 Query/Set-Cookie、空正文、HEAD/204/304、无效 JSON/CRLF 均按契约处理 |
 | 大包和恶意输入 | 100 MiB 流、压缩膨胀、未知长度、20 个等待项、100 条规则下有界；头暂停期间对端持续发送也不让代理内部队列无限增长，否则禁用该模式；未编辑流原样到达，超限不生成可应用的截断正文 |
 | 性能 | 同环境对照关闭断点，未命中请求 p95 新增延迟目标不超过 10ms；断点带来的额外 RSS 目标不超过 64 MiB；慢客户端/并发下记录实际值，超标先优化不直接宣称通过 |
@@ -260,4 +274,4 @@ Python 使用已安装 `requirements-console.txt` 的隔离环境；集成测试
 
 推荐推进顺序：BP-0 隔离原型 -> BP-1/2 共用后端与两套适配 -> BP-3 桌面交互 -> BP-4 实际验收。首版做好手动断点闭环，再考虑自动改写与重放。
 
-前期文档复核补充了响应阶段原样继续、仅头编辑语义、桌面租约及头暂停内部队列风险。本轮进一步补齐四项评审，并用真实代理实验确认小包传输语义成立、慢正文取消和头暂停内存风险确实存在；不得继续声称这些风险只是理论可能。BP-0 状态及未通过门槛见验收记录，后续阶段尚未实施。
+前期文档复核补充了响应阶段原样继续、仅头编辑语义、桌面租约及头暂停内部队列风险。原addon-only实验确认风险真实存在，历史失败不删除。BP-0续修通过逐流取消、有限窗口/队列、H1读取节流及大包跳过头编辑达到隔离安全门槛，36项严格验收通过；后续阶段尚未实施。BP-1只实现引擎与控制，产品传输接入必须经过BP-2版本/协议与归档组合验收，不能将本原型直接上线。
