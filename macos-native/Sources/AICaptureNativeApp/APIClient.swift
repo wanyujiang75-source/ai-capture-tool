@@ -64,7 +64,7 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
     private let decoder = JSONDecoder()
 
     init(
-        baseURL: URL = URL(string: "http://127.0.0.1:7001")!,
+        baseURL: URL = APIClient.defaultBaseURL(),
         sessionConfiguration: URLSessionConfiguration? = nil
     ) {
         self.baseURL = baseURL
@@ -74,6 +74,13 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
         configuration.timeoutIntervalForRequest = 240
         configuration.timeoutIntervalForResource = 1_200
         self.session = URLSession(configuration: configuration)
+    }
+
+    static func defaultBaseURL() -> URL {
+        if let value = ProcessInfo.processInfo.environment["AI_CAPTURE_NATIVE_BACKEND_URL"],
+           let url = URL(string: value), url.scheme == "http", url.user == nil, url.password == nil,
+           ["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") { return url }
+        return URL(string: "http://127.0.0.1:7001")!
     }
 
     func getDevices() async throws -> [CaptureDevice] {

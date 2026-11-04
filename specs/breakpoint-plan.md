@@ -1,6 +1,6 @@
 # 抓包工具断点功能调研与实施计划 V1
 
-日期：2026-11-04。交付状态：BP-0的36项严格隔离测试与BP-1的53项引擎/控制测试通过，另有37项既有抓包回归。BP-1为默认关闭的独立模块/API工厂，契约与失败修复证据见`breakpoint-bp1.md`；生产传输和桌面入口仍待BP-2/BP-3。原addon-only的NO-GO保留；安全适配仅为mitmproxy 12.2.3测试原型，不接入当前产品。BP-0详情见 `breakpoint-bp0-acceptance.md`，不是用户断点功能已交付。
+日期：2026-11-04。交付状态：BP-0至BP-3的阶段验收已通过。BP-2接入默认关闭的产品传输与归档；BP-3接入原生规则、队列、请求/响应编辑及归档对照。BP-3通过Swift152项、后端75项、真实链路45项、既有抓包249项和独立原生窗口验收，证据见`breakpoint-bp3.md`；BP-2完整安全矩阵见`breakpoint-bp2.md`。BP-4真实设备、安装包与使用说明综合验收尚未开始，未替换当前安装包或远端发布。原addon-only的NO-GO及BP-0隔离实验历史保留；仅在支持的mitmproxy版本与安全适配条件下装载产品能力。
 
 ## 1. 结论与边界
 
@@ -223,8 +223,8 @@ paused -> aborted / timed_out / disconnected
 | BP-0 能力原型 | 新 `tests/test_breakpoint_transport.py`、`tests/test_breakpoint_guard.py`、`tests/fixtures/breakpoints/`、`specs/breakpoint-bp0-acceptance.md`；本规格与目标/进度 | loopback 隔离 client/proxy/origin 证明请求在放行前未到源站、响应在放行前未到客户端；HTTP/1.1/2、压缩、未知长度、超限、慢速收集/名额释放及并发均有实际证据；特别验证头暂停时对端持续发送大包的内部队列/背压和整体 RSS，无法证明有界则不启用该模式；确定正文模式与降级策略，未通过不接真机 |
 | BP-1 引擎和控制 | 新 `capture_console/breakpoints/{models,engine,validation,control,ipc,api}.py`、包初始化；独立API工厂（app.py生产组装明确延期BP-2）；新 `tests/test_breakpoint_{engine,api,ipc}.py`及独立worker夹具；契约见`breakpoint-bp1.md` | 规则匹配、单次占用、双阶段、倒计时、鉴权、幂等、客户端断开、队列预算、停止竞争全部 RED/GREEN；未经认证不能读取正文或修改流量 |
 | BP-2 双平台适配与归档 | 新 `capture_console/breakpoints/{addon,archive,runtime,guard,read_gate,android,ios,supervisor}.py`；控制API组装、Android启动/停止脚本、runner/exporter/results；iOS代理/准备/归档；新adapter/archive/lifecycle/boundaries/integration测试；详见`breakpoint-bp2.md` | Android两模式和iPhone产品适配器隔离对照源站/客户端；原始/有效正文及cURL一致，100MiB透传哈希/RSS；停止需等待真实传输及发送队列，配额/退出收敛，旧记录可读；默认关闭，不接用户手机/VPN |
-| BP-3 原生交互 | 新 `BreakpointModels.swift`、`BreakpointController.swift`、`BreakpointViews.swift`、`BreakpointCopy.swift`；`FlowViews.swift`、`Models.swift`、`APIClient.swift`、AppState/RuntimeManager 最小接线；对应新 Swift tests | 正常/等待/空/失败界面、键盘和多行复制；源切换/清空/过滤不丢待处理；停止清理和错误提示准确；按钮状态与真实确认一致 |
-| BP-4 综合验收与使用说明 | 新 `tests/test_breakpoint_e2e.py`、`tests/breakpoint_native_ui_fixture.py`；既有相关 Python/Swift 测试；`docs/desktop-user-guide.md`、`specs/breakpoint-acceptance.md` | 以下矩阵通过，Android 与已配置 iPhone 的自有应用现场验证；构建本地安装包，核对内嵌 addon 和依赖；记录实际设备/版本/证据与未覆盖项。远端发布需另有当前发布请求 |
+| BP-3 原生交互 | 新 `Breakpoint*.swift`（模型、独立认证API、控制器、模板库、规则/编辑/归档/根生命周期界面与文案）；FlowViews/Models/APIClient/AppState/RuntimeManager/ContentView最小接线；对应Swift tests；认证context与有界归档预览Python实现/测试；提前建立`tests/breakpoint_native_ui_fixture.py`；契约见`breakpoint-bp3.md` | 正常/等待/空/失败界面、键盘和多行复制；源切换/清空/过滤不丢待处理；停止清理和错误提示准确；按钮状态与真实确认一致。已完成，未替换用户安装包 |
+| BP-4 综合验收与使用说明 | 新 `tests/test_breakpoint_e2e.py`；复用BP-3的`tests/breakpoint_native_ui_fixture.py`和既有相关Python/Swift测试；`docs/desktop-user-guide.md`、`specs/breakpoint-acceptance.md` | 以下矩阵通过，Android 与已配置 iPhone 的自有应用现场验证；构建本地安装包，核对内嵌 addon 和依赖；记录实际设备/版本/证据与未覆盖项。远端发布需另有当前发布请求 |
 
 使用项目现有 unittest，不为此向生产环境安装 pytest/httpx。BP-0 是隔离能力实验，先建立证据断言与负对照，实际结果允许得出候选模式不可用；正常产品实现仍需 RED/GREEN。后续文件创建后按阶段从项目根执行：
 

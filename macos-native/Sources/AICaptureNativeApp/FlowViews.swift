@@ -11,6 +11,7 @@ struct FlowViews: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             sourcePicker
+            BreakpointToolbar(controller: appState.breakpointController)
             if appState.flowSessionID == nil {
                 emptyCapture
             } else {
@@ -166,6 +167,11 @@ struct FlowViews: View {
         } else {
             List(filteredFlows) { flow in
                 FlowRow(flow: flow)
+                    .contextMenu {
+                        Button(BreakpointCopy.setRule) {
+                            appState.breakpointController.seed(url: flow.url ?? "", method: flow.method ?? "GET")
+                        }
+                    }
                     .contentShape(Rectangle())
                     .listRowBackground(rowBackground(for: flow))
                     .onTapGesture {
@@ -197,6 +203,9 @@ struct FlowViews: View {
                     Text("cURL").tag("curl")
                 }
                 .pickerStyle(.segmented)
+                if let stages = detail.breakpoints, !stages.isEmpty {
+                    BreakpointArchiveView(stages: stages).id(detail.id)
+                }
                 detailBody(detail)
             } else {
                 if appState.flowDetailLoadState == .loading { ProgressView("正在加载接口详情…") }

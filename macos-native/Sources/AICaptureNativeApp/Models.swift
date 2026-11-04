@@ -712,6 +712,7 @@ struct FlowDetail: Decodable, Identifiable {
     let responseBody: FlowBodyInfo?
     let metaJSON: JSONValue?
     let files: JSONValue?
+    let breakpoints: [String: BreakpointAudit]?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -728,6 +729,7 @@ struct FlowDetail: Decodable, Identifiable {
         case responseBody = "response_body"
         case metaJSON = "meta_json"
         case files
+        case breakpoints
     }
 }
 

@@ -14,6 +14,7 @@ final class AppState: ObservableObject {
     @Published var selectedSection: SidebarSection = .capture
     @Published var selectedCapturePlatform: CapturePlatform = .android
     let iosController = IOSSetupController()
+    let breakpointController: BreakpointController
     @Published var devices: [CaptureDevice] = []
     @Published var apps: [CaptureApp] = []
     @Published var deviceLoadState: LoadState = .idle
@@ -115,6 +116,11 @@ final class AppState: ObservableObject {
         workflowPollInterval: Duration = .seconds(2)
     ) {
         self.runtimeManager = runtimeManager
+        self.breakpointController = BreakpointController(
+            api: BreakpointHTTPClient(baseURL: apiClient.baseURL, directory: runtimeManager.runtimeDirectory),
+            flowAPI: flowAPI ?? apiClient,
+            library: BreakpointRuleLibrary(directory: runtimeManager.runtimeDirectory)
+        )
         self.apiClient = apiClient
         self.jenkinsAPI = jenkinsAPI ?? apiClient
         self.foregroundAPI = foregroundAPI ?? apiClient

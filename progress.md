@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 BP-3 桌面断点
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| BP-3 | DONE | 桌面规则、全局队列、请求/响应编辑与归档呈现 | 新 macos-native/Sources/AICaptureNativeApp/Breakpoint*.swift，现有 {AppState,ContentView,FlowViews,Models,RuntimeManager,APIClient}.swift 最小组装；对应 Swift 测试；capture_console/breakpoints/{api,archive}.py、capture_console/{ios_results,breakpoint_preview}.py；tests/test_breakpoint_{api,archive}.py、tests/breakpoint_native_ui_fixture.py；goal.md、progress.md、specs/breakpoint-{plan,bp3}.md | Swift全套、认证与隔离/旧抓包回归、真实loopback编辑、原生正常/空/加载/失败与复制验收，无用户环境变化 | 基线fd215df；Swift152项、后端75项、真实链路45项、旧抓包249项通过；显式Swift实链路1项通过。最终原生窗口验证改写/放行/终止/复制/过滤清空/慢详情/失败恢复/归档；复核问题已RED/GREEN修复。自有进程与临时凭据已回收，7001仍be6d0543b498/running/idle/null，未改VPN或原配置；详见bp3规格 | 仅本地提交并保留分支；BP-4真实设备及安装包综合验收未领取，不推送/发包 |
+
 ## 2026-11-04 BP-2 真实链路与归档
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

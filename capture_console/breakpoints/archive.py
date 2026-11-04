@@ -68,8 +68,3 @@ class BreakpointArchive(IOSCaptureArchive):
                     request_headers=list(request.headers.items(multi=True)))
         self._write(flow.id, meta)
         super().request_complete(flow)
-
-    def detail(self, flow_id):
-        result = super().detail(flow_id)
-        result['breakpoints'] = self._read(flow_id).get('breakpoints', {})
-        return result

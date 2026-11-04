@@ -6,6 +6,30 @@ from mitmproxy.test import tflow
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_version_previews_are_bounded_decode_gzip_and_reject_symlinks(self):
+        import gzip
+        from capture_console.breakpoints.archive import BreakpointArchive
+        with tempfile.TemporaryDirectory() as temp:
+            archive = BreakpointArchive(Path(temp))
+            flow = tflow.tflow()
+            flow.request.headers['content-type'] = 'application/json'
+            flow.request.content = b'{"before":1}'
+            archive.begin(flow)
+            original = archive.snapshot(flow, 'request')
+            flow.request.headers['content-encoding'] = 'gzip'
+            flow.request.raw_content = gzip.compress(b'x' * 100000)
+            archive.record_decision(flow, 'request', original, 'apply', 'user')
+            versions = archive.detail(flow.id)['breakpoints']['request']
+            self.assertEqual(versions['original']['body_text'], '{"before":1}')
+            self.assertTrue(versions['effective']['body_truncated'])
+            self.assertLessEqual(len(versions['effective']['body_text'].encode()), 32768)
+            path = archive.root / versions['original']['body_file']
+            path.unlink()
+            path.symlink_to('/etc/hosts')
+            failed = archive.detail(flow.id)['breakpoints']['request']['original']
+            self.assertFalse(failed['body_available'])
+            self.assertEqual(failed['body_text'], '')
+
     def test_header_only_edit_preserves_original_and_effective_curl(self):
         from capture_console.breakpoints.archive import BreakpointArchive
         with tempfile.TemporaryDirectory() as temp:

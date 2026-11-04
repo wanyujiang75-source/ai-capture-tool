@@ -21,7 +21,7 @@ def create_control_app(targets, desktop_token):
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     capacity = asyncio.Semaphore(8)
 
-    def authorize(request, capture_id):
+    def authorize(request, capture_id, *, context=False):
         try:
             peer = ipaddress.ip_address(request.client.host)
             host = urlsplit('http://' + request.headers.get('host', '')).hostname
@@ -31,7 +31,7 @@ def create_control_app(targets, desktop_token):
                 or 'origin' in request.headers or 'referer' in request.headers
                 or request.headers.get('sec-fetch-site', 'none') != 'none'):
             raise Issue('invalid_source', 403)
-        for name in ('authorization', 'x-device-id', 'x-breakpoint-epoch', 'host'):
+        for name in (('authorization', 'host') if context else ('authorization', 'x-device-id', 'x-breakpoint-epoch', 'host')):
             if len(request.headers.getlist(name)) != 1:
                 raise Issue('unauthorized', 401)
         if not hmac.compare_digest(request.headers['authorization'].encode(), ('Bearer ' + desktop_token).encode()):
@@ -39,7 +39,7 @@ def create_control_app(targets, desktop_token):
         target = targets(capture_id) if callable(targets) else targets.get(capture_id)
         if not target:
             raise Issue('capture_not_found', 404)
-        if (request.headers['x-device-id'], request.headers['x-breakpoint-epoch']) != (target.device_id, target.epoch):
+        if not context and (request.headers['x-device-id'], request.headers['x-breakpoint-epoch']) != (target.device_id, target.epoch):
             raise Issue('target_conflict')
         return target
 
@@ -85,6 +85,15 @@ def create_control_app(targets, desktop_token):
                 capacity.release()
 
     prefix = '/api/captures/{capture_id}/breakpoints'
+
+    @app.get(prefix + '/context')
+    async def context(request: Request, capture_id: str):
+        try:
+            target = authorize(request, capture_id, context=True)
+            result = {'capture_id': capture_id, 'device_id': target.device_id, 'epoch': target.epoch}
+            return JSONResponse(result, headers={'Cache-Control': 'no-store'})
+        except Issue as issue:
+            return JSONResponse(error_json(issue), status_code=issue.status, headers={'Cache-Control': 'no-store'})
 
     @app.get(prefix)
     async def status(request: Request, capture_id: str):

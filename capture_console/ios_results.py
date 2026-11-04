@@ -182,7 +182,8 @@ class IOSCaptureArchive:
         detail = {key: meta[key] for key in ("id", "method", "status", "url")}
         detail["meta_json"] = {"summary": meta}
         if 'breakpoints' in meta:
-            detail['breakpoints'] = meta['breakpoints']
+            from .breakpoint_preview import preview_versions
+            detail['breakpoints'] = preview_versions(self.root, meta['breakpoints'])
         detail["files"] = {}
         for kind in ("request", "response"):
             path = self._body_path(flow_id, kind)

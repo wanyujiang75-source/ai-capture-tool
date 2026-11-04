@@ -17,7 +17,7 @@ final class RuntimeManager {
     private var statusTask: Task<AppState.RuntimeStatus, Never>?
 
     init(
-        backendURL: URL = URL(string: "http://127.0.0.1:7001")!,
+        backendURL: URL = APIClient.defaultBaseURL(),
         runtimeDirectory: URL = RuntimeManager.defaultRuntimeDirectory(),
         projectRootOverride: URL? = nil,
         buildID: String = RuntimeManager.defaultBuildID(),
@@ -194,6 +194,7 @@ final class RuntimeManager {
         var environment = inheritedEnvironment
         environment.removeValue(forKey: "CAPTURE_DEVICES_CONFIG")
         environment["TRACEDECK_DESKTOP"] = "1"
+        environment["CAPTURE_BREAKPOINTS"] = "1"
         environment["TRACEDECK_DESKTOP_BUILD_ID"] = buildID
         environment["CAPTURE_RUNTIME_DIR"] = runtimeDirectory.path
         environment["CONSOLE_HOST"] = backendURL.host ?? "127.0.0.1"

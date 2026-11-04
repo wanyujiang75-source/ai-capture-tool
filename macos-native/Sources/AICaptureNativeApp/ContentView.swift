@@ -31,6 +31,9 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem {
+                BreakpointToolbar(controller: appState.breakpointController, compact: true)
+            }
+            ToolbarItem {
                 Button {
                     showsRuntimeCheck = true
                 } label: {
@@ -41,6 +44,9 @@ struct ContentView: View {
         .sheet(isPresented: $showsRuntimeCheck) {
             RuntimeCheckView(ios: appState.iosController)
                 .environmentObject(appState)
+        }
+        .background {
+            BreakpointHost(controller: appState.breakpointController)
         }
         .overlay(alignment: .bottomTrailing) {
             if let notice = appState.notice {

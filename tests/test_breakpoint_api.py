@@ -84,6 +84,15 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.engine.ack(pending)
         self.assertEqual((await self.call())[1]['in_flight'], 0)
 
+    async def test_desktop_context_is_authenticated_and_never_contains_worker_secret(self):
+        code, context = await self.call(path='/context', headers={'X-Device-ID': '', 'X-Breakpoint-Epoch': ''})
+        self.assertEqual(code, 200)
+        self.assertEqual(context, {'capture_id': 'c', 'device_id': 'd', 'epoch': self.engine.epoch})
+        self.assertNotIn(self.worker.token, json.dumps(context))
+        for headers, expected in [({'Authorization': ''}, 401), ({'Origin': 'https://evil.test'}, 403),
+                                  ({'Host': 'evil.test'}, 403)]:
+            self.assertEqual((await self.call(path='/context', headers=headers))[0], expected)
+
     async def test_chunked_input_limit_cannot_be_bypassed_without_content_length(self):
         reader, writer = await asyncio.open_connection('127.0.0.1', self.port)
         try:
