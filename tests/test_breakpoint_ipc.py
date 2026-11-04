@@ -5,7 +5,7 @@ import tempfile
 import socket
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from capture_console.breakpoints.engine import BreakpointEngine
 from capture_console.breakpoints.ipc import WorkerServer, WorkerClient, read_frame, write_frame
@@ -14,6 +14,19 @@ from tests.test_breakpoint_engine import request
 
 
 class IpcTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_cleanup_is_scheduled_even_when_reply_fails(self):
+        callback = self.server.on_stop = Mock()
+        async def broken_reply(writer, payload):
+            if 'data' in payload:
+                raise ConnectionResetError()
+            await write_frame(writer, payload)
+        with patch('capture_console.breakpoints.ipc.write_frame', side_effect=broken_reply):
+            with self.assertRaises(Issue):
+                await self.client.call('stop')
+            await asyncio.sleep(.02)
+        self.assertTrue(self.engine.stopped)
+        callback.assert_called_once_with()
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='bp1-', dir='/tmp')
         self.addCleanup(self.tmp.cleanup)

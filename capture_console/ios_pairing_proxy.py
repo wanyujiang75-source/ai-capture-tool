@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import suppress
 import ipaddress
+import inspect
 import json
 import os
 import re
@@ -136,6 +137,32 @@ class PairingMonitor:
             self.dirty = False
 
 
+class PairingBreakpointMonitor(PairingMonitor):
+    def __init__(self, config, master):
+        super().__init__(config)
+        from .breakpoints.ios import IOSBreakpointRecording
+        self.recording = IOSBreakpointRecording(config, self.state)
+        self.recording.master = master
+
+    def next_layer(self, nextlayer):
+        if self.recording.runtime:
+            self.recording.runtime.addon.next_layer(nextlayer)
+
+    def client_disconnected(self, client):
+        if self.recording.runtime:
+            self.recording.runtime.addon.client_disconnected(client)
+
+    async def request(self, flow):
+        if self.recording.runtime:
+            await self.recording.runtime.request(flow)
+        super().request(flow)
+
+    async def response(self, flow):
+        if self.recording.runtime:
+            await self.recording.runtime.response(flow)
+        super().response(flow)
+
+
 def owner_is_alive(config):
     try:
         return process_identity(config["owner_pid"]) == config["owner_identity"]
@@ -162,11 +189,23 @@ async def run(config):
                 connection_strategy="lazy", upstream_cert=False, ssl_insecure=False, stream_large_bodies="256k",
                 websocket=False, rawtcp=True,
                 allow_hosts=[r"^capture-check\.invalid(:443)?$"])
-    monitor = PairingMonitor(config)
+    monitor = PairingBreakpointMonitor(config, master) if config.get('breakpoints') else PairingMonitor(config)
     master.addons.add(monitor)
     loop = asyncio.get_running_loop()
+    shutdown_task = None
+
+    async def shutdown():
+        if config.get('breakpoints'):
+            await monitor.recording.drain()
+        master.shutdown()
+
+    def request_shutdown():
+        nonlocal shutdown_task
+        if shutdown_task is None:
+            shutdown_task = asyncio.create_task(shutdown())
+
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, master.shutdown)
+        loop.add_signal_handler(sig, request_shutdown)
 
     def switch(domains):
         hosts = [r"capture-check\.invalid"]
@@ -186,22 +225,26 @@ async def run(config):
         try:
             await asyncio.sleep(0.5)
             while True:
-                if (os.getppid() != config["parent_pid"] or not owner_is_alive(config)
+                owner_alive = (await asyncio.to_thread(owner_is_alive, config)
+                               if config.get('breakpoints') else owner_is_alive(config))
+                if (os.getppid() != config["parent_pid"] or not owner_alive
                         or time.time() >= config.get("expires_at", float("inf"))):
-                    master.shutdown()
+                    request_shutdown()
                     return
                 control = Path(config.get("control_path", Path(config["state_path"]).with_name("control.json")))
                 if control.exists():
                     if control.stat().st_size > 65536:
                         raise ValueError("oversized recording command")
-                    monitor.recording.apply(json.loads(control.read_text()), switch)
+                    applied = monitor.recording.apply(json.loads(control.read_text()), switch)
+                    if inspect.isawaitable(applied):
+                        await applied
                 monitor.recording.check_limit(switch)
                 monitor.dirty = True
                 monitor.flush()
                 await asyncio.sleep(0.2)
         except Exception:
             # Losing status persistence or lifecycle monitoring must stop interception.
-            master.shutdown()
+            request_shutdown()
 
     task = asyncio.create_task(maintain())
     try:
@@ -210,6 +253,10 @@ async def run(config):
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+        if config.get('breakpoints'):
+            await monitor.recording.drain()
+        if shutdown_task:
+            await shutdown_task
         monitor.state = {"phase": "failed", "flow_count": 0, "flows": []}
         monitor.dirty = True
         try:

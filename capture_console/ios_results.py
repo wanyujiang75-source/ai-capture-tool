@@ -156,6 +156,9 @@ class IOSCaptureArchive:
         meta["total_duration_ms"] = str(max(0, round(((response.timestamp_end if response else None) or time.time()) * 1000 - meta["started"] * 1000)))
         if flow.error:
             meta["error"] = str(flow.error)[:2048]
+        if any(stage.get('action') == 'abort' for stage in meta.get('breakpoints', {}).values()):
+            meta['status'] = 'ABORTED'
+            meta['response_complete'] = False
         self._write(flow.id, meta)
 
     def page(self, *, cursor=0, limit=200):
@@ -178,6 +181,8 @@ class IOSCaptureArchive:
         meta = self._read(flow_id)
         detail = {key: meta[key] for key in ("id", "method", "status", "url")}
         detail["meta_json"] = {"summary": meta}
+        if 'breakpoints' in meta:
+            detail['breakpoints'] = meta['breakpoints']
         detail["files"] = {}
         for kind in ("request", "response"):
             path = self._body_path(flow_id, kind)

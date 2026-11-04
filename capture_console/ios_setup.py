@@ -201,6 +201,7 @@ class IOSSetupService:
                 "state_path": str(self.directory / "state.json"),
                 "control_path": str(self.directory / "control.json"),
                 "capture_root": str((self.root.parent / "captures").resolve()),
+                "breakpoints": os.environ.get('CAPTURE_BREAKPOINTS') == '1',
             }
             self.last = {"phase": "preparing", "connection_state": "preparing", "recording_state": "idle",
                          "session_id": None, "flow_count": 0, "flows": []}

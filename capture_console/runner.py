@@ -5,6 +5,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -1028,6 +1029,7 @@ class ConsoleRunner:
         mode: str,
         outdir: str,
         interval: float = 1.0,
+        capture_id: str | None = None,
     ) -> CommandResult:
         args = [
             str(self.scripts_dir / "ai_capture.sh"),
@@ -1044,7 +1046,21 @@ class ConsoleRunner:
         ]
         if activity:
             args.extend(["--activity", activity])
-        return self.run(args, timeout=90, env={"OUTDIR": outdir})
+        extra = {"OUTDIR": outdir}
+        if os.environ.get('CAPTURE_BREAKPOINTS') == '1':
+            from .breakpoints.guard import check_version
+            from .breakpoints.runtime import private_json
+            from .ios_setup import process_identity
+            check_version()
+            config = Path(outdir) / 'breakpoint-launch.json'
+            config.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            private_json(config, dict(outdir=outdir, capture_id=capture_id or config.parent.name,
+                         device_id=self.capture_instance, owner_pid=os.getpid(),
+                         owner_identity=process_identity(os.getpid())))
+            extra['CAPTURE_BP_CONFIG'] = str(config)
+            extra['CAPTURE_BP_PYTHON'] = sys.executable
+            args.append('--restart-mitm')
+        return self.run(args, timeout=90, env=extra)
 
     def normalize_activity_component(self, package_name: str, activity: str) -> str:
         activity = activity.strip()

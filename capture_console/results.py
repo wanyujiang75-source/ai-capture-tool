@@ -254,6 +254,14 @@ def _dedupe_flow_updates(flows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def scan_capture(outdir: str | Path) -> List[Dict[str, Any]]:
     outdir = Path(outdir)
+    if (outdir / 'breakpoint-archive.json').is_file():
+        from .ios_results import IOSCaptureArchive
+        archive = IOSCaptureArchive(outdir, read_only=True)
+        # One SQLite read snapshot avoids updated rows reappearing on later
+        # revision pages, and caps work even while capture keeps appending.
+        with archive.connect() as connection:
+            rows = connection.execute('SELECT summary FROM flows ORDER BY revision LIMIT 10000').fetchall()
+        return [json.loads(row['summary']) for row in rows]
     all_flows = outdir / "all-flows.tsv"
     if all_flows.exists():
         header = all_flows.read_text(encoding="utf-8", errors="replace").splitlines()[:1]
@@ -274,6 +282,11 @@ def get_flow_detail(
     inline_body_limit: Optional[int] = MAX_INLINE_BODY_BYTES,
 ) -> Dict[str, Any]:
     outdir = Path(outdir)
+    if (outdir / 'breakpoint-archive.json').is_file():
+        from .ios_results import IOSCaptureArchive
+        detail = IOSCaptureArchive(outdir, read_only=True).detail(flow_id)
+        detail['breakpoint_archive_root'] = str(outdir)
+        return detail
     flows = scan_capture(outdir)
     flow = next((item for item in flows if item["id"] == flow_id or item.get("flow_id") == flow_id), None)
     if flow is None:
@@ -376,6 +389,9 @@ def _headers_from_detail(detail: Dict[str, Any]) -> List[List[str]]:
 
 
 def build_curl(detail: Dict[str, Any]) -> str:
+    if 'breakpoint_archive_root' in detail:
+        from .ios_results import IOSCaptureArchive
+        return IOSCaptureArchive(detail['breakpoint_archive_root'], read_only=True).curl(detail['id'])
     method = detail.get("method") or "GET"
     url = detail.get("url") or ""
     parts = ["curl", "-X", method, shlex.quote(url)]

@@ -67,6 +67,7 @@ class WorkerServer:
         self.tasks = set()
         self.inode = None
         self.root_inode = None
+        self.on_stop = None
 
     async def start(self):
         if os.name == 'nt' or len(os.fsencode(self.path)) > 100:
@@ -114,6 +115,8 @@ class WorkerServer:
                             self.engine.epoch, self.engine.capture_id, self.engine.device_id):
                         raise Issue('target_conflict')
                     result = dispatch(self.engine, envelope.command, envelope.payload)
+                    if envelope.command == 'stop' and self.on_stop:
+                        self.on_stop()
                     await write_frame(writer, {'version': 1, 'data': result})
             except Issue as issue:
                 async with asyncio.timeout(1):

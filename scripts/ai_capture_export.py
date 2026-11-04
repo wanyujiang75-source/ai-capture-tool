@@ -693,6 +693,13 @@ def main():
 
     while not stop_requested:
         try:
+            if os.path.isfile(os.path.join(args.outdir, 'breakpoint-launch.json')):
+                # The opt-in worker owns a transactional archive. Never freeze a
+                # mitmweb snapshot before its request/response decision is applied.
+                if args.once:
+                    break
+                time.sleep(args.interval)
+                continue
             flows = client.flows()
             write_json(os.path.join(args.outdir, "flows-current.json"), flows)
             for flow in flows:

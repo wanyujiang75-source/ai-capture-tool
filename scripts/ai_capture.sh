@@ -429,6 +429,9 @@ write_env_file() {
 	    printf 'APP_PACKAGE=%q\n' "$APP_PACKAGE"
 	    printf 'APP_ACTIVITY=%q\n' "$APP_ACTIVITY"
 	    printf 'OUTDIR=%q\n' "$OUTDIR"
+	    if [[ -n "${CAPTURE_BP_PYTHON:-}" ]]; then
+	      printf 'CAPTURE_BP_PYTHON=%q\n' "$CAPTURE_BP_PYTHON"
+	    fi
 	  } > "$INSTANCE_DIR/ai_capture.env"
 	  printf '%s\n' "$OUTDIR" > "$INSTANCE_DIR/last-ai-capture-dir.txt"
 	  if [[ "$CAPTURE_INSTANCE" == "device-1" ]]; then

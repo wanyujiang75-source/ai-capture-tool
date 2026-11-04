@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 BP-2 真实链路与归档
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| BP-2 | DONE | 默认关闭的真实传输接线、控制生命周期与原始/有效归档 | `capture_console/breakpoints/**`, `capture_console/{app,runner,results,ios_pairing_proxy,ios_recording,ios_setup,ios_results}.py`, `scripts/{ai_capture.sh,start_mitm_stack.sh,start_mitm_socks_stack.sh,ai_capture_stop.sh,ai_capture_export.py,breakpoint_addon.py}`, `tests/test_breakpoint_*.py`, `tests/fixtures/breakpoints/**`, `goal.md`, `progress.md`, `specs/breakpoint-{plan,bp2}.md` | 新adapter/archive/lifecycle真实loopback验收；BP-1/BP-0及既有归档回归；大包/取消/停止无退化；不改实际运行环境 | 基线0d27300；最终45项真实链路108.923秒、73项核心16.451秒、严格36项49.087秒、249项原有8.632秒通过（共403项）。100MiB响应额外RSS约4.9-5.8MiB且哈希完整；停止/单流取消/配额/短写/204等RED已修复，两组限定复核无残余P1/P2。shell/AST/diff通过；现有服务build/running/idle/null不变。详见bp2规格完整失败与复验记录 | 仅本地提交，保留分支；BP-3未领取，尚无桌面断点编辑入口，不推送/发包，不操作手机/VPN |
+
 ## 2026-11-04 断点 BP-0 隔离能力验收
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

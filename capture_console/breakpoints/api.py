@@ -1,4 +1,4 @@
-"""Explicit control-app factory; intentionally not mounted in the desktop backend."""
+"""Authenticated control factory; backend mounting requires the explicit BP flag."""
 
 import asyncio
 import hmac
@@ -17,7 +17,7 @@ from .models import FRAME_LIMIT, Issue
 def create_control_app(targets, desktop_token):
     if not isinstance(desktop_token, str) or len(desktop_token) < 32:
         raise ValueError('desktop token must be independently generated')
-    targets = MappingProxyType(dict(targets))
+    targets = targets if callable(targets) else MappingProxyType(dict(targets))
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     capacity = asyncio.Semaphore(8)
 
@@ -36,7 +36,7 @@ def create_control_app(targets, desktop_token):
                 raise Issue('unauthorized', 401)
         if not hmac.compare_digest(request.headers['authorization'].encode(), ('Bearer ' + desktop_token).encode()):
             raise Issue('unauthorized', 401)
-        target = targets.get(capture_id)
+        target = targets(capture_id) if callable(targets) else targets.get(capture_id)
         if not target:
             raise Issue('capture_not_found', 404)
         if (request.headers['x-device-id'], request.headers['x-breakpoint-epoch']) != (target.device_id, target.epoch):

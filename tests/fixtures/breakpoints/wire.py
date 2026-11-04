@@ -277,6 +277,8 @@ class Origin:
                     record['ended'] = True
                     path = dict(record['headers'])[':path'].split('?')[0]
                     config = self.responses.get(path, {})
+                    if config.get('headers_gate'):
+                        await config['headers_gate'].wait()
                     body = config.get('body', b'{"origin":true}')
                     size = config.get('size', len(body))
                     headers = [(':status', '200'), ('content-type', 'application/json')]
@@ -317,15 +319,25 @@ class Origin:
             await peer.close()
 
 
-async def client(proxy_port, origin_port, ca, protocol='http/1.1'):
+async def client(proxy_port, origin_port, ca, protocol='http/1.1', *, mode='regular', auth=''):
     reader, writer = await asyncio.open_connection('127.0.0.1', proxy_port)
     wire = None
     try:
-        writer.write(f'CONNECT 127.0.0.1:{origin_port} HTTP/1.1\r\nHost: 127.0.0.1:{origin_port}\r\n\r\n'.encode())
-        await writer.drain()
-        reply = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
-        if not reply.startswith(b'HTTP/1.1 200'):
-            raise AssertionError(reply)
+        if mode == 'socks':
+            writer.write(b'\x05\x01\x00')
+            await writer.drain()
+            assert await reader.readexactly(2) == b'\x05\x00'
+            writer.write(b'\x05\x01\x00\x01\x7f\x00\x00\x01' + origin_port.to_bytes(2, 'big'))
+            await writer.drain()
+            reply = await asyncio.wait_for(reader.readexactly(10), 5)
+            assert reply[:2] == b'\x05\x00', reply
+        else:
+            authentication = f'Proxy-Authorization: Basic {auth}\r\n' if auth else ''
+            writer.write(f'CONNECT 127.0.0.1:{origin_port} HTTP/1.1\r\nHost: 127.0.0.1:{origin_port}\r\n{authentication}\r\n'.encode())
+            await writer.drain()
+            reply = await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'), 5)
+            if not reply.startswith(b'HTTP/1.1 200'):
+                raise AssertionError(reply)
         trust = ssl.create_default_context(cafile=ca)
         trust.set_alpn_protocols([protocol])
         await asyncio.wait_for(writer.start_tls(trust, server_hostname='127.0.0.1'), 5)

@@ -39,6 +39,10 @@ MITMWEB_ARGS=(
   --set "web_password=$MITMWEB_PASSWORD"
 )
 
+if [[ -n "${CAPTURE_BP_CONFIG:-}" ]]; then
+  MITMWEB_ARGS+=(-s "$SCRIPT_DIR/breakpoint_addon.py")
+fi
+
 if [[ -n "$MITMPROXY_IGNORE_HOSTS" ]]; then
   IFS=',' read -r -a ignore_hosts <<< "$MITMPROXY_IGNORE_HOSTS"
   for ignore_host in "${ignore_hosts[@]}"; do
@@ -59,6 +63,9 @@ fi
 
 {
   printf '#!/usr/bin/env bash\n'
+  if [[ -n "${CAPTURE_BP_CONFIG:-}" ]]; then
+    printf 'export CAPTURE_BP_CONFIG=%q\n' "$CAPTURE_BP_CONFIG"
+  fi
   printf 'exec '
   printf '%q ' "$MITMWEB_BIN" "${MITMWEB_ARGS[@]}"
   printf '>>"%s" 2>&1\n' "$LOG_FILE"
@@ -81,6 +88,14 @@ else
 fi
 
 wait_for_listen_port "$PROXY_PORT" 30
+
+if [[ -n "${CAPTURE_BP_CONFIG:-}" ]]; then
+  for ((attempt=0; attempt<100; attempt++)); do
+    [[ -f "${OUTDIR:?}/breakpoint-worker.json" ]] && break
+    sleep 0.1
+  done
+  [[ -f "$OUTDIR/breakpoint-worker.json" ]] || { echo 'breakpoint worker failed to start' >&2; exit 1; }
+fi
 
 echo "mitmweb started"
 echo "proxy: 0.0.0.0:$PROXY_PORT"

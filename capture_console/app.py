@@ -2469,6 +2469,7 @@ def api_validate_capture(app_id: int, device_id: str = DEFAULT_DEVICE_ID) -> Dic
                 mode=mode,
                 outdir=outdir,
                 interval=1.0,
+                **({'capture_id': str(session['id'])} if os.environ.get('CAPTURE_BREAKPOINTS') == '1' else {}),
             )
             if not started_capture.ok:
                 failed_session = store.update_session_status(session["id"], "failed", error=started_capture.text)
@@ -2621,6 +2622,7 @@ def api_start_capture(payload: CaptureStartPayload) -> Dict[str, Any]:
             activity=activity,
             mode=mode,
             outdir=outdir,
+            **({'capture_id': str(session['id'])} if os.environ.get('CAPTURE_BREAKPOINTS') == '1' else {}),
         )
         if not result.ok:
             failed = store.update_session_status(session["id"], "failed", error=result.text)
@@ -2750,20 +2752,25 @@ def api_get_flow_curl(session_id: int, flow_id: str) -> str:
             include_response=False,
             inline_body_limit=None,
         )
+        return build_curl(detail)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail={"user_message": str(exc)}) from exc
-    return build_curl(detail)
 
 
 @app.get("/api/captures/{session_id}/export")
 def api_export_capture(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
     outdir = Path(session["outdir"])
-    files = [str(path) for path in sorted(outdir.glob("*")) if path.is_file()]
+    files = [str(path) for path in sorted(outdir.glob("*")) if path.is_file()
+             and path.name not in {'breakpoint-worker.json', 'breakpoint-launch.json'}]
     return {"outdir": str(outdir), "files": files}
 
+
+if os.environ.get('CAPTURE_BREAKPOINTS') == '1':
+    from .breakpoints.supervisor import mount_control
+    mount_control(app, store, RUNTIME_DIR)
 
 dist_dir = ROOT_DIR / "web" / "dist"
 app.mount("/assets", StaticFiles(directory=dist_dir / "assets", check_dir=False), name="assets")

@@ -20,6 +20,10 @@ fi
 PROXY_PORT="${PROXY_PORT:-9090}"
 WEB_PORT="${WEB_PORT:-9091}"
 
+if [[ -n "${OUTDIR:-}" && -f "$OUTDIR/breakpoint-worker.json" ]]; then
+  PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}" "${CAPTURE_BP_PYTHON:-python3}" -m capture_console.breakpoints.supervisor "$OUTDIR" || true
+fi
+
 if command -v screen >/dev/null 2>&1; then
   screen -S "$EXPORTER_SCREEN_SESSION" -X quit >/dev/null 2>&1 || true
   screen -S "$FRIDA_SCREEN_SESSION" -X quit >/dev/null 2>&1 || true

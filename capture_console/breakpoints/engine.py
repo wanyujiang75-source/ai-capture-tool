@@ -71,6 +71,7 @@ class BreakpointEngine:
         self.drain_deadline = None
         self.owner_loop = None
         self.sequence = 0
+        self.transport_attached = False
 
     def put_rule(self, rule_id, expected_revision, spec):
         self.tick()
@@ -390,7 +391,7 @@ class BreakpointEngine:
                 'enabled': self.enabled, 'stopped': self.stopped, 'in_flight': len(self.flows),
                 'reserved_bytes': self.reserved_bytes, 'pending_count': sum(p.state == 'paused' for p in self.items.values()),
                 'rules': [dict(id=r.id, revision=r.revision, consumed=r.consumed, **r.spec.model_dump()) for r in self.rules.values()],
-                'transport_attached': False}
+                'transport_attached': self.transport_attached}
 
     def pending(self, cursor=0, limit=50):
         self.tick()
