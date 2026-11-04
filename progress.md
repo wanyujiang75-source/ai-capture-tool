@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| FLOW-R1 | DOING | 推送接口过滤并更新可下载桌面安装包 | `goal.md`, `progress.md`, `specs/flow-filter-release-20261104.md`, `README.md`, `release/安装说明.md`, `release/notes-20261104-filter.md`；已有打包脚本/产物与GitHub main/功能分支/新预发布 | 源码与回归对应；包内筛选说明、arm64、严格签名、隔离启动/归档通过；无本机数据；快进推送与标签一致；公开下载SHA-256一致 | 工作树干净，fetch确认main仍为77aed99；过滤实现3f1284f和原生UI验收ef7fef3均未推送，产品文件未改变，已有Python199/Swift126/隔离TLS3通过证据 | 补齐包内说明，构建并独立验证后发布，记录公开下载结果；不操作手机/VPN、不实现断点 |
+| FLOW-R1 | DONE | 推送接口过滤并更新可下载桌面安装包 | `goal.md`, `progress.md`, `specs/flow-filter-release-20261104.md`, `README.md`, `release/安装说明.md`, `release/notes-20261104-filter.md`；已有打包脚本/产物与GitHub main/功能分支/新预发布 | 源码与回归对应；包内筛选说明、arm64、严格签名、隔离启动/归档通过；无本机数据；快进推送与标签一致；公开下载SHA-256一致 | Python358项（353通过/5个opt-in另行全部通过）、Swift126项通过；最终包内13项摘要测试、三轮归档重启、原生6/6→3/6→搜索1/6→恢复6/6、签名通过。源码be6d054和同名新预发布已公开，ZIP99,719,780字节；匿名下载SHA-256/字节完全一致。首次上传408保留草稿，重试成功后才公开；详见规格 | 发布完成，旧包和用户无关文档保留；手机/VPN未改。仅显示启发式筛选，不包含断点实现；未公证/新设备兼容与NSTableView警告边界如实记录 |
 
 ## 2026-11-04 断点功能调研与计划
 
