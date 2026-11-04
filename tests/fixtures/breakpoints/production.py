@@ -76,6 +76,11 @@ class Fixture:
                 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
                 emit('stats', maxrss_bytes=rss if sys.platform == 'darwin' else rss*1024,
                      **self.runtime.addon.engine.status())
+            elif command == 'provenance':
+                emit('provenance', executable=sys.executable, modules={
+                    name: str(Path(module.__file__).resolve())
+                    for name, module in sys.modules.items()
+                    if name.startswith('capture_console.') and getattr(module, '__file__', None)})
             elif command == 'stop':
                 if self.monitor:
                     await self.monitor.recording.apply(dict(action='stop', revision=2), lambda _: None)

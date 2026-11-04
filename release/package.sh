@@ -17,6 +17,7 @@ fi
 DESKTOP_ARCHIVE_PATH="$ROOT_DIR/release/$DESKTOP_ARCHIVE_NAME"
 NATIVE_APP_PATH="$ROOT_DIR/macos-native/build/抓包工具.app"
 INSTALL_GUIDE_PATH="$ROOT_DIR/release/安装说明.md"
+BREAKPOINT_GUIDE_PATH="$ROOT_DIR/docs/breakpoint-user-guide.md"
 
 write_checksum() {
   local target_path="$1"
@@ -59,11 +60,17 @@ if [[ ! -f "$INSTALL_GUIDE_PATH" ]]; then
   echo "desktop install guide is missing: $INSTALL_GUIDE_PATH" >&2
   exit 1
 fi
+if [[ ! -f "$BREAKPOINT_GUIDE_PATH" ]]; then
+  echo "desktop breakpoint guide is missing: $BREAKPOINT_GUIDE_PATH" >&2
+  exit 1
+fi
 
 PACKAGE_TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$PACKAGE_TEMP_DIR"' EXIT
 PORTABLE_INSTALL_GUIDE_PATH="$PACKAGE_TEMP_DIR/INSTALL.md"
 cp "$INSTALL_GUIDE_PATH" "$PORTABLE_INSTALL_GUIDE_PATH"
+PORTABLE_BREAKPOINT_GUIDE_PATH="$PACKAGE_TEMP_DIR/BREAKPOINTS.md"
+cp "$BREAKPOINT_GUIDE_PATH" "$PORTABLE_BREAKPOINT_GUIDE_PATH"
 
 if command -v npm >/dev/null 2>&1; then
   (cd "$ROOT_DIR/web" && npm install && npm run build)
@@ -97,7 +104,8 @@ fi
 /usr/bin/zip -q -j \
   "$DESKTOP_ARCHIVE_PATH" \
   "$INSTALL_GUIDE_PATH" \
-  "$PORTABLE_INSTALL_GUIDE_PATH"
+  "$PORTABLE_INSTALL_GUIDE_PATH" \
+  "$PORTABLE_BREAKPOINT_GUIDE_PATH"
 write_checksum "$DESKTOP_ARCHIVE_PATH"
 
 (
