@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| BP-4 | BLOCKED | 真机、安装包、性能与生命周期综合验收，补使用说明 | tests/{test_breakpoint_e2e,breakpoint_device_acceptance,test_breakpoint_device_acceptance,test_native_app_packaging}.py、tests/fixtures/breakpoints/production.py；复用既有断点/iOS/Swift测试；release/{package.sh,安装说明.md}；docs/{desktop-user-guide,breakpoint-user-guide}.md；goal.md、progress.md、specs/breakpoint-{plan,acceptance}.md | 迁移包真实控制/转发/归档、未命中p95新增<=10ms/RSS<64MiB、生命周期/旧抓包/Swift回归、签名与私有数据扫描、原生及实际设备请求响应改写；记录未覆盖项 | iPhone改写手机确认；324后端、45传输、36严格、Swift152、TLS3、最终包7项通过；ZIP说明1项RED/GREEN；信号/prepare清理与子进程来源缺口已RED/GREEN修复，限定复核无剩余P1/P2。包99,393,290bytes，签名/SHA/无私有数据通过。原7001与身份未变，自有进程/敏感临时数据已回收。用户暂无Android真机，未进行整机休眠/唤醒及第二台新Mac实装；详见acceptance | 等待Android真机及安全休眠/唤醒条件补现场矩阵；仅本地提交和预览包，不推送/发布，不将缺项标DONE |
+| BP-4 | BLOCKED | 真机、安装包、性能与生命周期综合验收，补使用说明 | tests/{test_breakpoint_e2e,breakpoint_device_acceptance,test_breakpoint_device_acceptance,test_native_app_packaging}.py、tests/fixtures/breakpoints/production.py；复用既有断点/iOS/Swift测试；release/{package.sh,安装说明.md}；docs/{desktop-user-guide,breakpoint-user-guide}.md；goal.md、progress.md、specs/breakpoint-{plan,acceptance}.md | 迁移包真实控制/转发/归档、未命中p95新增<=10ms/RSS<64MiB、生命周期/旧抓包/Swift回归、签名与私有数据扫描、原生及iPhone请求响应改写；Android真机按2026-11-04用户要求延后，不作为本轮门槛 | iPhone改写手机确认；324后端、45传输、36严格、Swift152、TLS3、最终包7项通过；ZIP说明1项RED/GREEN；信号/prepare清理与子进程来源缺口已RED/GREEN修复，限定复核无剩余P1/P2。包99,393,290bytes，签名/SHA/无私有数据通过。原7001与身份未变，自有进程/敏感临时数据已回收。Android尚未实测但不再阻塞本轮；整机休眠/唤醒及第二台新Mac实装未覆盖；详见acceptance | 仅等待安全休眠/唤醒条件补本轮现场矩阵；Android后续另行考虑，不自动验收；仅本地提交和预览包，不推送/发布 |
 
 ## 2026-11-04 BP-3 桌面断点
 
