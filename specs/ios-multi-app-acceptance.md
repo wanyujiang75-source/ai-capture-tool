@@ -29,6 +29,8 @@ Tech Stack: 既有SwiftUI、FastAPI、mitmproxy。
 
 ## Procedure
 
+本轮统一接入续验：先读取小火箭当前路由/节点选择作为恢复基线，不导出订阅或凭据。候选是临时切换全局转发模式与已有Capture-Mac选择，而非新增域名规则；必须先获得这项临时选择变更的明确允许，原配置文件/节点参数保持不变。选择变化不等于原VPN出口不变，需明确由Mac出网。手机VPN不关闭；Mac停止录制后保持透传，恢复原选择并验证手机联网，再结束本轮。未获允许时只读诊断，不继续重复0条的应用试验。
+
 1. 只读核对当前连接、手机身份、已安装版本及可用域名线索，Android历史域名只能作为候选，不冒充iOS实际来源。
 2. 原生桌面不创建项目或填写域名，直接开始录制；业务域名仅用于脱敏证据归属，不能成为准入条件。手机流量未接入时，明确路由阻塞，不自行修改原VPN配置。
 3. 原生桌面开始一款项目后打开对应手机应用，使用只读页面触发网络。只输出域名、路径、方法、状态、正文大小和完整性，不输出凭据、个人数据或完整日志。
@@ -67,3 +69,13 @@ Tech Stack: 既有SwiftUI、FastAPI、mitmproxy。
 PokeHub只读版本配置POST返回200，Request为20字节，Response为4165字节，两者为完整可解析JSON且均未截断。原生接口页搜索该路径并实际查看Request/Response。#84停止后再次冷启动PokeHub，归档仍为65条，connection_state=ready、recording_state=stopped；旧#78保持166条，#80-83未被删除。
 
 Current task remains BLOCKED for three-app business acceptance. No tested traffic reached the Mac for those apps; without changing the phone's existing VPN routing, desktop-only filter removal cannot prove or force that ingress. Do not infer certificate pinning or application incompatibility from zero records. Next work must validate one general, reversible ingress path with the original VPN configuration preserved, not resume per-domain setup. No automatic phone taps or network changes were performed, and no code was pushed or release uploaded.
+
+### General Ingress Follow-up (2026-11-04)
+
+用户继续要求统一接入、不逐域名配置。本轮恢复DOING并只读核对：iPhone14_Test仍在线；USB启动既有小火箭后截图确认停在代理日志页，日志记录关闭；原生桌面显示抓包已停止、手机连接保留。只读API为ready/stopped、#84、65条，未开始新记录。
+
+Mac通过不使用环境HTTP代理的HEAD请求检查已知服务域名：Melody候选域名TLS校验0、HTTP200、0.778秒；Wishly候选域名TLS校验0、HTTP404、0.846秒；StickerHub域名TLS校验0、HTTP404、0.790秒。404只表示根路径无资源，TLS连接已完成；这是宿主机出网检查，不是手机业务证据，也没有将域名加入任何路由或录制条件。
+
+候选接入为小火箭临时全局代理选择已有Capture-Mac，VPN保持开启、原配置文件/节点参数/订阅不改，测试后恢复原选择。这会改变当前路由选择，可能更换出口IP，且范围可能包含手机后台HTTP(S)；不能冒充原VPN出口原样保留。已通过一个异步问题说明这项必要例外，尚未收到明确答复。因此本轮未操作手机设置、未新增规则/证书/代理、未录制无关流量，任务回写BLOCKED等待该实质边界明确；不反复复现原路线的0条。
+
+本轮仅更新目标/验收记录，无产品代码变化，不重跑已有构建或将历史自动化结果当作新手机验收。`git diff --check`通过；原生桌面继续打开、连接保留、录制停止。若用户不允许当前转发选择有任何临时变化，应明确该限制下无法强制统一接入，不能偷偷采用替代全局配置。
