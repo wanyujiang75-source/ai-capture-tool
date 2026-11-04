@@ -1,5 +1,13 @@
 # 进度记录
 
+## 2026-11-04 断点 BP-0 隔离能力验收
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| BP-0 | BLOCKED | 补齐四项评审契约并验证真实代理传输能力 | `goal.md`, `progress.md`, `specs/breakpoint-plan.md`, `specs/breakpoint-bp0-acceptance.md`, `tests/test_breakpoint_transport.py`, `tests/fixtures/breakpoints/**` | loopback 隔离 HTTP/1.1/2、暂停前后证据、压缩/未知长度/慢正文/并发/100 MiB/内存及清理检查；不安全模式明确禁用；相关既有本地回归和差异检查；不改产品/手机/VPN | 四项评审已补齐；18项能力实验和37项既有回归通过，但严格安全门槛3项失败：公开flow.kill无法及时关闭收集中的连接；100MiB头暂停增加约129-138MiB峰值；H2透传基线/候选均超64MiB。独立复核的夹具问题已修正，4项头暂停和严格3项均重跑，结论未变；不删安全检查、不改依赖或产品。详见验收记录；7001仍为原be6d0543b498/idle，无测试worker残留 | 保留原型与NO-GO证据；下一步仍在BP-0解决可维护的收集取消和背压方案后重跑严格门槛，不进入BP-1、不接真机、不改VPN/原配置、不推送发包 |
+
+BP-0 首轮记录：HTTP/1.1/2 双阶段改写、gzip/deflate/br 原样及改写、未知长度越界、并发20名额和origin排除通过。慢正文负对照确认公开 flow.kill 调用后连接仍不结束。10项首次全跑有2项失败：头暂停测试第二轮误把第一轮已转发记录计入“尚未转发”，属夹具断言范围错误；H2 100 MiB 透传 worker RSS 超64 MiB，属需与关闭断点基线对照的能力风险，不能降低门槛冒充通过。继续同一 DOING，拆分每协议独立worker、补响应头与基线对照后记录禁用结论；没有产品改动。
+
 ## 2026-11-04 接口过滤发布
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

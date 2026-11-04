@@ -1,6 +1,6 @@
 # 抓包工具断点功能调研与实施计划 V1
 
-日期：2026-11-04。交付状态：调研与计划完成，尚未实现断点功能或验证代理原型。
+日期：2026-11-04。交付状态：四项评审已修订，BP-0 已建立隔离原型并完成首轮能力实验；收集取消与内存安全准入未通过，暂停产品接入。详情见 `breakpoint-bp0-acceptance.md`，不是断点功能已交付。
 
 ## 1. 结论与边界
 
@@ -16,7 +16,7 @@
 - 请求断点：服务器尚未收到该次请求的 HTTP 头和正文，修改会影响服务器收到的参数。建立 TCP/TLS 连接不等于已经发送 HTTP 请求。
 - 响应断点：服务器已执行请求，应用尚未收到最终响应头和正文。可以测试空列表、异常状态和边界值，但不能撤销服务器已经执行的操作。
 - 对历史接口设置规则，只影响之后重新触发的请求，不会倒退修改已经发生的通信。不自动重放请求，尤其不重发支付、提交等有副作用的操作。
-- 本轮仅编辑 `goal.md`、`progress.md` 和本计划，不实现功能、不构建、不启动真实拦截、不操作手机、不改变 VPN/原节点配置、不推送或更新安装包。FLOW-F1 的原生界面验收保持原状态。
+- BP-P1 只规划的历史交付已结束。本轮经用户授权，仅修订评审意见并实施 BP-0 测试原型，不接入产品、不构建或重启现有应用、不拦截真实手机、不改变 VPN/原节点配置、不推送或更新安装包。
 
 ## 2. 竞品与底层调研
 
@@ -31,7 +31,7 @@
 
 ## 3. 当前代码与接入位置
 
-基线：工作树 `codex/ios-device-trial`，HEAD `3f1284f`。`requirements-console.txt` 固定 mitmproxy 12.2.3，本机开发环境读取到的安装版本相同。
+调研基线：`3f1284f`；本轮执行基线：工作树 `codex/ios-device-trial`，HEAD `c4a7d6c`。`requirements-console.txt` 固定 mitmproxy 12.2.3，本机开发环境读取到的安装版本相同。
 
 | 已核对位置 | 现状 | 断点改造要求 |
 | --- | --- | --- |
@@ -52,7 +52,7 @@
 ### 4.1 普通使用
 
 1. 用户按现有流程开始抓包，在“接口”页选中一条接口。
-2. 点击行菜单“设置断点”，自动带入方法、域名、路径；默认不带查询参数或认证信息。
+2. 点击行菜单“设置断点”，自动带入方法、协议、域名、有效端口、路径；默认不带查询参数或认证信息，不增加手填步骤。
 3. 选择“发送请求前”“返回响应前”或“两者”，默认“仅下一次”。点击“启用断点”。
 4. 在应用中再次触发接口，桌面显示“待处理 1”，打开编辑面板；不会连续弹窗抢焦点。
 5. 编辑后点击“应用修改并继续”，或选择“保留原始内容并继续”“终止本次请求”。
@@ -67,7 +67,7 @@
 ```
 
 - 默认总开关关闭；新建规则并启用后，仅绑定当前正在录制的设备和抓包轮次。切换查看历史记录不改变实际绑定目标。
-- 规则支持方法、精确域名、精确路径或路径前缀，条件为 AND。V1 不提供任意正则和默认全流量拦截。
+- 规则支持方法、精确 origin（scheme、规范化 host、有效 port）、精确路径或路径前缀，条件为 AND。缺省端口按 HTTP=80/HTTPS=443 规范化，同域名不同协议或端口不命中；V1 不提供跨 origin 通配、任意正则和默认全流量拦截。不能用“禁止跨源改写”替代匹配范围隔离。
 - 同一阶段多条规则命中时按用户可见顺序选第一条，最多暂停一次；双阶段规则在请求头到达时绑定，同一 flow 可先后停两次。
 - “仅下一次”按一整个 flow 原子占用，双阶段不会消耗两次；持续拦截需用户主动选择。规则修改只对新请求生效，在途 flow 保持创建时的快照。
 - “保留原始内容”只恢复当前暂停阶段的草稿。例如请求已修改发出后，在响应阶段选原样继续，不会撤销已经发送的请求修改。
@@ -131,7 +131,7 @@ SwiftUI 规则/队列/编辑器
 
 | 对象 | 关键字段 |
 | --- | --- |
-| Rule | id、revision、enabled、capture_id、device_id、method、host、path_match、stage、once/continuous、timeout_seconds |
+| Rule | id、revision、enabled、capture_id、device_id、method、scheme、host、port（有效端口）、path_match、stage、once/continuous、timeout_seconds |
 | Pending | id、worker_epoch、capture_id、flow_id、stage、revision、state、deadline、matched_rule、editable_fields、body_limit_reason |
 | Resolution | operation_id、expected_revision、action（apply/original/abort）、结构化 patch；不能传任意文件路径或命令 |
 | Audit | 原始/有效版本引用、动作、命中阶段、暂停时长、自动放行/失败原因；不包含诊断日志中的正文和认证值 |
@@ -167,13 +167,15 @@ SwiftUI 规则/队列/编辑器
 
 ```text
 matching -> collecting -> paused_request / paused_response
+collecting -> bypassed / disconnected (deadline, quota, unsupported)
 paused -> applying -> continued_modified / continued_original
 paused -> aborted / timed_out / disconnected
 ```
 
 - 每个阶段唯一终态；worker 用原子决策处理“点击继续、超时、停止、客户端断开”的竞争。终止后取消等待与定时器，不能仅改 UI 状态留下悬挂协程。
 - 默认暂停 30 秒，可选 15/30/60 秒，硬上限 60 秒，不无限续期。默认超时保留原始内容并继续，不悄悄发送未确认的编辑草稿。应用自身可能更早超时，此时结束断点且不自动重发。
-- 最多 20 个待处理项；所有缓冲中和待处理正文合计预算 16 MiB，需在接收/解压前预留预算；规则最多 100 条，摘要分页最多 50 条，决策去重记录有数量/期限上限。达到限制后新命中原样通过并显示原因。
+- 收集正文独立采用单调时钟：总时限 10 秒、连续无数据 3 秒，二者均不能被编辑或心跳重置，不能等进入编辑器才开始计时。超时优先原样切回流式；仅当公开 API 已验证能无损恢复时使用，否则终止本次连接、释放占用并报告原因。若公开 API 无法及时恢复或结束收集，该候选模式不得接入产品，不允许只设置 flow.error 却留住连接和内存。BP-0 测试可缩短时间但不删除计时语义。
+- 最多 20 个在途断点名额，覆盖匹配预留、collecting、暂停、应用决策和双阶段之间等待响应，不能只数 UI 队列。所有缓冲中和待处理正文合计预算 16 MiB，需在接收/解压前预留预算；规则最多 100 条，摘要分页最多 50 条，决策去重记录有数量/期限上限。达到限制后新命中原样通过并显示原因。收集超时/断连释放名额；尚未进入任何可编辑暂停的“仅下一次”占用归还规则，已进入暂停后不因超时重新启用。
 - 编辑副本的头最多 200 项/64 KiB，URL 最长 8 KiB；超限原始报文不因编辑器限制而被切断，而是禁用该次编辑并按原链路处理。IPC/事件只发送有界摘要，不能把未设上限的原始头塞入列表。
 - 双阶段按原请求匹配快照执行，即使请求路径被改也不会意外漏掉原定响应断点。批量关闭/停止时对这些在途 flow 跳过后续断点。
 - 不拦截本工具健康检查、证书交付、认证握手或控制接口，不拦截未录制的设备。
@@ -183,7 +185,8 @@ paused -> aborted / timed_out / disconnected
 | 关闭断点/全部放行 | 丢弃草稿，原样继续；不停止正常抓包 |
 | 停止抓包 | 先禁止新命中，结算并原样放行待处理项，最多 3 秒有限排空，再按现有生命周期停止；未完成项明确记为连接结束，不声称全部送达 |
 | 退出桌面端 | 正常退出先执行上述清理，再回收自有进程；不得先杀代理、再尝试放行 |
-| UI/后端失联但 worker 仍健康 | worker 独立租约 5 秒内关闭断点并原样放行；使用单调时钟，UI 卡顿不能永久堵住手机 |
+| UI/控制通道暂时失联，所属进程仍存活 | worker 独立租约 5 秒内禁止新命中并原样放行已完成收集的待处理项；收集中执行收集期限契约，不假称只调 resume 即可排空；使用单调时钟，UI 卡顿不能永久堵住手机 |
+| 桌面所属进程/后端实际退出或崩溃 | 进程所有权退出高于心跳续租；先禁止新命中、取消等待、有限排空最多 3 秒，再关闭自有代理，无法完成的请求标记连接结束。不承诺持续透传，不遗留无人管理的解密代理。iOS 现有 maintain 的直接 master.shutdown 必须在 BP-2 改为此受限顺序，不能仅加心跳却保留抢先关闭的分支 |
 | worker 崩溃/电脑休眠 | 不能保证透传，连接可能失败；恢复后显示已结束，不重发、不续用旧 pending，不宣称自动恢复手机 VPN 路由 |
 | 客户端断开/重试 | 旧断点结束，新请求新 ID；不合并成同一可编辑请求，不擅自重放写操作 |
 
@@ -191,7 +194,7 @@ paused -> aborted / timed_out / disconnected
 
 ### 6.5 归档与安全
 
-- 正文可编辑并确实修改时，保留受限的原始版本和有效版本，元数据记录两者关系；原接口 ID 不变，列表不因每次编辑产生重复记录。
+- 任何有效修改（Query、方法、头、状态码或正文）都保留不可变的原始报文元数据和有效版本，包含无正文 GET、仅 Header/状态码修改及大包仅头模式。元数据记录两者关系；正文未改时共享原正文引用，不复制文件；正文确实修改时再保留受限双正文。原接口 ID 不变，列表不因每次编辑产生重复记录。
 - “生效内容”指代理已采用并尝试转发的版本，不等于应用已消费或业务成功；连接失败仍保留失败标记。终止记录不得伪装为服务器返回成功。
 - Request 断点开始时归档可能只有原始头，应用修改后必须更新有效摘要/头；响应归档同理。Android exporter 必须识别暂停/最终版本，不能提前保存一次后永远保留旧正文。
 - iPhone 流式改为缓冲的记录不可重复追加正文；正常流式记录仍保持现有截断和磁盘配额。原始/修改副本计入原有总配额，不额外无限存储。
@@ -200,23 +203,23 @@ paused -> aborted / timed_out / disconnected
 
 ## 7. 分阶段实施任务
 
-以下是后续执行顺序及验收门槛，不是本轮已领取的实现任务。本轮只完成 BP-P1；开始实施时逐项写入任务池、一次领取一项，正常细节无需重复审批。
+以下是执行顺序及验收门槛。本轮仅领取 BP-0，四项评审补充为其必要前置修订；后续逐项写入任务池、一次领取一项，正常细节无需重复审批。BP-0 可交付有实测证据的“不支持/禁用”结论，但不能因此声称产品准入通过。
 
 | 阶段 | 文件范围（新文件为拟新增） | 交付与验收门槛 |
 | --- | --- | --- |
-| BP-0 能力原型 | 新 `tests/test_breakpoint_transport.py`、`tests/fixtures/breakpoints/`；本规格 | 隔离 client/proxy/origin 证明请求在放行前未到源站、响应在放行前未到客户端；HTTP/1.1/2、压缩、未知长度、超限及并发均有实际证据；特别验证头暂停时对端持续发送大包的内部队列/背压和整体 RSS，无法证明有界则不启用该模式；确定正文模式与降级策略，未通过不接真机 |
+| BP-0 能力原型 | 新 `tests/test_breakpoint_transport.py`、`tests/fixtures/breakpoints/`、`specs/breakpoint-bp0-acceptance.md`；本规格与目标/进度 | loopback 隔离 client/proxy/origin 证明请求在放行前未到源站、响应在放行前未到客户端；HTTP/1.1/2、压缩、未知长度、超限、慢速收集/名额释放及并发均有实际证据；特别验证头暂停时对端持续发送大包的内部队列/背压和整体 RSS，无法证明有界则不启用该模式；确定正文模式与降级策略，未通过不接真机 |
 | BP-1 引擎和控制 | 新 `capture_console/breakpoints/{models,engine,validation,ipc,api}.py`、包初始化；`app.py` 仅组装；新 `tests/test_breakpoint_{engine,api,ipc}.py` | 规则匹配、单次占用、双阶段、倒计时、鉴权、幂等、客户端断开、队列预算、停止竞争全部 RED/GREEN；未经认证不能读取正文或修改流量 |
 | BP-2 双平台适配与归档 | 新 `capture_console/breakpoints/{addon,archive}.py`；上述 Android 启动/停止脚本、runner/exporter/results；`ios_pairing_proxy.py`、`ios_recording.py`、`ios_setup.py`、`ios_results.py`；新 `tests/test_breakpoint_{adapters,archive}.py` | Android 两模式和 iPhone 分别对照源站与客户端；原始/有效正文与 cURL 一致，超限透传不丢数据；停止/配额/退出可收敛，旧记录可读 |
 | BP-3 原生交互 | 新 `BreakpointModels.swift`、`BreakpointController.swift`、`BreakpointViews.swift`、`BreakpointCopy.swift`；`FlowViews.swift`、`Models.swift`、`APIClient.swift`、AppState/RuntimeManager 最小接线；对应新 Swift tests | 正常/等待/空/失败界面、键盘和多行复制；源切换/清空/过滤不丢待处理；停止清理和错误提示准确；按钮状态与真实确认一致 |
 | BP-4 综合验收与使用说明 | 新 `tests/test_breakpoint_e2e.py`、`tests/breakpoint_native_ui_fixture.py`；既有相关 Python/Swift 测试；`docs/desktop-user-guide.md`、`specs/breakpoint-acceptance.md` | 以下矩阵通过，Android 与已配置 iPhone 的自有应用现场验证；构建本地安装包，核对内嵌 addon 和依赖；记录实际设备/版本/证据与未覆盖项。远端发布需另有当前发布请求 |
 
-未来测试文件创建后，按阶段从项目根执行，先 RED 后 GREEN。以下是计划命令，本轮没有运行：
+使用项目现有 unittest，不为此向生产环境安装 pytest/httpx。BP-0 是隔离能力实验，先建立证据断言与负对照，实际结果允许得出候选模式不可用；正常产品实现仍需 RED/GREEN。后续文件创建后按阶段从项目根执行：
 
 ```bash
-python -m pytest tests/test_breakpoint_transport.py -q
-python -m pytest tests/test_breakpoint_engine.py tests/test_breakpoint_api.py tests/test_breakpoint_ipc.py -q
-python -m pytest tests/test_breakpoint_adapters.py tests/test_breakpoint_archive.py tests/test_breakpoint_e2e.py -q
-python -m pytest tests/test_ios_capture.py tests/test_ios_results.py tests/test_ios_lifecycle.py tests/test_exporter_timing.py -q
+CAPTURE_TEST_BREAKPOINT_TRANSPORT=1 python -m unittest tests.test_breakpoint_transport -v
+python -m unittest tests.test_breakpoint_engine tests.test_breakpoint_api tests.test_breakpoint_ipc -v
+python -m unittest tests.test_breakpoint_adapters tests.test_breakpoint_archive tests.test_breakpoint_e2e -v
+python -m unittest tests.test_ios_capture tests.test_ios_results tests.test_ios_lifecycle tests.test_exporter_timing -v
 swift test --package-path macos-native
 bash macos-native/scripts/build-app.sh
 ```
@@ -232,13 +235,15 @@ Python 使用已安装 `requirements-console.txt` 的隔离环境；集成测试
 | 原样继续 | 原始正文、重复头、Query 顺序和压缩字节保持；不把 UI 格式化结果发送出去 |
 | 请求/响应终止 | 请求阶段源站未执行；响应阶段客户端连接结束，但明确记录源站已执行；不伪造成功 |
 | 双阶段/并发规则 | 下一次只占一个 flow；两阶段各停一次；非命中接口不等编辑，无全局事件循环堵塞 |
+| origin 隔离 | 相同 host/path/method 的 HTTP/HTTPS、不同端口仅精确 origin 命中；缺省端口等价，不扩大到其他环境 |
+| 慢正文与占用 | 小于 256 KiB 但始终不结束、间歇滴流、完全停发均在收集绝对/空闲期限内收敛；公开 API 不能安全收敛则禁用该模式；收集加暂停合计不超过 20，未暂停的单次占用归还 |
 | 长度与编码 | gzip/deflate/br、中文/emoji、重复 Query/Set-Cookie、空正文、HEAD/204/304、无效 JSON/CRLF 均按契约处理 |
 | 大包和恶意输入 | 100 MiB 流、压缩膨胀、未知长度、20 个等待项、100 条规则下有界；头暂停期间对端持续发送也不让代理内部队列无限增长，否则禁用该模式；未编辑流原样到达，超限不生成可应用的截断正文 |
 | 性能 | 同环境对照关闭断点，未命中请求 p95 新增延迟目标不超过 10ms；断点带来的额外 RSS 目标不超过 64 MiB；慢客户端/并发下记录实际值，超标先优化不直接宣称通过 |
 | 清空与筛选 | 清空列表、仅看接口、关键词、切换历史不会遗失待处理项；可从全局入口继续/终止 |
 | 超时/竞态 | 继续与超时/停止同时发生也只决策一次；过期编辑明确拒绝；重试不重复转发 |
-| 生命周期 | 关闭断点、停止、正常退出、UI失联、worker崩溃、休眠/唤醒分别记录结果；下一次启动总开关关闭，无旧断点恢复 |
-| 归档回归 | 同一 flow 暂停期间、改写后、重开历史的原始/有效版本正确，暂停不被误标为普通“暂无响应”；无超量读取和重复正文 |
+| 生命周期 | 关闭断点、停止、正常退出、UI卡顿/IPC失联、后端进程崩溃、桌面所属进程退出、worker崩溃、休眠/唤醒分别记录结果；所有权关闭不抢先于有限排空，也不被心跳无限延后；下一次启动关闭，无旧断点恢复 |
+| 归档回归 | 同一 flow 暂停期间、改写后、重开历史的原始/有效版本正确；GET Query-only、Header-only、status-only、大包仅头各验证不可变原始元数据和正文复用；暂停不被误标普通“暂无响应”，无超量读取和重复正文 |
 | 安全隔离 | 无令牌、跨来源、跨设备、旧世代、任意路径和过大 payload 均被拒绝；错误日志与发布包没有凭据/正文 |
 | 原生与真实设备 | 桌面实际完成规则创建、编辑、三个动作、全部放行；Android + iPhone 各验证一组无副作用的参数与响应改写，手机 VPN/原配置不变 |
 
@@ -255,4 +260,4 @@ Python 使用已安装 `requirements-console.txt` 的隔离环境；集成测试
 
 推荐推进顺序：BP-0 隔离原型 -> BP-1/2 共用后端与两套适配 -> BP-3 桌面交互 -> BP-4 实际验收。首版做好手动断点闭环，再考虑自动改写与重放。
 
-本轮文档复核已补充：响应原样继续不撤销已发送的请求修改；仅头编辑禁止非法正文语义转换；桌面实例租约不能由后端永久代续；独立只读评审提出的头暂停内部队列风险已纳入 BP-0 和大包验收门槛。以上均为规划约束，尚未经过原型验证。
+前期文档复核补充了响应阶段原样继续、仅头编辑语义、桌面租约及头暂停内部队列风险。本轮进一步补齐四项评审，并用真实代理实验确认小包传输语义成立、慢正文取消和头暂停内存风险确实存在；不得继续声称这些风险只是理论可能。BP-0 状态及未通过门槛见验收记录，后续阶段尚未实施。
