@@ -13,8 +13,9 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from weakref import WeakKeyDictionary
 
-from mitmproxy import certs, http, options
+from mitmproxy import certs, http, options, tls
 from mitmproxy.tools.dump import DumpMaster
 
 from .ios_setup import make_profile, process_identity
@@ -33,6 +34,7 @@ class PairingMonitor:
                       "certificate_name": "Capture iPhone Test " + config["check_token"][:6]}
         self.dirty = True
         self.recording = IOSRecording(config, self.state)
+        self.tunnels = WeakKeyDictionary()
 
     def authenticated(self, flow):
         return flow.metadata.get("proxyauth") == (self.config["username"], self.config["password"])
@@ -55,10 +57,26 @@ class PairingMonitor:
         return True
 
     def http_connect(self, flow):
-        if self.phone(flow) and self.state["phase"] == "waiting_phone":
+        phone = self.phone(flow)
+        if self.authenticated(flow):
+            self.tunnels[flow.client_conn] = (flow.request.host, phone)
+        if phone and self.state["phase"] == "waiting_phone":
             self.state["phase"] = "waiting_trust"
             self.state["connection_state"] = "waiting_trust"
             self.dirty = True
+
+    def tls_clienthello(self, data: tls.ClientHelloData):
+        # allow_hosts is worker-wide; enforce phone isolation before decrypting TLS.
+        client = data.context.client
+        tunnel = self.tunnels.get(client)
+        check = (tunnel is not None and tunnel[0] == "capture-check.invalid"
+                 and data.client_hello.sni == "capture-check.invalid")
+        recording_phone = (tunnel is not None and tunnel[1] and client.peername
+                           and client.peername[0] == self.state.get("client_ip")
+                           and self.state["connection_state"] == "ready"
+                           and self.state["recording_state"] == "recording")
+        if not check and not recording_phone:
+            data.ignore_connection = True
 
     def requestheaders(self, flow):
         if self.phone(flow):
@@ -73,7 +91,7 @@ class PairingMonitor:
         flow.response = http.Response.make(
             200 if valid else 404,
             "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
-            "<h1>连接检查完成</h1><p>HTTPS 已通过。请返回桌面端选择项目并点击开始抓包，再操作手机应用。</p>"
+            "<h1>连接检查完成</h1><p>HTTPS 已通过。请返回桌面端点击开始抓包，再操作手机应用。</p>"
             if valid else "Not found", {"content-type": "text/html; charset=utf-8", "cache-control": "no-store"},
         )
 
@@ -153,8 +171,8 @@ async def run(config):
     def switch(domains):
         hosts = [r"capture-check\.invalid"]
         hosts.extend((r"[^.:]+(?:\.[^.:]+)*\." + re.escape(h[2:])) if h.startswith("*.") else re.escape(h)
-                     for h in domains)
-        opts.update(allow_hosts=["^(" + "|".join(hosts) + r")(:\d+)?$"])
+                     for h in (domains or []))
+        opts.update(allow_hosts=[] if domains is None else ["^(" + "|".join(hosts) + r")(:\d+)?$"])
         # This master owns only this iPhone proxy, never an Android or foreign listener.
         proxy = master.addons.get("proxyserver")
         for handler in list(proxy.connections.values()):

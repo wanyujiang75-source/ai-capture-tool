@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from mitmproxy import options, tls
+from mitmproxy.proxy.context import Context
+
 from capture_console.ios_pairing_proxy import PairingMonitor
 from capture_console.ios_results import IOSCaptureArchive
 from capture_console.ios_setup import IOSSetupService
@@ -36,11 +39,88 @@ class IOSRecordingTests(unittest.TestCase):
         self.monitor.request(flow)
         self.monitor.response(flow)
 
-    def start(self, revision=1, session_id=10):
+    def start(self, revision=1, session_id=10, *, device=False):
         command = {'revision': revision, 'action': 'start', 'session_id': session_id,
                    'outdir': str(self.root / 'captures' / str(session_id)),
                    'project': {'id': 'test', 'name': 'Test', 'domains': ['api.example.test']}}
+        if device:
+            command.update(capture_scope='device', project={'id': 'iphone', 'name': 'iPhone', 'domains': []})
         self.monitor.recording.apply(command, self.switch)
+
+    def test_device_capture_records_unknown_domains_without_a_project(self):
+        self.ready()
+        self.start(device=True)
+        self.assertIsNone(self.switch.call_args.args[0])
+        for host in ['music.example.test', 'wish.example.test', 'stickers.example.test']:
+            self.send(self.flow(host))
+        archive = self.monitor.recording.archive
+        page = archive.page()
+        self.assertEqual(page['total'], 3)
+        for row in page['flows']:
+            self.assertEqual(archive.detail(row['id'])['response_text'], '{"response":true}')
+        self.monitor.recording.apply({'revision': 2, 'action': 'stop'}, self.switch)
+        self.assertEqual(self.switch.call_args.args, ([],))
+        self.send(self.flow('later.example.test'))
+        self.assertEqual(archive.page(), page)
+        self.assertEqual(self.monitor.state['connection_state'], 'ready')
+
+    def test_device_capture_still_excludes_checks_and_unauthenticated_or_local_clients(self):
+        self.ready()
+        self.start(device=True)
+        self.ready()
+        self.send(self.flow('capture-check.invalid'))
+        unauthenticated = self.flow('another.example.test')
+        unauthenticated.metadata.clear()
+        self.send(unauthenticated)
+        local = self.flow('another.example.test')
+        local.client_conn.peername = (self.cfg['host'], 12345)
+        self.send(local)
+        self.assertEqual(self.monitor.state['flow_count'], 0)
+        self.send(self.flow('not-preconfigured.example.test'))
+        self.assertEqual(self.monitor.state['flow_count'], 1)
+
+    def test_tls_interception_requires_authenticated_bound_phone_before_handshake(self):
+        self.ready()
+        self.start(device=True)
+
+        def hello(flow):
+            self.monitor.http_connect(flow)
+            data = tls.ClientHelloData(Context(flow.client_conn, options.Options()),
+                                       Mock(sni=flow.request.host))
+            self.monitor.tls_clienthello(data)
+            return data.ignore_connection
+
+        self.assertFalse(hello(self.flow('unknown.example.test')))
+        local = self.flow('unknown.example.test')
+        local.client_conn.peername = (self.cfg['host'], 1234)
+        self.assertTrue(hello(local))
+        unauthenticated = self.flow('unknown.example.test')
+        unauthenticated.metadata.clear()
+        self.assertTrue(hello(unauthenticated))
+        unknown = tls.ClientHelloData(Context(self.flow().client_conn, options.Options()), Mock())
+        self.monitor.tls_clienthello(unknown)
+        self.assertTrue(unknown.ignore_connection)
+        check = self.flow('capture-check.invalid')
+        check.client_conn.peername = (self.cfg['host'], 1234)
+        self.assertFalse(hello(check))
+        untrusted_check = self.flow('capture-check.invalid')
+        untrusted_check.metadata.clear()
+        self.assertTrue(hello(untrusted_check))
+        changed = self.flow('unknown.example.test')
+        changed.client_conn.peername = ('192.168.1.12', 1234)
+        self.assertTrue(hello(changed))
+        self.assertEqual(self.monitor.state['recording_state'], 'failed')
+        self.assertTrue(hello(self.flow()))
+
+    def test_tls_interception_stops_immediately_before_existing_connection_handshake(self):
+        self.ready()
+        self.start(device=True)
+        flow = self.flow()
+        self.monitor.http_connect(flow)
+        self.monitor.recording.apply({'revision': 2, 'action': 'stop'}, self.switch)
+        data = tls.ClientHelloData(Context(flow.client_conn, options.Options()), Mock(sni=flow.request.host))
+        self.monitor.tls_clienthello(data)
+        self.assertTrue(data.ignore_connection)
 
     def send(self, flow):
         self.monitor.requestheaders(flow)
@@ -200,6 +280,21 @@ class IOSCaptureServiceTests(unittest.TestCase):
             worker.terminate.assert_not_called()
             next_state = service.start_recording('pokehub')
             self.assertNotEqual(next_state['session_id'], first['session_id'])
+
+    def test_device_start_does_not_require_project_configuration(self):
+        service = self.service()
+        def ack(command):
+            state = {**service.last, 'applied_revision': command['revision'],
+                     'recording_state': 'recording', 'project': command['project'],
+                     'capture_scope': command['capture_scope'], 'session_id': command['session_id']}
+            Path(service.config['state_path']).write_text(json.dumps(state))
+        with patch.object(service.projects, 'get', side_effect=AssertionError('must not read projects')), \
+                patch.object(service, '_write_control', side_effect=ack):
+            first = service.start_recording(None)
+            self.assertEqual(first['capture_scope'], 'device')
+            self.assertEqual(first['project'], {'id': 'iphone', 'name': 'iPhone', 'domains': []})
+            self.assertEqual(service.start_recording(None)['session_id'], first['session_id'])
+            self.assertEqual(len(self.store.list_sessions()), 1)
 
     def test_ack_timeout_fails_closed_without_reporting_success(self):
         service = self.service()

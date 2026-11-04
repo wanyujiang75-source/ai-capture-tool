@@ -109,8 +109,9 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
         try await post("api/ios-setup/projects", timeoutInterval: 10, body: draft)
     }
 
-    func startIOSRecording(projectID: String) async throws -> IOSSetupStatus {
-        try await post("api/ios-setup/recording/start", timeoutInterval: 30, body: ["project_id": projectID])
+    func startIOSRecording(projectID: String?) async throws -> IOSSetupStatus {
+        let body: [String: String] = projectID.map { ["project_id": $0] } ?? [:]
+        return try await post("api/ios-setup/recording/start", timeoutInterval: 30, body: body)
     }
 
     func stopIOSRecording() async throws -> IOSSetupStatus {

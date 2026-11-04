@@ -4,27 +4,17 @@ extension AppCopy {
     enum IOSCapture {
         static let title = "iPhone 抓包"
         static let platform = "抓包设备"
-        static let summary = "通过同一 Wi-Fi 连接 iPhone，按项目域名记录 HTTP(S) 接口。"
-        static let scope = "只记录所选项目的域名，不会自动识别手机前台应用。部分应用不使用系统代理或拒绝测试证书，无法保证所有接口都能捕获。"
-        static let project = "抓包项目"
-        static let addProject = "添加项目"
-        static let editProject = "编辑项目"
-        static let projectName = "项目名称"
-        static let domains = "目标域名，每行一个"
-        static let domainsHelp = "填写 api.example.com；*.example.com 仅匹配子域名。不要填写网址路径或单独的 *。"
-        static let save = "保存项目"
+        static let summary = "连接 iPhone 后点击“开始抓包”，再打开需要测试的应用，无需填写业务域名。"
+        static let scope = "记录经过本工具的 HTTP(S) 请求，不按应用或域名限制。测试期间请勿操作无关敏感应用；未经过本工具或拒绝测试证书的连接无法解密。"
         static let start = "开始抓包"
         static let stop = "停止抓包"
         static let viewResults = "查看接口"
         static let configure = "连接说明"
         static let stopHelp = "停止抓包会保留手机连接，不再记录新接口。再次开始无需重新安装配置。"
-        static let startFailed = "iPhone 抓包未能启动。请检查手机连接及所选项目，再重试。"
+        static let startFailed = "iPhone 抓包未能启动。请检查手机连接后重试。"
         static let stopFailed = "无法确认 iPhone 抓包已停止。请检查连接状态，必要时恢复手机网络并结束连接。"
         static let endFailed = "无法确认连接已结束。请保持手机代理关闭，检查本机服务后重试。"
         static let projectsFailed = "无法加载抓包项目，请检查本机服务后重试。"
-        static let projectsLoading = "正在加载抓包项目…"
-        static let projectsEmpty = "尚无抓包项目。点击“添加项目”，填写需要记录的目标域名。"
-        static let reloadProjects = "重新加载项目"
         static let checkConnection = "检查连接"
         static let starting = "正在启动 iPhone 抓包…"
         static let stopping = "正在停止 iPhone 抓包…"
@@ -57,10 +47,9 @@ extension AppCopy {
                 return ("等待手机重新验证", AppCopy.IOSSetup.reuseHelp)
             }
             if !status.isConnected { return AppCopy.IOSSetup.status(status.phase, count: status.flowCount) }
-            let name = status.project?.name ?? "所选项目"
             switch status.recordingState {
             case .recording:
-                return ("正在抓取“\(name)” · \(status.flowCount) 个接口", "请在 iPhone 操作目标应用，在“接口”页查看 Request 和 Response。")
+                return ("正在抓包 · 已捕获 \(status.flowCount) 个接口", "请在 iPhone 操作目标应用，在“接口”页查看 Request 和 Response。")
             case .stopped:
                 return ("抓包已停止，手机仍保持连接", "已保留本次结果。点击“开始抓包”创建新的记录。")
             case .limitReached:
@@ -68,7 +57,7 @@ extension AppCopy {
             case .failed:
                 return ("本次抓包已中断", "已有结果已保留。请检查手机连接后重新开始。")
             case .idle, nil:
-                return ("iPhone 已连接，尚未开始抓包", "选择项目并点击“开始抓包”，随后在 iPhone 操作目标应用。")
+                return ("iPhone 已连接，尚未开始抓包", "点击“开始抓包”，随后在 iPhone 操作目标应用。")
             }
         }
     }

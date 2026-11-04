@@ -24,7 +24,7 @@ class IOSProjectPayload(BaseModel):
 
 class IOSRecordingPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    project_id: str
+    project_id: str | None = None
 
 
 def ios_operation(operation, *args, **kwargs):

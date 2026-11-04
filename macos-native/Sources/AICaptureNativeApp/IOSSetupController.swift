@@ -81,7 +81,7 @@ final class IOSSetupController: ObservableObject {
 
     var selectedProject: IOSCaptureProject? { projects.first { $0.id == selectedProjectID } }
     var canStartRecording: Bool {
-        !busy && issue == nil && status.isConnected && !status.isRecording && selectedProject != nil
+        !busy && issue == nil && status.isConnected && !status.isRecording
     }
 
     var profileURL: URL? {
@@ -169,8 +169,8 @@ final class IOSSetupController: ObservableObject {
     }
 
     func startRecording() async {
-        guard canStartRecording, let id = selectedProjectID, let captureAPI = api as? any IOSCaptureAPI else { return }
-        await update(.start, failure: AppCopy.IOSCapture.startFailed) { try await captureAPI.startIOSRecording(projectID: id) }
+        guard canStartRecording, let captureAPI = api as? any IOSCaptureAPI else { return }
+        await update(.start, failure: AppCopy.IOSCapture.startFailed) { try await captureAPI.startIOSRecording(projectID: nil) }
     }
 
     func stopRecording() async {

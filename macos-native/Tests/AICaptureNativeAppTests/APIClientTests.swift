@@ -59,6 +59,17 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Suite(.serialized)
 struct APIClientTests {
+    @Test func iphoneDeviceCaptureSendsNoProjectOrDomainSelection() async throws {
+        CapturingURLProtocol.reset(responseData: Data("""
+        {"phase":"capturing","connection_state":"ready","recording_state":"recording",
+         "session_id":13,"flow_count":0,"flows":[],"project":{"id":"iphone","name":"iPhone","domains":[]}}
+        """.utf8))
+        let state = try await makeClient().startIOSRecording(projectID: nil)
+        #expect(state.isRecording && state.sessionID == 13)
+        let payload = try #require(CapturingURLProtocol.observedRequests.first?.httpBody)
+        #expect(try JSONDecoder().decode([String: String].self, from: payload).isEmpty)
+    }
+
     @Test func iphoneRecordingAndConnectionEndUseSeparateEndpoints() async throws {
         CapturingURLProtocol.reset(responseData: Data("""
         {"phase":"ready","connection_state":"ready","recording_state":"stopped",

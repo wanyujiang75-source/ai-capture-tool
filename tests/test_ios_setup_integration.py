@@ -148,7 +148,7 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                     unauthorized_tls.connect()
                 unauthorized_tls.close()
 
-                def request(host='127.0.0.1', secure=True):
+                def request(host='127.0.0.1', secure=True, *, intercepted=None):
                     if secure:
                         conn = http.client.HTTPSConnection(cfg['host'], cfg['port'], context=trust, timeout=5)
                         conn.set_tunnel(host, server.server_port, headers={'Proxy-Authorization': auth})
@@ -158,6 +158,10 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                         path = f'http://{host}:{plain.server_port}/items?full=query'
                         headers = {'Proxy-Authorization': auth, 'Content-Type': 'application/json'}
                     try:
+                        if secure and intercepted is not None:
+                            conn.connect()
+                            presented = conn.sock.getpeercert(binary_form=True)
+                            self.assertEqual(presented != cert.public_bytes(serialization.Encoding.DER), intercepted)
                         conn.request('POST', path, b'{"wire":true}', headers)
                         response = conn.getresponse()
                         self.assertEqual((response.status, response.read()), (200, b'{"wire":true}'))
@@ -173,14 +177,14 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                     if service.status().get('connection_state') == 'ready':
                         break
                     time.sleep(0.1)
-                request()
+                request(intercepted=False)
                 self.assertEqual(service.status()['flow_count'], 0)
                 project = service.projects.save(name='Controlled', domains=['127.0.0.1'])
                 first = service.start_recording(project['id'])
                 first_archive = IOSCaptureArchive(service.session['outdir'], read_only=True)
-                request()
+                request(intercepted=True)
                 request(secure=False)
-                request(host='localhost')
+                request(host='localhost', intercepted=False)
                 stopped = service.stop_recording()
                 self.assertEqual(stopped['connection_state'], 'ready')
                 first_page = first_archive.page()
@@ -189,14 +193,14 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                     detail = first_archive.detail(row['id'])
                     self.assertEqual((detail['request_text'], detail['response_text']), ('{"wire":true}', '{"wire":true}'))
                     self.assertNotIn('Proxy-Authorization', first_archive.curl(row['id']))
-                request()
+                request(intercepted=False)
                 request(secure=False)
                 self.assertEqual(first_archive.page(), first_page)
                 self.assertIsNone(service.process.poll())
                 self.assertEqual(Path(state['profile_path']).read_bytes(), profile_before)
                 second = service.start_recording(project['id'])
                 self.assertNotEqual(first['session_id'], second['session_id'])
-                request()
+                request(intercepted=True)
                 service.stop_recording()
                 self.assertEqual(IOSCaptureArchive(service.session['outdir'], read_only=True).page()['total'], 1)
                 self.assertEqual(first_archive.page(), first_page)
@@ -212,8 +216,22 @@ class IOSSetupIntegrationTests(unittest.TestCase):
                 self.assertEqual(limited['recording_state'], 'limit_reached')
                 self.assertEqual(limited['connection_state'], 'ready')
                 self.assertEqual(service.store.get_session(third['session_id'])['status'], 'stopped')
-                request()
+                request(intercepted=False)
                 self.assertEqual(IOSCaptureArchive(service.session['outdir'], read_only=True).page()['total'], 2)
+                fourth = service.start_recording()
+                self.assertEqual(fourth['capture_scope'], 'device')
+                request(intercepted=True)
+                request(host='localhost', intercepted=True)
+                service.stop_recording()
+                device_archive = IOSCaptureArchive(service.session['outdir'], read_only=True)
+                device_page = device_archive.page()
+                self.assertEqual(device_page['total'], 2)
+                for row in device_page['flows']:
+                    detail = device_archive.detail(row['id'])
+                    self.assertEqual((detail['request_text'], detail['response_text']),
+                                     ('{"wire":true}', '{"wire":true}'))
+                request(host='localhost', intercepted=False)
+                self.assertEqual(device_archive.page(), device_page)
             finally:
                 service.stop()
                 server.shutdown()

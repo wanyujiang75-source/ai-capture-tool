@@ -31,7 +31,7 @@ struct IOSProjectDraft: Encodable, Sendable {
 protocol IOSCaptureAPI: IOSSetupAPI {
     func getIOSProjects() async throws -> [IOSCaptureProject]
     func saveIOSProject(_ draft: IOSProjectDraft) async throws -> IOSCaptureProject
-    func startIOSRecording(projectID: String) async throws -> IOSSetupStatus
+    func startIOSRecording(projectID: String?) async throws -> IOSSetupStatus
     func stopIOSRecording() async throws -> IOSSetupStatus
 }
 

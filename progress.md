@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-04 iPhone 多应用兼容实测
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-C3 | BLOCKED | 移除桌面域名准入并继续三款自有iPhone应用实测 | `goal.md`, `progress.md`, `specs/ios-multi-app-acceptance.md`, `capture_console/{ios_recording,ios_pairing_proxy,ios_setup,ios_setup_api}.py`, `tests/test_ios_{capture,setup,setup_integration}.py`, `macos-native/Sources/AICaptureNativeApp/{IOSCaptureView,IOSCaptureCopy,IOSSetupCopy,IOSSetupController,IOSCaptureModels,APIClient}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{IOSCaptureIntegrationTests,APIClientTests}.swift`, `docs/desktop-user-guide.md`；本地构建及指定手机验收 | 无项目/域名直接开始；多域名Req/Resp、停止透传、不自动续录、认证和手机隔离、配额与旧调用兼容回归；Swift与真实代理测试、构建签名、原生UI无域名输入；三款真实结果或具体阻塞；VPN不变，无敏感数据提交 | 桌面改动完成，259项Python、121项Swift、3项真实TLS及构建/签名通过。审查发现TLS来源隔离不足，先RED再修复，复审无具体发现。三款#81-83冷启动页面正常但各0条；PokeHub对照#84最终65条，200完整JSON已原生查看。停止后重开PokeHub仍65条，连接保留；旧#78保持166条。缺少三款真实业务Req/Resp，不宣称全部支持 | 当前卡点为三款手机流量未到达Mac，不能靠桌面过滤改动解决；后续验证保留原VPN的统一可恢复接入，不再逐域名配置。桌面保持打开但不录制；仅本地提交，不推送或发布 |
+
 ## 2026-11-03 iPhone 新证书迁移实测
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

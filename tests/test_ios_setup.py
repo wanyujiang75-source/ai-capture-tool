@@ -373,6 +373,12 @@ class IOSAPITests(unittest.TestCase):
         self.assertEqual(result.status_code, 503)
         self.assertNotIn('secret', result.text)
 
+    def test_empty_recording_payload_starts_without_domains_or_project(self):
+        self.service.start_recording.return_value = {'recording_state': 'recording', 'capture_scope': 'device'}
+        result = self.post('/api/ios-setup/recording/start', json={})
+        self.assertEqual(result.status_code, 200)
+        self.service.start_recording.assert_called_once_with(None)
+
     def test_prepare_payload_is_forwarded_and_unknown_fields_rejected(self):
         self.service.prepare.return_value = {"phase": "waiting_phone", "flow_count": 0, "flows": []}
         result = self.post("/api/ios-setup/prepare", json={"ssid": "Office", "desktop_pid": os.getpid()})

@@ -5,6 +5,7 @@ import Testing
 private actor IOSCaptureSpy: IOSCaptureAPI {
     var status = IOSSetupStatus(phase: .ready)
     var starts = 0
+    var startedProjects: [String?] = []
     var ends = 0
     var fails = false
     var projectReads = 0
@@ -28,8 +29,9 @@ private actor IOSCaptureSpy: IOSCaptureAPI {
         if holdSave { await withCheckedContinuation { saveContinuation = $0 } }
         return IOSCaptureProject(id: draft.id ?? "new", name: draft.name, domains: draft.domains)
     }
-    func startIOSRecording(projectID: String) async throws -> IOSSetupStatus {
+    func startIOSRecording(projectID: String?) async throws -> IOSSetupStatus {
         starts += 1
+        startedProjects.append(projectID)
         if fails { throw APIClientError.httpStatus(409, "raw private detail") }
         status = IOSSetupStatus(phase: .capturing, connectionState: .ready,
                                 recordingState: .recording, sessionID: starts, project: project)
@@ -78,6 +80,20 @@ private actor IOSFlowSpy: FlowAPI {
 
 @MainActor
 struct IOSCaptureIntegrationTests {
+    @Test func connectedPhoneStartsWithoutLoadingOrSelectingProjects() async {
+        let api = IOSCaptureSpy()
+        let controller = IOSSetupController(api: api)
+        await controller.refresh()
+        #expect(controller.canStartRecording)
+        await controller.startRecording()
+        #expect(await api.starts == 1)
+        #expect(await api.startedProjects == [nil])
+        #expect(await api.projectReads == 0)
+        #expect(controller.status.isRecording)
+        await controller.stopRecording()
+        #expect(controller.status.isConnected && !controller.status.isRecording)
+    }
+
     @Test func lateStatusCannotUndoExplicitStartOrStop() async {
         let api = IOSCaptureSpy()
         let controller = IOSSetupController(api: api)

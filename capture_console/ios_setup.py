@@ -268,12 +268,15 @@ class IOSSetupService:
         self.last.update(phase="failed", connection_state="needs_cleanup", recording_state="failed")
         raise RuntimeError("手机连接中断，已停止本次抓包。请重新连接并检查手机HTTPS。")
 
-    def start_recording(self, project_id):
+    def start_recording(self, project_id=None):
         with self.lock:
             state = self.status()
-            project = self.projects.get(project_id)
+            scope = "device" if project_id is None else "project"
+            project = ({"id": "iphone", "name": "iPhone", "domains": []}
+                       if project_id is None else self.projects.get(project_id))
             if state.get("recording_state") == "recording":
-                if state.get("project", {}).get("id") == project_id:
+                if (state.get("project", {}).get("id") == project["id"]
+                        and state.get("capture_scope", "project") == scope):
                     return state
                 raise ValueError("其他项目正在抓包，请先停止当前抓包再切换项目。")
             if state.get("connection_state") != "ready" or not self.process:
@@ -285,7 +288,8 @@ class IOSSetupService:
             IOSCaptureArchive(outdir).close()
             self.session = self.store.create_ios_session(connection_id=self.directory.name,
                                                         project_name=project["name"], outdir=str(outdir))
-            state = self._command("start", session_id=self.session["id"], outdir=str(outdir), project=project)
+            state = self._command("start", session_id=self.session["id"], outdir=str(outdir),
+                                  project=project, capture_scope=scope)
             self._set_session_status("running" if state["recording_state"] == "recording" else "stopped")
             return state
 

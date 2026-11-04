@@ -24,7 +24,11 @@ class IOSRecording:
                 raise ValueError("请先在 iPhone 完成 HTTPS 连接检查。")
             if self.state["recording_state"] == "recording":
                 raise ValueError("请先停止当前抓包，再切换项目。")
-            domains = normalize_domains(command["project"]["domains"])
+            scope = command.get("capture_scope", "project")
+            if scope not in {"device", "project"}:
+                raise ValueError("unknown capture scope")
+            # None is explicit device capture; [] remains stop/passthrough.
+            domains = None if scope == "device" else normalize_domains(command["project"]["domains"])
             outdir = Path(command["outdir"]).resolve()
             if not outdir.is_relative_to(self.root) or outdir == self.root:
                 raise ValueError("invalid capture directory")
@@ -33,7 +37,8 @@ class IOSRecording:
             self.archive, self.domains = archive, domains
             self.pending_passthrough = False
             self.state.update(recording_state="recording", session_id=command["session_id"],
-                              project=command["project"], flow_count=0, phase="capturing", limit_reason=None)
+                              project=command["project"], capture_scope=scope,
+                              flow_count=0, phase="capturing", limit_reason=None)
         elif command["action"] == "stop":
             self.stop(switch)
         else:
@@ -68,7 +73,8 @@ class IOSRecording:
 
     def requestheaders(self, flow):
         if (self.state["recording_state"] != "recording" or not self.archive
-                or not domain_matches(flow.request.host, self.domains)):
+                or flow.request.host.lower().rstrip(".") == "capture-check.invalid"
+                or (self.domains is not None and not domain_matches(flow.request.host, self.domains))):
             return
         if self.save(self.archive.begin, flow):
             flow.metadata["ios_session_id"] = self.state["session_id"]
