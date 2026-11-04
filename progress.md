@@ -10,7 +10,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| FLOW-F1 | BLOCKED | 增加可恢复的仅看接口筛选 | `goal.md`, `progress.md`, `specs/flow-interface-filter.md`, `macos-native/Sources/AICaptureNativeApp/{FlowTrafficFilter,FlowListPresentation,FlowViews,Models,AppCopy,AppState}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{FlowTrafficFilterTests,FlowListPresentationTests}.swift`, `capture_console/{results,ios_results}.py`, `tests/{test_flow_summary_types,test_ios_results,ios_native_ui_fixture}.py`, `docs/desktop-user-guide.md`；本地构建/隔离UI | 分类及摘要RED/GREEN；搜索/恢复全部/失败请求/清空/实时更新/异步详情回归；Python/Swift通过；原生按钮、计数、空态及搜索视觉验收；不改手机或采集、不发布 | 代码/说明/本地App完成；摘要及分类RED/GREEN，Python199项、另iOS75项（重叠）及隔离HTTPS3项通过，Swift126项通过，严格签名通过。Mac锁屏导致原生窗口验收未完成，不能记DONE；已关闭自有合成验收进程，7001释放，未改手机网络 | 用户解锁后继续隔离UI按钮/计数/搜索/空态/增量与详情验收；代码仅本地保存，未推送或发包 |
+| FLOW-F1 | DONE | 增加可恢复的仅看接口筛选 | `goal.md`, `progress.md`, `specs/flow-interface-filter.md`, `macos-native/Sources/AICaptureNativeApp/{FlowTrafficFilter,FlowListPresentation,FlowViews,Models,AppCopy,AppState}.swift`, `macos-native/Tests/AICaptureNativeAppTests/{FlowTrafficFilterTests,FlowListPresentationTests}.swift`, `capture_console/{results,ios_results}.py`, `tests/{test_flow_summary_types,test_ios_results,ios_native_ui_fixture}.py`, `docs/desktop-user-guide.md`；本地构建/隔离UI | 分类及摘要RED/GREEN；搜索/恢复全部/失败请求/清空/实时更新/异步详情回归；Python/Swift通过；原生按钮、计数、空态及搜索视觉验收；不改手机或采集、不发布 | 代码未改变，复用既有Python199项、另iOS75项（重叠）、隔离HTTPS3项和Swift126项通过证据。解锁后CUA原生补验：6/6切3/6、401搜索1/6、无匹配0/6、增量4/8、全过滤0/3、清空后1/2及关闭筛选2/2，旧详情不残留，失败提示及恢复通过。严格签名再次通过；自有App/夹具已退出，7001无监听，未操作手机/VPN | 本地功能验收完成；仅提交验收记录，未推送或更新GitHub安装包；合成UI不是新增真机采集证据，系统全键盘导航未作完整验收 |
 
 ## 2026-11-04 iOS 说明与安装包发布
 
