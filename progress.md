@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| RELEASE-1105 | DOING | 发布当前已验收桌面预览安装包 | goal.md、progress.md、specs/desktop-release-20261105.md、release/notes-20261105.md、release/安装说明.md；release构建资产及新GitHub标签/Release；当前功能分支 | 打包回归与最终包隔离启动/签名通过；说明包含删除警告及前置条件；远端标签、资产digest和匿名下载SHA一致；原应用/VPN不变 | 基线ec6e2ba，上一发布be6d054是当前祖先；用户本地/Applications已运行5f70d0d，不覆盖运行bundle。产品源码不变，复用已验收记录 | 补说明、构建、验收后草稿上传并公开 |
+| RELEASE-1105 | DONE | 发布当前已验收桌面预览安装包 | goal.md、progress.md、specs/desktop-release-20261105.md、release/notes-20261105.md、release/安装说明.md；release构建资产及新GitHub标签/Release；当前功能分支 | 打包回归与最终包隔离启动/签名通过；说明包含删除警告及前置条件；远端标签、资产digest和匿名下载SHA一致；原应用/VPN不变 | 固定源码4933585；8项打包回归及最终包239项通过，签名/来源/说明一致。首次夹具路径失败已修正复验，既有开发依赖审计见规格。14:36:57公开desktop-preview-20261105-4933585；两项资产uploaded且digest一致。匿名下载经低速续传和瞬时TLS错误重试后，全部99,434,512字节与源ZIP一致、sha256 99ef9459…匹配；校验文件cmp一致。旧Release/main/当前本机应用/VPN及身份不变 | 本轮发布完成；交付验收记录与公开下载链接 |
 
 ## 2026-11-05 推送及本地桌面更新
 
