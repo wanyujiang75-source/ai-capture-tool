@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 Android 真机抓包调研与计划
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-PLAN1 | DONE | 调研Android真机抓包并交付评审计划 | goal.md、progress.md、specs/android-physical-capture-plan.md | 官方来源与源码/历史证据对应；原版Release、VPN、Root及证书边界明确；阶段与恢复验收可执行；diff检查通过且无产品/设备变更 | 已核对官方来源、历史一加/Charles试验及现有源码；完成10节方案自审，git diff --cached --check通过，变更仅三份规划文件；无产品测试或本轮真机操作 | 交付评审稿；AP-0至AP-4未开始，不推送或实施 |
+
 ## 2026-11-05 更新 GitHub 下载包
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
