@@ -35,6 +35,7 @@ extension CaptureSource {
 }
 
 struct CaptureSourceGroups {
+    static let historyLimit = 7
     let current: [CaptureSource]
     let history: [CaptureSource]
 
@@ -45,7 +46,7 @@ struct CaptureSourceGroups {
             all.append(CaptureSource(id: id, platform: "android", status: "running", appName: nil, mode: nil))
         }
         current = all.filter(\.isRunning).sorted { $0.id > $1.id }
-        history = all.filter { !$0.isRunning }.sorted { $0.id > $1.id }
+        history = Array(all.filter { !$0.isRunning }.sorted { $0.id > $1.id }.prefix(Self.historyLimit))
     }
 
     func matchingHistory(_ query: String) -> [CaptureSource] {

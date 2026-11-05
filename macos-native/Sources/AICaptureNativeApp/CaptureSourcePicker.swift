@@ -49,6 +49,8 @@ struct CaptureSourcePicker: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(AppCopy.FlowSource.history).font(.title2.bold())
+                Text(AppCopy.FlowSource.recentHistory(limit: CaptureSourceGroups.historyLimit))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 if refreshingHistory { ProgressView().controlSize(.small) }
                 Button(AppCopy.FlowSource.refresh) {

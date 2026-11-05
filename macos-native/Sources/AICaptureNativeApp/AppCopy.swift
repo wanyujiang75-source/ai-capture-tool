@@ -153,6 +153,7 @@ enum AppCopy {
     enum FlowSource {
         static let current = "当前抓包"
         static let history = "历史记录"
+        static func recentHistory(limit: Int) -> String { "最近 \(limit) 次" }
         static let switchCapture = "切换抓包"
         static let returnToCurrent = "返回当前抓包"
         static let refresh = "刷新记录"

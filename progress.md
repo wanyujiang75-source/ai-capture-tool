@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 历史记录最近七次
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| FLOW-HISTORY7 | DONE | 历史记录仅展示最近七次 | goal.md、progress.md、specs/flow-source-presentation.md；macos-native/Sources/AICaptureNativeApp/{CaptureSourcePresentation,CaptureSourcePicker,AppCopy}.swift；macos-native/Tests/AICaptureNativeAppTests/CaptureSourcePresentationTests.swift；docs/desktop-user-guide.md；独立 /tmp/capture-history7-20261105 验收应用与只读网关 | 数量/倒序/搜索范围/当前任务隔离 RED/GREEN；Swift 全套、release、原生历史搜索刷新验收 | 新增2项RED/GREEN；Swift报告181项/24 suites通过（1项既有条件实链路跳过）；release14.77秒/签名通过。原生只列#87至#81，刷新仍七条，#80搜索为空，#81可选；原数据11条未删，原app65730/backend65750未动，验收进程已退出。详见规格 | 本地单任务提交；当前窗口未切换新版，未推送/更新GitHub安装包 |
+
 ## 2026-11-05 请求与响应数据展示
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

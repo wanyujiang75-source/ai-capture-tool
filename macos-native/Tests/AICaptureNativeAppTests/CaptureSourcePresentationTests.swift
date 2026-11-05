@@ -68,6 +68,46 @@ struct CaptureSourcePresentationTests {
         #expect(invalid.startedDate == nil)
     }
 
+    @Test func historyContainsOnlySevenLatestRecordsAcrossPlatforms() {
+        let sources = [2, 10, 5, 1, 8, 4, 9, 3, 6, 7].map { id in
+            CaptureSource(id: id, platform: id.isMultiple(of: 2) ? "ios" : "android",
+                          status: id == 8 ? "failed" : "stopped", appName: "Sample \(id)", mode: nil)
+        }
+        let running = (11...20).map { id in
+            CaptureSource(id: id, platform: "ios", status: "running", appName: nil, mode: nil)
+        }
+        let groups = CaptureSourceGroups(sources: sources + running, activeAndroidID: 21)
+        #expect(groups.history.map(\.id) == [10, 9, 8, 7, 6, 5, 4])
+        #expect(groups.current.map(\.id) == Array((11...21).reversed()))
+        #expect(groups.matchingHistory("  ").map(\.id) == groups.history.map(\.id))
+        #expect(groups.matchingHistory("#2").isEmpty)
+        #expect(groups.matchingHistory("Sample 3").isEmpty)
+        #expect(groups.matchingHistory("Android").map(\.id) == [9, 7, 5])
+        #expect(groups.matchingHistory("#8 已中断").map(\.id) == [8])
+        #expect(sources.count == 10)
+    }
+
+    @Test func newlyEndedCaptureReplacesOldestHistoryWithoutChangingSelection() async {
+        let api = SourcePresentationAPI()
+        let sources = (1...8).map { id in
+            CaptureSource(id: id, platform: "ios", status: id == 8 ? "running" : "stopped",
+                          appName: "Sample \(id)", mode: nil)
+        }
+        await api.replace(sources)
+        let state = AppState(flowAPI: api)
+        await state.refreshFlowSources()
+        state.selectFlowSource(1)
+        #expect(CaptureSourceGroups(sources: state.flowSources, activeAndroidID: nil).history.map(\.id) == [7, 6, 5, 4, 3, 2, 1])
+
+        await api.replace(sources.dropLast() + [CaptureSource(id: 8, platform: "ios", status: "stopped", appName: "Sample 8", mode: nil)])
+        await state.refreshFlowSources()
+        let groups = CaptureSourceGroups(sources: state.flowSources, activeAndroidID: nil)
+        #expect(groups.history.map(\.id) == [8, 7, 6, 5, 4, 3, 2])
+        #expect(groups.current.isEmpty)
+        #expect(state.flowSessionID == 1)
+        #expect(state.flowSources.count == 8)
+    }
+
     @Test func activeAndroidTakesPriorityAndIsNotDuplicated() async {
         let api = SourcePresentationAPI()
         let android = CaptureSource(id: 1, platform: "android", status: "running", appName: "PokeHub", mode: nil)
