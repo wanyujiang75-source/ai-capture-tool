@@ -1816,7 +1816,7 @@ class CaptureConsoleCoreTests(unittest.TestCase):
             reopened = store.update_session_status(session["id"], "running")
             self.assertIsNone(reopened["stopped_at"])
 
-    def test_store_clears_capture_records_without_deleting_apps(self):
+    def test_store_restart_preserves_recent_capture_records_and_apps(self):
         from capture_console.store import CaptureStore
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1837,7 +1837,8 @@ class CaptureConsoleCoreTests(unittest.TestCase):
 
             store.reset_capture_sessions_for_restart()
 
-            self.assertEqual(store.list_sessions(), [])
+            self.assertEqual(len(store.list_sessions()), 1)
+            self.assertEqual(store.list_sessions()[0]["status"], "stopped")
             self.assertEqual(store.list_apps()[0]["package_name"], "com.meta.inno.monopoly_sticker")
 
     def test_store_persists_android_version_metadata_and_validation_status(self):

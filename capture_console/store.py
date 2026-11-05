@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
 from .platforms import validate_platform
+from .capture_retention import TERMINAL_STATUSES, prune_capture_history
 
 
 ACTIVE_STATUSES = {"starting", "running", "stopping"}
@@ -803,7 +804,9 @@ class CaptureStore:
                     "UPDATE capture_devices SET current_session_id=?, lease_status='running', last_active_at=?, updated_at=? WHERE device_id=?",
                     (session["id"], timestamp, timestamp, session["device_id"]),
                 )
-            return session
+        if status in TERMINAL_STATUSES:
+            self.prune_history()
+        return session
 
     def create_ios_session(self, *, connection_id: str, project_name: str, outdir: str) -> Dict[str, Any]:
         """Register an iPhone recording without leasing an Android device."""
@@ -867,7 +870,12 @@ class CaptureStore:
                     "UPDATE capture_devices SET current_session_id=?, lease_status='running', last_active_at=?, updated_at=? WHERE device_id=?",
                     (session_id, timestamp, timestamp, session["device_id"]),
                 )
-            return session
+        if status in TERMINAL_STATUSES:
+            self.prune_history()
+        return session
+
+    def prune_history(self) -> Dict[str, Any]:
+        return prune_capture_history(self)
 
     def get_session(self, session_id: int) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
@@ -888,21 +896,20 @@ class CaptureStore:
             ]
 
     def reset_capture_sessions_for_restart(self) -> None:
-        """Reset transient Android state without deleting archived iPhone results."""
+        """Mark abandoned captures interrupted, then apply shared archive retention."""
         timestamp = now_iso()
         with self.connect() as conn:
-            conn.execute("DELETE FROM capture_sessions WHERE platform!='ios' AND mode!='ios-http-proxy'")
             conn.execute(
                 """
                 UPDATE capture_sessions
                 SET status='failed', stopped_at=COALESCE(stopped_at, ?), updated_at=?,
                     error=COALESCE(NULLIF(error, ''), ?)
-                WHERE (platform='ios' OR mode='ios-http-proxy')
-                    AND status IN ('starting', 'running', 'stopping')
+                WHERE status IN ('starting', 'running', 'stopping')
                 """,
                 (timestamp, timestamp, "本机服务已结束，本次抓包未正常完成；已保存的接口仍可查看。"),
             )
             conn.execute("UPDATE capture_devices SET current_session_id=NULL, lease_status='idle', updated_at=?", (timestamp,))
+        self.prune_history()
 
     def update_app_version(self, app_id: int, version: Dict[str, Any]) -> Dict[str, Any]:
         fields = {

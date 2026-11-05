@@ -53,7 +53,7 @@ class IOSLifecycleTests(unittest.TestCase):
             self.module.startup()
         reopened = CaptureStore(self.root / "console.db")
         self.assertEqual(reopened.get_session(self.ios["id"]), saved)
-        self.assertIsNone(reopened.get_session(self.android["id"]))
+        self.assertEqual(reopened.get_session(self.android["id"])["status"], "failed")
         self.assertEqual(reopened.list_active_sessions(), [])
         self.assert_archive_readable()
 

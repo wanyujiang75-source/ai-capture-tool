@@ -63,6 +63,7 @@ struct CaptureSourcePicker: View {
                 Button(AppCopy.FlowSource.close) { showingHistory = false }.keyboardShortcut(.cancelAction)
             }
             TextField(AppCopy.FlowSource.search, text: $historyQuery).textFieldStyle(.roundedBorder)
+            Text(AppCopy.FlowSource.retentionHint).font(.callout).foregroundStyle(.secondary)
             if let issue = appState.flowSourcesIssue { Text(issue).foregroundStyle(.red) }
             let records = groups.matchingHistory(historyQuery)
             if records.isEmpty {

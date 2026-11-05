@@ -4,8 +4,13 @@ import Testing
 
 private actor SourcePresentationAPI: FlowAPI {
     var sources: [CaptureSource] = []
+    var failRead = false
     func replace(_ sources: [CaptureSource]) { self.sources = sources }
-    func getCaptureSources() async throws -> [CaptureSource] { sources }
+    func failNextRead() { failRead = true }
+    func getCaptureSources() async throws -> [CaptureSource] {
+        if failRead { throw APIClientError.invalidResponse }
+        return sources
+    }
     func getFlows(sessionID: Int) async throws -> [FlowSummary] { [] }
     func getFlowDetail(sessionID: Int, flowID: String) async throws -> FlowDetail { throw APIClientError.invalidResponse }
     func getFlowCurl(sessionID: Int, flowID: String) async throws -> String { "" }
@@ -138,6 +143,45 @@ struct CaptureSourcePresentationTests {
         state.selectCurrentFlowSource()
         #expect(state.flowSessionID == 2)
         #expect(state.isViewingLiveCapture)
+    }
+
+    @Test func deletedHistoryIsNotResurrectedAndItsDetailsAreCleared() async {
+        let api = SourcePresentationAPI()
+        await api.replace([CaptureSource(id: 1, platform: "ios", status: "stopped", appName: nil, mode: nil)])
+        let state = AppState(flowAPI: api)
+        await state.refreshFlowSources()
+        state.selectFlowSource(1)
+        state.selectedFlowID = "expired"
+        state.selectedFlowCurl = "expired curl"
+        await api.replace([CaptureSource(id: 9, platform: "ios", status: "running", appName: nil, mode: nil)])
+        await state.refreshFlowSources()
+        #expect(state.flowSources.map(\.id) == [9])
+        #expect(state.flowSessionID == 9)
+        #expect(state.selectedFlowID == nil)
+        #expect(state.selectedFlowCurl.isEmpty)
+    }
+
+    @Test func sourceRefreshFailureDoesNotDiscardSelectedHistory() async {
+        let api = SourcePresentationAPI()
+        await api.replace([CaptureSource(id: 1, platform: "ios", status: "stopped", appName: nil, mode: nil)])
+        let state = AppState(flowAPI: api)
+        await state.refreshFlowSources()
+        state.selectFlowSource(1)
+        state.selectedFlowID = "saved"
+        await api.failNextRead()
+        await state.refreshFlowSources()
+        #expect(state.flowSessionID == 1)
+        #expect(state.selectedFlowID == "saved")
+        #expect(state.flowSources.map(\.id) == [1])
+    }
+
+    @Test func startingAndStoppingCapturesAreNotHistory() {
+        let sources = ["starting", "running", "stopping"].enumerated().map { index, status in
+            CaptureSource(id: index + 1, platform: "ios", status: status, appName: nil, mode: nil)
+        }
+        let groups = CaptureSourceGroups(sources: sources, activeAndroidID: nil)
+        #expect(groups.current.map(\.id) == [3, 2, 1])
+        #expect(groups.history.isEmpty)
     }
 
     @Test func returningToCurrentDoesNotReuseHistoryAndResetsDetails() async {

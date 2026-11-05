@@ -119,7 +119,7 @@ struct IOSCaptureIntegrationTests {
         #expect(controller.status.isConnected)
     }
 
-    @Test func sourceListCutoffDoesNotTurnIOSIntoLegacyAndroidFetching() async {
+    @Test func removedIOSHistoryDoesNotFallBackToLegacyAndroidFetching() async {
         let api = IOSFlowSpy()
         let state = AppState(flowAPI: api)
         await state.refreshFlowSources()
@@ -127,11 +127,11 @@ struct IOSCaptureIntegrationTests {
         await state.refreshFlows()
         await api.hideSource()
         await state.refreshFlowSources()
-        #expect(state.selectedFlowSource?.isIOS == true)
-        #expect(state.flowSources.contains { $0.id == 12 })
+        #expect(state.flowSessionID == nil)
+        #expect(!state.flowSources.contains { $0.id == 12 })
         await state.refreshFlows()
-        #expect(await api.calls == [0, 1, 2])
-        #expect(state.flows.count == 2)
+        #expect(await api.calls == [0, 1])
+        #expect(state.flows.isEmpty)
     }
 
     @Test func projectRefreshIsExcludedWhileSaveIsInFlight() async {

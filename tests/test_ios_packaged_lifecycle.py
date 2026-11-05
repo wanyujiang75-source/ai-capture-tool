@@ -99,7 +99,8 @@ class IOSPackagedLifecycleTests(unittest.TestCase):
                         self.assertEqual((state["connection_state"], state["recording_state"], state["session_id"]),
                                          ("idle", "idle", None))
                         rows = {row["id"]: row for row in request("/api/captures")["sessions"]}
-                        self.assertEqual(set(rows), {ids["saved"]["id"], ids["abandoned"]})
+                        self.assertEqual(set(rows), {ids["saved"]["id"], ids["abandoned"], ids["android"]})
+                        self.assertEqual(rows[ids["android"]]["status"], "failed")
                         self.assertEqual(rows[ids["saved"]["id"]], ids["saved"])
                         if interrupted is None:
                             interrupted = rows[ids["abandoned"]]

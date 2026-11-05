@@ -2,6 +2,7 @@ import Foundation
 
 extension CaptureSource {
     var isRunning: Bool { status == "running" }
+    var isActive: Bool { ["starting", "running", "stopping"].contains(status ?? "") }
     var platformLabel: String { isIOS ? "iPhone" : "Android" }
     var applicationName: String? {
         let name = (appName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -13,6 +14,8 @@ extension CaptureSource {
     var statusLabel: String {
         switch status {
         case "running": AppCopy.FlowSource.running
+        case "starting": AppCopy.FlowSource.starting
+        case "stopping": AppCopy.FlowSource.stopping
         case "stopped": AppCopy.FlowSource.stopped
         case "failed": AppCopy.FlowSource.failed
         default: AppCopy.FlowSource.unknown
@@ -45,8 +48,8 @@ struct CaptureSourceGroups {
         if let id = activeAndroidID, !all.contains(where: { $0.id == id }) {
             all.append(CaptureSource(id: id, platform: "android", status: "running", appName: nil, mode: nil))
         }
-        current = all.filter(\.isRunning).sorted { $0.id > $1.id }
-        history = Array(all.filter { !$0.isRunning }.sorted { $0.id > $1.id }.prefix(Self.historyLimit))
+        current = all.filter(\.isActive).sorted { $0.id > $1.id }
+        history = Array(all.filter { !$0.isActive }.sorted { $0.id > $1.id }.prefix(Self.historyLimit))
     }
 
     func matchingHistory(_ query: String) -> [CaptureSource] {

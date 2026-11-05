@@ -1,5 +1,10 @@
 # 进度记录
 
+## 2026-11-05 自动删除超额历史
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| FLOW-RETENTION7 | DONE | 后端自动保留七次历史并删除旧归档 | goal.md、progress.md、specs/capture-history-retention.md；capture_console/{store,capture_retention}.py；tests/{test_capture_retention,test_console_core,test_ios_lifecycle,test_ios_packaged_lifecycle}.py；macos-native/Sources/AICaptureNativeApp/{AppState,AppCopy,CaptureSourcePicker,CaptureSourcePresentation}.swift；macos-native/Tests/AICaptureNativeAppTests/{CaptureSourcePresentationTests,IOSCaptureIntegrationTests}.swift；docs/desktop-user-guide.md；本机独立构建与已授权超额历史目录 | 后端/Swift RED-GREEN及回归；文件边界、失败重试、活动保护；本机七条与旧文件删除核对、保留配置摘要不变 | 后端238项（含11项清理回归）、Swift报告184项/24 suites（1项既有条件跳过）通过；安装包三轮重启及严格签名通过。初次测试pyc污染签名，重构建并使用-B后复验通过。实际删除#80至#77及4目录，保留#87至#81的275文件、3身份文件和应用表摘要一致；新版retention7-20261105已启动，原生历史刷新、旧编号无结果、#87加载75条通过；VPN/原配置未改。详见规格证据 | 本地单任务提交；未推送或更新远端包 |
 ## 2026-11-05 历史记录最近七次
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

@@ -154,6 +154,8 @@ enum AppCopy {
         static let current = "当前抓包"
         static let history = "历史记录"
         static func recentHistory(limit: Int) -> String { "最近 \(limit) 次" }
+        static let retentionHint = "仅保留最近 7 次已结束的抓包，较早记录及文件将自动删除。"
+        static let recordRemoved = "该抓包记录已不存在，已返回当前抓包。"
         static let switchCapture = "切换抓包"
         static let returnToCurrent = "返回当前抓包"
         static let refresh = "刷新记录"
@@ -162,6 +164,8 @@ enum AppCopy {
         static let noHistory = "暂无历史抓包记录"
         static let noMatches = "未找到匹配的记录，请更换搜索关键词。"
         static let running = "抓包中"
+        static let starting = "正在启动抓包…"
+        static let stopping = "正在停止抓包…"
         static let stopped = "已结束"
         static let failed = "已中断"
         static let unknown = "状态未知"

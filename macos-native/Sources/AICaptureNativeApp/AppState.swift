@@ -92,12 +92,10 @@ final class AppState: ObservableObject {
             let sources = try await flowAPI.getCaptureSources()
             guard !Task.isCancelled, sourcesRequestID == request else { return }
             let previousSessionID = flowSessionID
-            let retained = selectedFlowSource
+            let selectedWasRemoved = selectedFlowSourceID.map { id in !sources.contains { $0.id == id } } ?? false
             flowSources = sources
-            if let retained, !sources.contains(where: { $0.id == retained.id }) {
-                flowSources.append(retained)
-            }
-            flowSourcesIssue = nil
+            if selectedWasRemoved { selectedFlowSourceID = nil }
+            flowSourcesIssue = selectedWasRemoved ? AppCopy.FlowSource.recordRemoved : nil
             if selectedFlowSourceID == nil {
                 selectCurrentFlowSource()
             }
