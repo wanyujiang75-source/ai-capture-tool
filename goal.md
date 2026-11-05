@@ -1,5 +1,11 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-05 推送及本地桌面更新
+
+结果：DELIVERY-1105 DONE。产品5f70d0d已推送origin/codex/ios-device-trial并以ls-remote确认一致；完整release包已安装并从/Applications启动，内置后端build_id=5f70d0db9dc1。安装包三轮重启、签名与原生七条历史通过；275个归档文件、3个身份文件、应用表摘要未变。main、GitHub Release及VPN/原配置未改。
+
+本轮 DELIVERY-1105：按用户新授权推送当前工作分支 `codex/ios-device-trial` 到 GitHub，不自动合并main或发布Release；将产品提交 `5f70d0d` 构建为完整原生应用并安装到 `/Applications/抓包工具.app`，启动后核对版本、后台托管与七条历史。不中断活动抓包，不覆盖运行中的bundle，不修改VPN、节点或原配置。验收复用相同源码的已有测试，重新执行安装包重启、签名与原生窗口验证。细节见 `specs/capture-history-retention.md` 交付章节。
+
 ## 2026-11-05 自动删除超额抓包记录
 
 结果：FLOW-RETENTION7 DONE。后端238项、Swift报告184项/24 suites（1项既有条件实链路跳过）、安装包三轮正常/异常重启与严格签名通过。本机清理4条超额记录及独立目录，保留#87至#81；275个保留文件、3个身份文件及应用表摘要未变。新版retention7-20261105已正常替换退出后的旧进程，原生历史刷新、删除后搜索和保留记录打开通过；未操作VPN、手机节点或原配置，未推送或更新远端安装包。

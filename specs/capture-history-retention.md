@@ -26,3 +26,21 @@
 - 真实数据：确认无活动抓包后调用同一清理器，数据库11条变7条，删除#80、#79、#78、#77及对应4个独立目录，错误0。保留#87至#81；重启前后275个归档文件和3个身份文件SHA-256全部匹配，应用表dump摘要一致。未登记的旧目录不在自动删除范围，不宣称已清空全部历史磁盘占用。
 - 原生验收：正常退出旧版后启动新版，7001返回build_id=retention7-20261105、health=idle、active_session=null；历史页显示最近7次与自动删除说明，刷新仍为7条，搜索#80无结果，清除搜索后#87至#81完整显示，打开#87加载75条请求。
 - 本机证据目录：`/tmp/capture-retention7-20261105`，包括python-tests.log、swift-tests.log、packaged-tests.log、keep-before.sha256、identity-before.sha256、apps-before.sha256及expired-paths.txt。日志/抓包内容不入库，不推送远端。本轮未操作手机、VPN、节点、证书信任或原配置。
+
+## DELIVERY-1105 交付范围与验收
+
+用户随后授权推送并更新本地桌面。本次仅推送当前开发分支，不自行合并main、不更新GitHub Release资产。产品源码为5f70d0d，构建使用该提交标识；交付文档可能形成后续提交，不改变已验证产品代码。
+
+- 先确认无活动抓包，正常退出原开发目录应用，再构建完整release包，避免覆盖运行中的bundle。
+- `/Applications/抓包工具.app` 本轮检查不存在，使用ditto安装，不清理用户运行数据、证书或配置。
+- 对最终安装包执行三轮正常/异常后端重启测试；Python使用-B并禁止pyc写入，核对严格签名。
+- 从应用程序目录打开，确认后端build_id、无重复旧进程、七条历史正常加载，保留文件/身份摘要不变。
+- `git push -u origin HEAD:refs/heads/codex/ios-device-trial` 后以 `git ls-remote` 核对SHA，保留main及Release原样。
+
+### 交付结果
+
+- `CONFIGURATION=release AI_CAPTURE_BUILD_ID=5f70d0db9dc1 macos-native/scripts/build-app.sh` 通过，ditto安装到 `/Applications/抓包工具.app`。
+- 最终安装位置的内嵌Python加 `-B` / `PYTHONDONTWRITEBYTECODE=1` 运行 `tests.test_ios_packaged_lifecycle`，1项（三轮重启）通过，3.957秒；安装后与实际启动后的严格签名验证均通过。
+- 原生窗口正常打开，历史页显示#87至#81及自动删除说明。进程87759与后端87765均来自/Applications，旧开发路径进程已正常退出；7001报告build_id=5f70d0db9dc1、idle、无活动抓包。
+- 再次校验275个保留归档文件、3个身份文件及应用表dump，全部与上轮基线一致。手机、VPN、节点、原配置未改。
+- 产品提交已推送 `origin/codex/ios-device-trial`，`git ls-remote`确认为5f70d0db9dc1623c4ec0b054b83179332062c86c；随后仅同步本交付文档。main保持c4a7d6c，不发布Release、不更新远端下载包。

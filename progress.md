@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 推送及本地桌面更新
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| DELIVERY-1105 | DONE | 推送当前分支并更新本地原生桌面 | goal.md、progress.md、specs/capture-history-retention.md；macos-native/build/抓包工具.app；/Applications/抓包工具.app；origin/codex/ios-device-trial | release构建、安装包重启/签名通过；应用程序目录启动与版本一致、历史七条；远端分支SHA与本地一致；不改VPN/原配置 | 产品5f70d0d已push并经ls-remote核对；release构建/ditto安装成功，安装包三轮正常/异常重启1项通过(3.957秒)，启动后严格签名通过。原生历史#87至#81，后端build_id=5f70d0db9dc1，app87759/backend87765均来自/Applications，无旧进程；275归档/3身份文件及应用表摘要一致。产品源码未变，复用此前238后端及184 Swift报告。main仍c4a7d6c，未发布Release | 交付证据随分支同步；本轮完成 |
+
 ## 2026-11-05 自动删除超额历史
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
