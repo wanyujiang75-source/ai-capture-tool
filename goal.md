@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-05 更新 GitHub 下载包
+
+RELEASE-1105：按用户授权发布当前功能分支的新macOS14+/Apple Silicon开发预览ZIP及SHA-256，不覆盖旧Release、不移动旧标签、不擅自合并main。包内补充最近7次历史自动删除的升级警告，附安装与断点指南。验收包含最终解包签名、架构/来源/说明、隔离后端重启、资产完整性和匿名下载校验。保留正在运行的/Applications桌面、手机、VPN和原配置；规格见`specs/desktop-release-20261105.md`。
+
 ## 2026-11-05 推送及本地桌面更新
 
 结果：DELIVERY-1105 DONE。产品5f70d0d已推送origin/codex/ios-device-trial并以ls-remote确认一致；完整release包已安装并从/Applications启动，内置后端build_id=5f70d0db9dc1。安装包三轮重启、签名与原生七条历史通过；275个归档文件、3个身份文件、应用表摘要未变。main、GitHub Release及VPN/原配置未改。

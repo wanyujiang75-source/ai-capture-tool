@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 更新 GitHub 下载包
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-1105 | DOING | 发布当前已验收桌面预览安装包 | goal.md、progress.md、specs/desktop-release-20261105.md、release/notes-20261105.md、release/安装说明.md；release构建资产及新GitHub标签/Release；当前功能分支 | 打包回归与最终包隔离启动/签名通过；说明包含删除警告及前置条件；远端标签、资产digest和匿名下载SHA一致；原应用/VPN不变 | 基线ec6e2ba，上一发布be6d054是当前祖先；用户本地/Applications已运行5f70d0d，不覆盖运行bundle。产品源码不变，复用已验收记录 | 补说明、构建、验收后草稿上传并公开 |
+
 ## 2026-11-05 推送及本地桌面更新
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
