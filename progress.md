@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 AP-0 Android真机只读准入
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| AP-0 | DONE | 独立只读能力检查及一加原版PokeHub准入验收 | goal.md、progress.md、specs/android-physical-capture-plan.md、specs/android-physical-ap0-acceptance.md、capture_console/android_physical_capabilities.py、tests/test_android_physical_capabilities.py | 安全边界与状态测试通过；指定真机/包身份/网络证据及前后基线对照；未知不冒充成功 | 13项新增、相关回归共33项通过；多用户RED已修复；Play来源包12个APK验签及前后摘要一致；VPN/代理/转发有限基线一致，无写设置操作；当前抓包条件blocked而非抓包成功 | 本地交付检查结果；无已验证通道，不进入AP-1、不推送或发布 |
+
 ## 2026-11-05 Android 真机抓包调研与计划
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
