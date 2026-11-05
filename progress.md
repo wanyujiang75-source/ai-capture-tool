@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 请求与响应数据展示
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| FLOW-DETAIL1 | DONE | 完整呈现已捕获参数、Headers、Body并格式化键值对 | goal.md、progress.md、specs/flow-detail-presentation.md；macos-native/Sources/AICaptureNativeApp/{AppCopy,Models,FlowViews,FlowListPresentation,FlowDetailPresentation,FlowJSONFormatter}.swift；macos-native/Tests/AICaptureNativeAppTests/FlowDetailPresentationTests.swift；tests/flow_detail_native_ui_fixture.py；docs/desktop-user-guide.md；独立 /tmp/capture-detail-ux-20261105 验收应用 | 格式/转义/数值/重复键/空态/截断/大包边界 RED/GREEN；Swift 全套、release 构建签名、隔离原生窗口 Request/Response/cURL 与连续复制 | 首轮及独立复核边界、JSON null均RED/GREEN；新增14项，最终Swift报告179项/24 suites通过（1项条件实链路跳过）；release/签名及合成原生窗口、连续复制通过。超长元数据转换前后有界，旧二进制回退保留；原7001/PID45594/签名不变，自有fixture/app已退出。详见规格 | 本地单任务提交；未推送、未更新GitHub安装包或覆盖原已打开应用 |
+
 ## 2026-11-05 接口来源与专业文案
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

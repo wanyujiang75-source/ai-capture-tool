@@ -5,6 +5,7 @@ struct FlowBodyPresentation: Equatable {
     let isTruncated: Bool
     let sizeBytes: Int
     let fullFileURL: URL?
+    var notice: String? = nil
 }
 
 enum FlowListPresentation {
@@ -37,7 +38,7 @@ enum FlowListPresentation {
     }
 
     static func requestBody(_ detail: FlowDetail) -> FlowBodyPresentation {
-        bodyPresentation(text: requestText(detail), info: detail.requestBody)
+        bodyPresentation(text: requestText(detail), info: detail.requestBody, legacyKind: detail.requestBodyKind)
     }
 
     static func responseBodyText(_ detail: FlowDetail) -> String {
@@ -45,38 +46,51 @@ enum FlowListPresentation {
     }
 
     static func responseBody(_ detail: FlowDetail) -> FlowBodyPresentation {
-        bodyPresentation(text: responseText(detail), info: detail.responseBody)
+        bodyPresentation(text: responseText(detail), info: detail.responseBody, legacyKind: detail.responseBodyKind)
     }
 
     private static func requestText(_ detail: FlowDetail) -> String {
+        if let text = detail.requestText, !text.isEmpty { return text }
         if let requestJSON = detail.requestJSON {
-            return requestJSON.description
+            return requestJSON.jsonText
         }
-        if let requestText = nonempty(detail.requestText) {
-            return requestText
-        }
+        if (detail.requestBody?.kind ?? detail.requestBodyKind) == "binary" { return AppCopy.Flow.binaryBody }
+        if (detail.requestBody?.sizeBytes ?? 0) > 0 { return AppCopy.Flow.unavailableBody }
         return AppCopy.Flow.noRequestBody
     }
 
     private static func responseText(_ detail: FlowDetail) -> String {
+        if let text = detail.responseText, !text.isEmpty { return text }
         if let responseJSON = detail.responseJSON {
-            return responseJSON.description
+            return responseJSON.jsonText
         }
-        if let responseText = nonempty(detail.responseText) {
-            return responseText
-        }
+        if (detail.responseBody?.kind ?? detail.responseBodyKind) == "binary" { return AppCopy.Flow.binaryBody }
+        if (detail.responseBody?.sizeBytes ?? 0) > 0 { return AppCopy.Flow.unavailableBody }
         if detail.status == "NO_RESPONSE" {
             return AppCopy.Flow.responsePending
         }
         return AppCopy.Flow.responseWithoutBody(statusCode: nonempty(detail.status) ?? "-")
     }
 
-    private static func bodyPresentation(text: String, info: FlowBodyInfo?) -> FlowBodyPresentation {
-        FlowBodyPresentation(
-            text: text,
-            isTruncated: info?.truncated ?? false,
-            sizeBytes: info?.sizeBytes ?? 0,
-            fullFileURL: nonempty(info?.path).map { URL(fileURLWithPath: $0) }
+    private static func bodyPresentation(text: String, info: FlowBodyInfo?, legacyKind: String?) -> FlowBodyPresentation {
+        let exceedsLimit = text.utf8.count > FlowJSONFormatter.inputLimit
+        let preview = exceedsLimit ? String(decoding: text.utf8.prefix(FlowJSONFormatter.inputLimit), as: UTF8.self) : text
+        let truncated = (info?.truncated ?? false) || exceedsLimit
+        let formatted: String
+        let isBinary = (info?.kind ?? legacyKind) == "binary"
+        if truncated || isBinary {
+            formatted = preview
+        } else if info?.contentType?.lowercased().split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == "application/x-www-form-urlencoded" {
+            formatted = FlowDetailPresentation.formText(preview)
+        } else {
+            formatted = FlowJSONFormatter.formatted(preview) ?? preview
+        }
+        return FlowBodyPresentation(
+            text: formatted,
+            isTruncated: truncated,
+            sizeBytes: info?.sizeBytes ?? text.utf8.count,
+            fullFileURL: nonempty(info?.path).map { URL(fileURLWithPath: $0) },
+            notice: isBinary ? AppCopy.Flow.binaryBody : (text == AppCopy.Flow.unavailableBody ? text : nil)
         )
     }
 

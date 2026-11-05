@@ -114,7 +114,20 @@ enum AppCopy {
         static let waitingSync = "等待同步"
         static let syncing = "同步中"
         static let live = "实时"
-        static let showFullBodyFile = "在 Finder 中显示完整文件"
+        static let showFullBodyFile = "在 Finder 中显示正文文件"
+        static let requestData = "Request 数据"
+        static let responseData = "Response 数据"
+        static let queryParameters = "查询参数"
+        static let requestHeaders = "请求头 · Headers"
+        static let responseHeaders = "响应头 · Headers"
+        static let requestBody = "请求正文 · Body"
+        static let responseBody = "响应正文 · Body"
+        static let noHeaders = "此记录未保存 Headers。"
+        static let emptyHeaders = "Headers 为空。"
+        static let unavailableBody = "此记录没有可展示的正文文本，请查看已归档的正文文件（如有）。"
+        static let binaryBody = "正文为二进制数据，不作为文本展示。"
+        static let metadataPreview = "参数或 Headers 较长，仅显示部分内容。"
+        static func responseStatus(_ value: String) -> String { "响应状态：\(value)" }
 
         static func captureNumber(_ id: Int) -> String {
             "本次抓包 #\(id)"
@@ -131,7 +144,7 @@ enum AppCopy {
 
         static func largeBodyPreview(sizeBytes: Int) -> String {
             let size = ByteCountFormatter.string(fromByteCount: Int64(sizeBytes), countStyle: .file)
-            return "内容较大（完整文件 \(size)），当前仅显示前 256 KB。"
+            return "正文预览不完整（记录大小 \(size)），可能已截断或未完整解码；仅展示已获取的内容。"
         }
 
         static let responsePending = "尚未捕获响应，请求可能仍在进行或连接已提前结束。"

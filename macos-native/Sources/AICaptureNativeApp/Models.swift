@@ -714,6 +714,35 @@ struct FlowDetail: Decodable, Identifiable {
     let files: JSONValue?
     let breakpoints: [String: BreakpointAudit]?
 
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        method = try values.decodeIfPresent(String.self, forKey: .method)
+        status = try values.decodeIfPresent(String.self, forKey: .status)
+        url = try values.decodeIfPresent(String.self, forKey: .url)
+        requestBodyKind = try values.decodeIfPresent(String.self, forKey: .requestBodyKind)
+        responseBodyKind = try values.decodeIfPresent(String.self, forKey: .responseBodyKind)
+        requestBody = try values.decodeIfPresent(FlowBodyInfo.self, forKey: .requestBody)
+        responseBody = try values.decodeIfPresent(FlowBodyInfo.self, forKey: .responseBody)
+        // Legacy Android uses null both for absent data and for a JSON null body.
+        // Only the captured JSON body kind disambiguates those representations.
+        if (requestBody?.kind ?? requestBodyKind) == "json", values.contains(.requestJSON) {
+            requestJSON = try values.decode(JSONValue.self, forKey: .requestJSON)
+        } else {
+            requestJSON = try values.decodeIfPresent(JSONValue.self, forKey: .requestJSON)
+        }
+        if (responseBody?.kind ?? responseBodyKind) == "json", values.contains(.responseJSON) {
+            responseJSON = try values.decode(JSONValue.self, forKey: .responseJSON)
+        } else {
+            responseJSON = try values.decodeIfPresent(JSONValue.self, forKey: .responseJSON)
+        }
+        requestText = try values.decodeIfPresent(String.self, forKey: .requestText)
+        responseText = try values.decodeIfPresent(String.self, forKey: .responseText)
+        metaJSON = try values.decodeIfPresent(JSONValue.self, forKey: .metaJSON)
+        files = try values.decodeIfPresent(JSONValue.self, forKey: .files)
+        breakpoints = try values.decodeIfPresent([String: BreakpointAudit].self, forKey: .breakpoints)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id
         case method
@@ -758,8 +787,10 @@ struct FlowBodyInfo: Decodable, Equatable {
     }
 }
 
-enum JSONValue: Decodable, CustomStringConvertible {
+enum JSONValue: Codable, CustomStringConvertible {
     case string(String)
+    case integer(Int64)
+    case unsignedInteger(UInt64)
     case number(Double)
     case bool(Bool)
     case object([String: JSONValue])
@@ -772,6 +803,10 @@ enum JSONValue: Decodable, CustomStringConvertible {
             self = .null
         } else if let value = try? container.decode(Bool.self) {
             self = .bool(value)
+        } else if let value = try? container.decode(Int64.self) {
+            self = .integer(value)
+        } else if let value = try? container.decode(UInt64.self) {
+            self = .unsignedInteger(value)
         } else if let value = try? container.decode(Double.self) {
             self = .number(value)
         } else if let value = try? container.decode(String.self) {
@@ -783,34 +818,30 @@ enum JSONValue: Decodable, CustomStringConvertible {
         }
     }
 
-    var description: String {
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
         switch self {
-        case .string(let value):
-            "\"\(value)\""
-        case .number(let value):
-            String(value)
-        case .bool(let value):
-            value ? "true" : "false"
-        case .object(let value):
-            prettyJSONObject(value)
-        case .array(let value):
-            prettyJSONArray(value)
-        case .null:
-            "null"
+        case .string(let value): try container.encode(value)
+        case .integer(let value): try container.encode(value)
+        case .unsignedInteger(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .null: try container.encodeNil()
         }
     }
 
-    private func prettyJSONObject(_ object: [String: JSONValue]) -> String {
-        let lines = object.keys.sorted().map { key in
-            "  \"\(key)\": \(object[key]?.description ?? "null")"
+    var jsonText: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(self), let raw = String(data: data, encoding: .utf8) else {
+            return AppCopy.Flow.unavailableBody
         }
-        return "{\n\(lines.joined(separator: ",\n"))\n}"
+        return raw
     }
 
-    private func prettyJSONArray(_ array: [JSONValue]) -> String {
-        let lines = array.map { "  \($0.description)" }
-        return "[\n\(lines.joined(separator: ",\n"))\n]"
-    }
+    var description: String { FlowJSONFormatter.formatted(jsonText) ?? jsonText }
 }
 
 extension KeyedDecodingContainer {

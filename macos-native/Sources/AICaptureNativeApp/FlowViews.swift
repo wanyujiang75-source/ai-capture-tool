@@ -235,13 +235,13 @@ struct FlowViews: View {
             switch detailTab {
             case "request":
                 CodeBlock(
-                    title: "Request Body (\(detail.requestBodyKind ?? "text"))",
-                    content: FlowListPresentation.requestBody(detail)
+                    title: AppCopy.Flow.requestData,
+                    content: FlowDetailPresentation.request(detail)
                 )
             case "response":
                 CodeBlock(
-                    title: "Response Body (\(detail.responseBodyKind ?? "text"))",
-                    content: FlowListPresentation.responseBody(detail)
+                    title: AppCopy.Flow.responseData,
+                    content: FlowDetailPresentation.response(detail)
                 )
             default:
                 CodeBlock(
@@ -372,6 +372,10 @@ private struct CodeBlock: View {
                 .padding(10)
                 .background(Color.orange.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else if content.notice != nil, let fileURL = content.fullFileURL {
+                Button(AppCopy.Flow.showFullBodyFile) {
+                    NSWorkspace.shared.activateFileViewerSelecting([fileURL])
+                }
             }
             ReadOnlyCodeTextView(text: content.text)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
