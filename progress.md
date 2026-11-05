@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-05 接口来源与专业文案
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| FLOW-UX1 | DONE | 当前与历史分离、精简接口页文案与选项 | goal.md、progress.md、specs/flow-source-presentation.md；macos-native/Sources/AICaptureNativeApp/{AppState,AppCopy,FlowViews,IOSCaptureModels,IOSCaptureCopy,CaptureSourcePresentation,CaptureSourcePicker}.swift；macos-native/Tests/AICaptureNativeAppTests/CaptureSourcePresentationTests.swift；docs/desktop-user-guide.md；临时只读网关 /tmp/capture-flow-ux-20261105/slow-readonly-api.py | 来源/选择/日期兼容及状态回归、Swift全套、release构建/签名、原生窗口当前空态/历史/详情/返回/刷新通过 | 两轮RED/GREEN，最终Swift报告165项/23 suites通过（1项既有条件实链路跳过）；release/独立签名通过；原生历史搜索/状态/清空/返回/详情验收通过，30秒慢响应切换新记录立即加载且不串数据；评审问题已处理。原PID45594/idle/null及签名不变，未改VPN和原配置；详见规格证据 | 本地提交，保留分支；未推送或更新安装包，原已打开应用未替换 |
+
 ## 2026-11-04 BP-4 综合验收
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

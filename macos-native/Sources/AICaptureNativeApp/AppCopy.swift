@@ -86,6 +86,19 @@ enum AppCopy {
     }
 
     enum Flow {
+        static let pageDescription = "查看请求与响应，支持搜索和筛选。"
+        static let startHint = "请前往“抓包”页开始抓包，或打开“历史记录”查看已有结果。"
+        static let search = "搜索 URL、方法或状态码"
+        static let clearSearch = "清空搜索"
+        static let selectDetail = "选择一条请求查看详情。"
+        static let loadingDetail = "正在加载请求详情…"
+        static let generatingCurl = "正在生成 cURL…"
+        static let historyEmpty = "此抓包记录没有可显示的请求。"
+        static let historyCleared = "当前列表已清空，原始抓包记录未删除。"
+        static let historyClearExplanation = "仅清空当前列表显示，不删除原始抓包记录。"
+        static let clearedTitle = "列表已清空"
+        static let syncFailed = "加载失败"
+        static let historyLoaded = "已加载"
         static let onlyInterfaces = "仅看接口"
         static let filterExplanation = "隐藏静态资源、网页及已识别的统计和系统检查请求；未知请求仍保留。仅影响显示，不删除记录。"
         static let noFilteredResults = "没有符合条件的接口，请关闭“仅看接口”或更换搜索关键词。"
@@ -107,6 +120,11 @@ enum AppCopy {
             "本次抓包 #\(id)"
         }
 
+        static func historyNumber(_ id: Int) -> String { "历史抓包 #\(id)" }
+        static func count(shown: Int, total: Int) -> String {
+            shown == total ? "\(total) 条请求" : "\(shown) / \(total) 条请求"
+        }
+
         static func responseWithoutBody(statusCode: String) -> String {
             "已捕获 HTTP \(statusCode)，但没有可展示的响应正文。"
         }
@@ -117,6 +135,24 @@ enum AppCopy {
         }
 
         static let responsePending = "尚未捕获响应，请求可能仍在进行或连接已提前结束。"
+    }
+
+    enum FlowSource {
+        static let current = "当前抓包"
+        static let history = "历史记录"
+        static let switchCapture = "切换抓包"
+        static let returnToCurrent = "返回当前抓包"
+        static let refresh = "刷新记录"
+        static let close = "关闭"
+        static let search = "搜索应用、平台、日期或记录编号"
+        static let noHistory = "暂无历史抓包记录"
+        static let noMatches = "未找到匹配的记录，请更换搜索关键词。"
+        static let running = "抓包中"
+        static let stopped = "已结束"
+        static let failed = "已中断"
+        static let unknown = "状态未知"
+        static let unknownTime = "时间未知"
+        static func unnamed(platform: String) -> String { "\(platform) 抓包" }
     }
 
     enum Log {

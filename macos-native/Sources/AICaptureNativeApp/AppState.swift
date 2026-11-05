@@ -77,7 +77,12 @@ final class AppState: ObservableObject {
         !clearedFlowIDs.isEmpty
     }
 
-    var flowSessionID: Int? { selectedFlowSourceID ?? activeSessionID }
+    var flowSessionID: Int? {
+        if let selectedFlowSourceID { return selectedFlowSourceID }
+        guard let activeSessionID,
+              flowSources.first(where: { $0.id == activeSessionID })?.isRunning != false else { return nil }
+        return activeSessionID
+    }
     var selectedFlowSource: CaptureSource? { flowSources.first { $0.id == flowSessionID } }
 
     func refreshFlowSources() async {
@@ -86,12 +91,17 @@ final class AppState: ObservableObject {
         do {
             let sources = try await flowAPI.getCaptureSources()
             guard !Task.isCancelled, sourcesRequestID == request else { return }
+            let previousSessionID = flowSessionID
             let retained = selectedFlowSource
             flowSources = sources
             if let retained, !sources.contains(where: { $0.id == retained.id }) {
                 flowSources.append(retained)
             }
             flowSourcesIssue = nil
+            if selectedFlowSourceID == nil {
+                selectCurrentFlowSource()
+            }
+            if previousSessionID != flowSessionID { resetSelectedFlowPresentation() }
         } catch {
             guard !Task.isCancelled, sourcesRequestID == request else { return }
             flowSourcesIssue = AppCopy.IOSCapture.sourcesFailed
@@ -103,6 +113,12 @@ final class AppState: ObservableObject {
         guard id == nil || flowSources.contains(where: { $0.id == id }) else { return }
         selectedFlowSourceID = id
         resetSelectedFlowPresentation()
+    }
+
+    func selectCurrentFlowSource() {
+        let androidIsRunning = activeSessionID != nil
+            && flowSources.first(where: { $0.id == activeSessionID })?.isRunning != false
+        selectFlowSource(androidIsRunning ? nil : flowSources.filter(\.isRunning).max(by: { $0.id < $1.id })?.id)
     }
 
     init(
@@ -1087,7 +1103,7 @@ final class AppState: ObservableObject {
         flowCurlIssue = nil
         flowDetailLoadState = .idle
         flowDetailRequestID = nil
-        showNotice(.success(title: "列表已清空", message: AppCopy.Flow.cleared))
+        showNotice(.success(title: AppCopy.Flow.clearedTitle, message: isViewingLiveCapture ? AppCopy.Flow.cleared : AppCopy.Flow.historyCleared))
     }
 
     func loadFlowDetail(_ flow: FlowSummary) async {

@@ -54,12 +54,13 @@ struct CaptureSource: Decodable, Identifiable, Equatable {
     let status: String?
     let appName: String?
     let mode: String?
+    var startedAt: String? = nil
     enum CodingKeys: String, CodingKey {
         case id, platform, status, mode
         case appName = "app_name"
+        case startedAt = "started_at"
     }
     var isIOS: Bool { platform == "ios" || mode == "ios-http-proxy" }
-    var title: String { "\(isIOS ? "iPhone" : "Android") · \(appName ?? "抓包记录") #\(id)" }
 }
 
 struct FlowPage: Decodable {

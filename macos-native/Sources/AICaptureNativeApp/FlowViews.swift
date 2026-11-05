@@ -10,7 +10,7 @@ struct FlowViews: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
-            sourcePicker
+            CaptureSourcePicker()
             BreakpointToolbar(controller: appState.breakpointController)
             if appState.flowSessionID == nil {
                 emptyCapture
@@ -21,27 +21,17 @@ struct FlowViews: View {
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        .task {
+            while !Task.isCancelled {
+                await appState.refreshFlowSources()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .task(id: appState.flowSessionID) {
             await pollFlows()
         }
-        .task { await appState.refreshFlowSources() }
         .onChange(of: filteredFlows.map(\.id)) { _, ids in
             appState.reconcileFlowSelection(visibleIDs: Set(ids))
-        }
-    }
-
-    private var sourcePicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Picker(AppCopy.IOSCapture.source, selection: Binding(
-                    get: { appState.selectedFlowSourceID }, set: { appState.selectFlowSource($0) }
-                )) {
-                    Text(AppCopy.IOSCapture.currentAndroid).tag(nil as Int?)
-                    ForEach(appState.flowSources) { Text($0.title).tag(Optional($0.id)) }
-                }
-                Button(AppCopy.IOSCapture.refreshSources) { Task { await appState.refreshFlowSources() } }
-            }
-            if let issue = appState.flowSourcesIssue { Text(issue).font(.callout).foregroundStyle(.red) }
         }
     }
 
@@ -50,7 +40,7 @@ struct FlowViews: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(AppCopy.Navigation.flows)
                     .font(.largeTitle.bold())
-                Text("抓包运行后实时展示最新接口，点击行查看 Request、Response 和 cURL。")
+                Text(AppCopy.Flow.pageDescription)
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -60,7 +50,7 @@ struct FlowViews: View {
                 Label(AppCopy.Flow.clearList, systemImage: "trash")
             }
             .disabled(appState.visibleFlows.isEmpty)
-            .help(AppCopy.Flow.clearExplanation)
+            .help(appState.isViewingLiveCapture ? AppCopy.Flow.clearExplanation : AppCopy.Flow.historyClearExplanation)
         }
     }
 
@@ -68,7 +58,7 @@ struct FlowViews: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(AppCopy.Flow.notStarted)
                 .font(.headline)
-            Text("请先在“抓包”页开始抓包。")
+            Text(AppCopy.Flow.startHint)
                 .foregroundStyle(.secondary)
         }
         .padding(18)
@@ -91,9 +81,11 @@ struct FlowViews: View {
     private var flowList: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(AppCopy.Flow.captureNumber(appState.flowSessionID ?? 0))
+                Text(appState.isViewingLiveCapture
+                     ? AppCopy.Flow.captureNumber(appState.flowSessionID ?? 0)
+                     : AppCopy.Flow.historyNumber(appState.flowSessionID ?? 0))
                     .font(.title2.bold())
-                Text("\(filteredFlows.count) / \(appState.visibleFlows.count) 条")
+                Text(AppCopy.Flow.count(shown: filteredFlows.count, total: appState.visibleFlows.count))
                     .foregroundStyle(.secondary)
                 Spacer()
                 stateText(appState.flowLoadState)
@@ -127,7 +119,7 @@ struct FlowViews: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("搜索 URL、Host、Path、方法或状态码", text: $searchText)
+            TextField(AppCopy.Flow.search, text: $searchText)
                 .textFieldStyle(.plain)
             if !searchText.isEmpty {
                 Button {
@@ -137,7 +129,7 @@ struct FlowViews: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("清空搜索")
+                .help(AppCopy.Flow.clearSearch)
             }
         }
         .padding(.horizontal, 12)
@@ -153,12 +145,16 @@ struct FlowViews: View {
     @ViewBuilder
     private var listContent: some View {
         if appState.visibleFlows.isEmpty {
-            if appState.flowLoadState == .loading { ProgressView(AppCopy.Flow.syncing).padding() }
-            if case let .failed(message) = appState.flowLoadState { Text(message).foregroundStyle(.red).padding() }
-            Text(appState.selectedFlowSource?.isIOS == true ? AppCopy.IOSCapture.waiting : AppCopy.Flow.waiting)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+            if appState.flowLoadState == .loading || appState.flowLoadState == .idle {
+                ProgressView(AppCopy.Flow.syncing).padding()
+            } else if case let .failed(message) = appState.flowLoadState {
+                Text(message).foregroundStyle(.red).padding()
+            } else {
+                Text(appState.emptyFlowsMessage)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
         } else if filteredFlows.isEmpty {
             Text(onlyInterfaces ? AppCopy.Flow.noFilteredResults : AppCopy.Flow.noSearchResults)
                 .foregroundStyle(.secondary)
@@ -208,10 +204,10 @@ struct FlowViews: View {
                 }
                 detailBody(detail)
             } else {
-                if appState.flowDetailLoadState == .loading { ProgressView("正在加载接口详情…") }
-                if case let .failed(message) = appState.flowDetailLoadState {
+                if appState.flowDetailLoadState == .loading { ProgressView(AppCopy.Flow.loadingDetail) }
+                else if case let .failed(message) = appState.flowDetailLoadState {
                     Text(message).foregroundStyle(.red)
-                } else { Text("选择一个接口查看详情。")
+                } else { Text(AppCopy.Flow.selectDetail)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
@@ -230,7 +226,7 @@ struct FlowViews: View {
     private func detailBody(_ detail: FlowDetail) -> some View {
         switch appState.flowDetailLoadState {
         case .loading:
-            ProgressView("正在加载接口详情…")
+            ProgressView(AppCopy.Flow.loadingDetail)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case let .failed(message):
             Text(message)
@@ -251,7 +247,7 @@ struct FlowViews: View {
                 CodeBlock(
                     title: "cURL",
                     content: FlowBodyPresentation(
-                        text: appState.flowCurlIssue ?? (appState.selectedFlowCurl.isEmpty ? "正在生成 cURL…" : appState.selectedFlowCurl),
+                        text: appState.flowCurlIssue ?? (appState.selectedFlowCurl.isEmpty ? AppCopy.Flow.generatingCurl : appState.selectedFlowCurl),
                         isTruncated: false,
                         sizeBytes: 0,
                         fullFileURL: nil
@@ -274,12 +270,12 @@ struct FlowViews: View {
         case .loading:
             return Text(AppCopy.Flow.syncing).foregroundStyle(.orange)
         case .loaded:
-            if let status = appState.selectedFlowSource?.status, status != "running" {
-                return Text("已停止").foregroundStyle(.secondary)
+            if !appState.isViewingLiveCapture {
+                return Text(AppCopy.Flow.historyLoaded).foregroundStyle(.secondary)
             }
             return Text(AppCopy.Flow.live).foregroundStyle(.green)
         case .failed:
-            return Text("同步中断").foregroundStyle(.red)
+            return Text(AppCopy.Flow.syncFailed).foregroundStyle(.red)
         }
     }
 
@@ -298,7 +294,6 @@ struct FlowViews: View {
 
     private func pollFlows() async {
         while !Task.isCancelled, appState.flowSessionID != nil {
-            await appState.refreshFlowSources()
             await appState.refreshFlows()
             try? await Task.sleep(for: .seconds(2))
         }
