@@ -1,0 +1,63 @@
+--- a/clone.py
++++ b/clone.py
+@@ -109 +109 @@
+-        'token': identity['token'], 'on_port_conflict': 'fail', 'on_load': 'wait'}}))
++        'token': identity['token'], 'on_port_conflict': 'fail', 'on_load': 'resume'}}))
+--- a/finish.py
++++ b/finish.py
+@@ -15 +15 @@
+-    'on_load': 'wait'}}).encode()
++    'on_load': 'resume'}}).encode()
+--- a/verify.py
++++ b/verify.py
+@@ -80 +80 @@
+-            self.assertEqual(config['on_load'], 'wait')
++            self.assertEqual(config['on_load'], 'resume')
+--- /dev/null
++++ b/test_startup.py
+@@ -0,0 +1,45 @@
++import ast
++import json
++from pathlib import Path
++import unittest
++
++
++def generated_config(filename, identity):
++    tree = ast.parse(Path(__file__).with_name(filename).read_text())
++    expressions = [
++        node for node in ast.walk(tree)
++        if isinstance(node, ast.Call)
++        and isinstance(node.func, ast.Attribute)
++        and isinstance(node.func.value, ast.Name)
++        and node.func.value.id == 'json'
++        and node.func.attr == 'dumps'
++        and node.args
++        and isinstance(node.args[0], ast.Dict)
++        and any(isinstance(key, ast.Constant) and key.value == 'interaction'
++                for key in node.args[0].keys)
++    ]
++    if len(expressions) != 1:
++        raise AssertionError('Expected one Gadget configuration generator')
++    expression = ast.Expression(expressions[0])
++    encoded = eval(compile(expression, filename, 'eval'),
++                   {'json': json, 'identity': identity})
++    return json.loads(encoded)
++
++
++class StartupTests(unittest.TestCase):
++    def test_generators_allow_start_without_controller_and_preserve_auth(self):
++        for filename in ('clone.py', 'finish.py'):
++            for token in ('test-only-token', 'test-"quoted\\token'):
++                with self.subTest(filename=filename, token=token):
++                    identity = {'token': token, 'port': 27963}
++                    self.assertEqual(generated_config(filename, identity), {
++                        'interaction': {
++                            'type': 'listen', 'address': '127.0.0.1',
++                            'port': 27963, 'token': token,
++                            'on_port_conflict': 'fail', 'on_load': 'resume',
++                        },
++                    })
++
++
++if __name__ == '__main__':
++    unittest.main()

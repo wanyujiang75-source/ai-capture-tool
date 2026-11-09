@@ -1,5 +1,17 @@
 # 进度记录
 
+## 2026-11-09 ANDROID-COPY1 启动修复子范围
+
+继续已有 DOING，不领取其他任务。范围：/tmp/pokehub-copy-7Bfcmp/{clone.py,finish.py,verify.py,test_startup.py}，goal.md、progress.md、specs/android-copy-capture-trial.md 及启动修复补丁。验收：配置回归先 RED 后 GREEN、身份隔离回归、Python 编译与 diff 检查。本轮不运行安装/签名步骤，不操作手机或 VPN。整体真机抓包验收仍未完成。
+
+结果：P1 源码已改为 resume；四项配置/身份测试通过（启动四个子场景先 RED 后 GREEN），四文件 AST 通过。旧 APK 七项验收中六项通过，启动策略一项失败，明确拒绝旧包交付；并非新包验收成功。补丁与回归测试留存 specs/android-copy-startup-p1.patch。整体任务保持 DOING，下一步是解决签名凭据 P2 后再重建和真机验收；本轮未实施其他 P2，未安装、未改变网络配置。
+
+## 2026-11-06 原版副本免Root试验
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-COPY1 | DOING | 独立重签副本和进程内USB诊断验证 | goal.md、progress.md、specs/android-copy-capture-trial.md；独立临时APK/脚本/测试证据；仅com.mi.poketrade.capturetrial | 独立包安全检查、签名、安装/启动/诊断连接、真实业务Request/Response及原包/网络不变/转发回收；阻塞如实记录 | 用户新授权仅修改独立副本，不Root、不覆盖原版、不改VPN或原配置；工作树此前干净 | 提取APK、离线构建验证后安装副本 |
+
 ## 2026-11-05 AP-0 Android真机只读准入
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
