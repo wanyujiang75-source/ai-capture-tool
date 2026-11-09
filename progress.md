@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| RELEASE-1109 | DOING | 构建验证并发布新版 macOS 桌面预览包 | goal.md、progress.md、specs/desktop-release-20261109.md、release/notes-20261109.md；构建产物和新 GitHub Release | 打包回归、最终包隔离生命周期/签名/身份/敏感文件检查、公开下载 SHA256 一致 | 用户确认更新桌面 ZIP，非 PokeHub 副本；当前分支干净，基线 f69b52f | 固定发布说明提交，测试构建，不改手机或已安装应用 |
+| RELEASE-1109 | DONE | 构建验证并发布新版 macOS 桌面预览包 | goal.md、progress.md、specs/desktop-release-20261109.md、release/notes-20261109.md；构建产物和新 GitHub Release | 打包回归、最终包隔离生命周期/签名/身份/敏感文件检查、公开下载 SHA256 一致 | 固定6432488；21项打包/准入、最终包126项通过；测试运行目录污染已隔离复验，严格签名通过；GitHub上传digest与匿名下载/源文件逐字节相同，99,437,665字节；未改手机或已安装应用 | 交付公开下载地址；无main合并，无PokeHub副本发布 |
 
 ## 2026-11-09 ANDROID-COPY1 启动修复子范围
 
