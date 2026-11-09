@@ -1,5 +1,13 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-09 原版临时代理准入试验
+
+ANDROID-ORIGINAL-PROXY1：用户新授权临时调整VPN转发和安装用户测试CA，验证一加原版com.mi.poketrade 2.1.1(98)的真实HTTPS正文。禁止改包、Root、Frida注入、覆盖原节点/配置、复制登录态或关闭VPN。新建独立临时配置和回环USB代理，复用Mac现有出网；测试后恢复原配置并删除自有配置/证书/转发。验收及故障分层见specs/android-original-proxy-trial.md。不构建发布产品。
+
+## 2026-11-09 继续 ANDROID-COPY1
+
+继续独立副本免Root验证，允许修复必要构建阻塞、仅安装不同包名副本并执行只读抓包试验。原版、数据、VPN/节点/系统代理/系统证书保持不变。不发布APK，不伪造正式签名，不复制登录态，不自动登录或执行业务写操作。先离线校验、再安装启动/Gadget连接、最后真实请求响应与恢复检查；构建成功不等于抓包成功。范围与验收延续specs/android-copy-capture-trial.md。
+
 ## 2026-11-09 macOS 安装包发布
 
 RELEASE-1109：用户明确更新抓包工具 macOS 安装包到 GitHub。固定当前分支提交构建 Apple Silicon/macOS14+ 开发预览 ZIP，保留原有版本，新增 Release，不合并 main。不包含修改后的 PokeHub APK；独立副本 P1 不属于桌面功能。验收打包测试、最终包隔离运行/签名/依赖与内容检查、校验文件及 GitHub 上传和公开下载。不得覆盖本机正在使用的应用，不操作手机、VPN 或原配置。

@@ -1,5 +1,17 @@
 # 进度记录
 
+## 2026-11-09 原版临时代理试验
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-ORIGINAL-PROXY1 | BLOCKED | 原版经现有VPN临时转发与用户CA兼容性验证 | goal.md、progress.md、specs/android-original-proxy-trial.md；私有临时代理/测试/配置/证据；一加自有临时配置和CA | 原包12摘要不变；VPN开启；手机对照TLS通过；原版业务Request/Response或明确失败层；恢复配置节点并移除自有资源 | 浏览器HTTPS200/正文通过；原版33次TLS失败，日志unable to get local issuer certificate，业务响应0。原配置/US恢复、VPN仍连接、12摘要一致；本轮CA/配置/文件/转发/进程及私钥回收。恢复后训练家页另有后端57014查询超时，未宣称全正常 | 诊断与清理完成，原版完整正文仍阻塞于证书信任；不改包/Root/原配置，不盲试、不发布 |
+
+ANDROID-COPY1停止：用户明确改为只验证原版，不再继续副本路线。副本启动与Gadget连接通过，但登录失败、未取得业务正文；11:52已移除诊断钩子和自有转发，原12个APK摘要一致。保留既有私有产物，不发布、不继续安装。
+
+## 2026-11-09 ANDROID-COPY1 恢复执行
+
+继续同一 DOING：范围扩展至私有目录的 rebuild.py/test_rebuild.py、独立构建/身份/验收产物和副本进程诊断脚本；goal.md、progress.md、specs/android-copy-capture-trial.md及脱敏实验补丁。不触及桌面产品代码或发布。验收身份重试/失败不污染测试、12包签名/包名/原文件不变、无客户端启动及后附加、真实请求响应、原代理/VPN/转发基线与收尾；登录需要本人完成。
+
 ## 2026-11-09 macOS 发布
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
@@ -16,7 +28,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-COPY1 | DOING | 独立重签副本和进程内USB诊断验证 | goal.md、progress.md、specs/android-copy-capture-trial.md；独立临时APK/脚本/测试证据；仅com.mi.poketrade.capturetrial | 独立包安全检查、签名、安装/启动/诊断连接、真实业务Request/Response及原包/网络不变/转发回收；阻塞如实记录 | 用户新授权仅修改独立副本，不Root、不覆盖原版、不改VPN或原配置；工作树此前干净 | 提取APK、离线构建验证后安装副本 |
+| ANDROID-COPY1 | BLOCKED | 独立重签副本和进程内USB诊断验证 | goal.md、progress.md、specs/android-copy-capture-trial.md；独立临时APK/脚本/测试证据；仅com.mi.poketrade.capturetrial | 独立包安全检查、签名、安装/启动/诊断连接、真实业务Request/Response及原包/网络不变/转发回收；阻塞如实记录 | 副本登录失败；用户停止改包路线，不得继续；原包及网络已复核 | 仅保留历史证据，不恢复副本试验 |
 
 ## 2026-11-05 AP-0 Android真机只读准入
 
