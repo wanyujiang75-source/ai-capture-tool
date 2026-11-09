@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-09 StickerHub 正式包对照
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-STICKER1 | BLOCKED | 一加StickerHub正式包临时代理/CA验收 | goal.md、progress.md、specs/android-sticker-original-trial.md；私有诊断脚本/原包摘要/证据；本轮临时配置/证书/转发 | 正式包身份与摘要前后一致；VPN保持开启；浏览器对照及真实业务完整正文或明确失败层；原配置节点恢复、临时资源清理 | 3.18.14(195)原版12个APK摘要不变；浏览器200及正文通过，业务41次TLS失败、0条HTTP响应，应用报unable to get local issuer certificate；原VPN模式/节点恢复，本轮CA/配置/转发/服务/密钥已清理，画册恢复7/216且新进程证书错误0 | 诊断和恢复已完成；完整正文采集受应用信任限制阻塞，不在当前免Root/不改包边界内盲试其他CA；详见专项记录 |
+
 ## 2026-11-09 原版临时代理试验
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

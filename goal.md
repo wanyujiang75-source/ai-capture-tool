@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-09 StickerHub 正式包真机对照
+
+ANDROID-STICKER1：仅验证一加上的StickerHub原版正式包，先核对Play来源、应用名和版本，复用临时独立VPN转发/用户CA验证流程。不改包、不Root、不注入、不关闭VPN、不编辑原节点/配置；只读业务操作，登录由用户完成。接受临时独立配置及测试证书，结束后恢复并清理；以真实业务Request/Response和错误层为证据，不能用浏览器代替。产品代码/发布不在范围，详见specs/android-sticker-original-trial.md。
+
 ## 2026-11-09 原版临时代理准入试验
 
 ANDROID-ORIGINAL-PROXY1：用户新授权临时调整VPN转发和安装用户测试CA，验证一加原版com.mi.poketrade 2.1.1(98)的真实HTTPS正文。禁止改包、Root、Frida注入、覆盖原节点/配置、复制登录态或关闭VPN。新建独立临时配置和回环USB代理，复用Mac现有出网；测试后恢复原配置并删除自有配置/证书/转发。验收及故障分层见specs/android-original-proxy-trial.md。不构建发布产品。
