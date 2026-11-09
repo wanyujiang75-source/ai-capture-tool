@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-09 macOS 发布
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-1109 | DOING | 构建验证并发布新版 macOS 桌面预览包 | goal.md、progress.md、specs/desktop-release-20261109.md、release/notes-20261109.md；构建产物和新 GitHub Release | 打包回归、最终包隔离生命周期/签名/身份/敏感文件检查、公开下载 SHA256 一致 | 用户确认更新桌面 ZIP，非 PokeHub 副本；当前分支干净，基线 f69b52f | 固定发布说明提交，测试构建，不改手机或已安装应用 |
+
 ## 2026-11-09 ANDROID-COPY1 启动修复子范围
 
 继续已有 DOING，不领取其他任务。范围：/tmp/pokehub-copy-7Bfcmp/{clone.py,finish.py,verify.py,test_startup.py}，goal.md、progress.md、specs/android-copy-capture-trial.md 及启动修复补丁。验收：配置回归先 RED 后 GREEN、身份隔离回归、Python 编译与 diff 检查。本轮不运行安装/签名步骤，不操作手机或 VPN。整体真机抓包验收仍未完成。
