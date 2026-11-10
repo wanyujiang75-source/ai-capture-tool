@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 Android 原版免 Root 调研
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-NR-RESEARCH | BLOCKED | 核查免 Root 技术并寻找原版应用完整请求响应入口 | goal.md、progress.md、specs/android-nonroot-feasibility-20261110.md；只读 ADB、既有本地 APK 副本与测试源码 | 官方资料覆盖流量接入、CA、调试、密钥导出及 VPN 共存；逐应用核对；实现成功必须取得原版业务请求和响应；否则记录阻塞，不伪造成功 | 调研12项官方资料；PHK110 Android16/user/ro.debuggable=0，四原版均run-as拒绝；未发现可用密钥导出入口。历史PokeHub 33次TLS拒绝/0业务响应不是本轮新抓包；VPN transport仍在、proxy=null、reverse=0。文档diff检查通过；未改产品代码、手机配置或安装包 | 需要原版已有诊断/会话密钥出口，或服务端TLS终止点采集权限等新前提；没有这些条件无法实施并验收完整解密，不能标DONE |
+
 ## 2026-11-10 合并与下载包发布
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

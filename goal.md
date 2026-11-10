@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 Android 原版免 Root 技术调研
+
+ANDROID-NR-RESEARCH：调研并验证未 Root Android 真机原版应用完整 Request/Response 的可行路径。沿用用户边界：不改源码或安装包、不 Root、不修改原 VPN 节点和配置、VPN 保持开启。先完成官方资料与只读实机条件核查；只有确认存在满足边界的入口后才进入产品实现。不得将域名、CONNECT、加密 PCAP、浏览器对照或其他构建的结果作为目标应用解密通过。范围、来源、结果及实施门槛见 specs/android-nonroot-feasibility-20261110.md。该目标未因完成调研而视为实现完成；不推送或发包。
+
 ## 2026-11-10 合并与下载包发布
 
 RELEASE-1110：按用户授权将当前已验收分支快进合并main并推送，固定合并后的提交构建macOS14+/Apple Silicon完整release预览ZIP，附安装/断点/iPhone使用指南和SHA256，新建GitHub预发布并验证公开下载。保留旧Release、用户未提交文件、本机在用桌面与手机VPN；不宣称已公证。验收见specs/desktop-release-20261110.md。
