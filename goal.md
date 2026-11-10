@@ -4,6 +4,8 @@
 
 RELEASE-1110：按用户授权将当前已验收分支快进合并main并推送，固定合并后的提交构建macOS14+/Apple Silicon完整release预览ZIP，附安装/断点/iPhone使用指南和SHA256，新建GitHub预发布并验证公开下载。保留旧Release、用户未提交文件、本机在用桌面与手机VPN；不宣称已公证。验收见specs/desktop-release-20261110.md。
 
+结果：RELEASE-1110 DONE，main已合并推送，预发布desktop-preview-20261110-b628992已公开；154项最终包回归/严格签名通过，匿名下载ZIP及SHA与本地完全一致。便携安装说明已同步新节点操作，旧版本/本机应用/手机VPN保持不动。
+
 ## 2026-11-10 推送与本机更新
 
 DELIVERY-1110：用户要求推送并更新本机桌面端。推送当前codex/ios-device-trial分支，不自动合并main或发布GitHub安装包；固定产品7603b15构建完整release应用，正常退出当前/Applications/抓包工具.app及其托管后端后可恢复替换，重开并核对build ID、新节点引导和本机服务。抓包已停止（#90/127）；退出会暂停iPhone测试连接但保留身份/记录，不操作手机VPN、节点或路由。验收与文件范围见specs/desktop-delivery-20261110.md。

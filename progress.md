@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| RELEASE-1110 | DOING | 合并main并发布含节点导入的新下载包 | goal.md、progress.md、specs/desktop-release-20261110.md、release/notes-20261110.md；main、既有构建脚本/产物、新标签及Release | main远端SHA一致；最终包签名/源码/指南/隔离生命周期与节点回归通过；公开ZIP及校验文件与本地一致 | 产品7603b15、交付e6ccf6c已验收；本机在用版本不替换；两工作树无关未提交文件保持不动 | 快进合并、固定构建、最终包验收、草稿上传核验后公开下载校验 |
+| RELEASE-1110 | DONE | 合并main并发布含节点导入的新下载包 | goal.md、progress.md、specs/desktop-release-20261110.md、release/notes-20261110.md、release/安装说明.md；main、既有构建脚本/产物、新标签及Release | main远端SHA一致；最终包签名/源码/指南/隔离生命周期与节点回归通过；公开ZIP及校验文件与本地一致 | main快进并推送；b628992包内154项22.032秒、47源码摘要/严格签名/四指南通过；公开ZIP99,511,551字节及SHA文件与匿名下载逐字节一致 | 发布完成；文档修正6dec74b已合并main，本验收记录同步；本机应用/VPN及无关文件保留 |
 
 ## 2026-11-10 推送与本机更新
 
