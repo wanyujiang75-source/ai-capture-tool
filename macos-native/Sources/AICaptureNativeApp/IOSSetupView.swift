@@ -71,6 +71,10 @@ struct IOSSetupView: View {
     private var instructions: some View {
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
+                Text(AppCopy.IOSSetup.vpnTitle).font(.headline)
+                Text(AppCopy.IOSSetup.vpnPreparation)
+                Text(AppCopy.IOSSetup.vpnSwitch)
+                Text(AppCopy.IOSSetup.vpnRestore)
                 if controller.status.identityReused == true {
                     DisclosureGroup(AppCopy.IOSSetup.reinstall) {
                         VStack(alignment: .leading, spacing: 12) {
@@ -97,6 +101,11 @@ struct IOSSetupView: View {
             ShareLink(item: profile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
                 .buttonStyle(.borderedProminent)
             Text(AppCopy.IOSSetup.shareHelp).font(.callout).foregroundStyle(.secondary)
+            DisclosureGroup(AppCopy.IOSSetup.airdropHelpTitle) {
+                Text(AppCopy.IOSSetup.airdropHelp)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 

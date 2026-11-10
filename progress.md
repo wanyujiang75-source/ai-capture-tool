@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 新 iPhone 接入
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| IOS-NEWDEVICE1 | DOING | 桌面端新iPhone验收及用户追加引导补齐 | goal.md、progress.md、specs/ios-new-device-20261110.md；IOSSetupCopy.swift、IOSSetupView.swift、tests/test_ios_setup_guidance.py、docs/desktop-user-guide.md；桌面/手机UI证据；Downloads本轮证书副本 | 引导结构回归/Swift测试/构建及隔离UI检查；新机HTTPS与桌面状态一致、真实PokeHub请求响应、停止及网络恢复 | 引导补齐完成：结构回归3项RED→GREEN、Swift184项通过、隔离UI展开/滚动验收通过；用户确认新机证书完成，节点导入尝试后报服务错误，本机代理200/验证0但手机仍未验证 | 等截图定位导入/连接错误；核对原节点/路由后再临时接入。新机完整抓包未通过，不覆盖正在运行的桌面 |
+
 ## 2026-11-10 PokeTrade 原版
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

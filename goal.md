@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 新 iPhone 桌面接入验收
+
+IOS-NEWDEVICE1：用户更换iOS真机，使用现有桌面端验证iPhone_AA7（iPhone14,7，iOS26.5）PokeHub抓包。连接准备、检查状态、开始/停止录制和接口详情均走桌面UI；手机安全确认/登录/网络转发由用户完成，不沿用旧手机已验证状态。不越狱、不改包、不擅改VPN原配置；范围及验收见specs/ios-new-device-20261110.md。
+
 ## 2026-11-10 PokeTrade 原版对照
 
 ANDROID-POKETRADE1：用户指定手机桌面PokeTrade，已确认Play来源me.poketrade.app 1.42.6(195)，不是com.mi.poketrade。只读核对网络组件与信任设置，再以独立临时代理/用户CA验证真实HTTPS请求响应。不Root、不改包、不注入、不改原VPN配置节点，VPN保持开启；登录及安全确认由用户处理，结束恢复并删除本轮资源。范围及验收见specs/android-poketrade-original-trial.md。
