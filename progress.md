@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 PokeTrade 原版
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-POKETRADE1 | BLOCKED | PokeTrade正式版HTTPS代理对照 | goal.md、progress.md、specs/android-poketrade-original-trial.md；私有诊断脚本/摘要/临时配置/证书 | 身份及原APK摘要确认；本机/浏览器对照；业务完整请求响应或准确失败层；恢复VPN原配置及清理 | 本机/手机浏览器解密通过；api.pockettrade.app 6次TLS证书拒绝、0条业务HTTP响应；原配置节点恢复，VPN实例189未变，13个APK摘要一致，首页列表恢复；本轮CA/配置/代理/密钥/正文/转发清理 | 诊断及恢复完成，完整业务正文受证书信任限制；不把UnityAds错误当业务证据，详见专项记录 |
+
 ## 2026-11-10 StickerHub TLS透传
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 PokeTrade 原版对照
+
+ANDROID-POKETRADE1：用户指定手机桌面PokeTrade，已确认Play来源me.poketrade.app 1.42.6(195)，不是com.mi.poketrade。只读核对网络组件与信任设置，再以独立临时代理/用户CA验证真实HTTPS请求响应。不Root、不改包、不注入、不改原VPN配置节点，VPN保持开启；登录及安全确认由用户处理，结束恢复并删除本轮资源。范围及验收见specs/android-poketrade-original-trial.md。
+
 ## 2026-11-10 StickerHub 代理透传对照
 
 ANDROID-TUNNEL1：在原一加d5f39352验证原版StickerHub通过独立认证HTTP CONNECT代理出网。仅透传TLS、不生成或安装CA、不Root、不改包、不注入；复用Mac现有上游，VPN保持开启，独立临时配置不编辑原配置/节点，结束恢复。验收目标是确认业务TLS连接和应用页面可用性，不能把加密字节或域名记作完整接口成功。规范见specs/android-sticker-tunnel-trial.md。
