@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 推送与本机更新
+
+DELIVERY-1110：用户要求推送并更新本机桌面端。推送当前codex/ios-device-trial分支，不自动合并main或发布GitHub安装包；固定产品7603b15构建完整release应用，正常退出当前/Applications/抓包工具.app及其托管后端后可恢复替换，重开并核对build ID、新节点引导和本机服务。抓包已停止（#90/127）；退出会暂停iPhone测试连接但保留身份/记录，不操作手机VPN、节点或路由。验收与文件范围见specs/desktop-delivery-20261110.md。
+
 ## 2026-11-10 新 iPhone 桌面接入验收
 
 IOS-NEWDEVICE1：用户更换iOS真机，使用现有桌面端验证iPhone_AA7（iPhone14,7，iOS26.5）PokeHub抓包。连接准备、检查状态、开始/停止录制和接口详情均走桌面UI；手机安全确认/登录/网络转发由用户完成，不沿用旧手机已验证状态。不越狱、不改包、不擅改VPN原配置；范围及验收见specs/ios-new-device-20261110.md。

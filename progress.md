@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 推送与本机更新
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| DELIVERY-1110 | DOING | 推送当前功能分支并更新本机完整桌面应用 | goal.md、progress.md、specs/desktop-delivery-20261110.md；已有构建/测试脚本及产物、私有文件摘要脚本/备份、/Applications/抓包工具.app、origin/codex/ios-device-trial | release构建/签名与包内新模块一致；隔离后端生命周期/新模块回归；旧程序正常退出后替换，新程序build ID/节点引导及不自动抓包；身份和保留记录摘要不变；远端提交一致 | 本机5f70d0db9dc1，iPhone已停止#90/127；待推送9提交，只有无关android-copy规格未提交且不纳入；手机原路由恢复尚未确认，不修改手机 | 固定7603b15构建，隔离验收后退出替换并验证，最后推送验收记录 |
+
 ## 2026-11-10 新 iPhone 接入
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
