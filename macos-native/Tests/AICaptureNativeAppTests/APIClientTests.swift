@@ -59,6 +59,27 @@ private final class CapturingURLProtocol: URLProtocol, @unchecked Sendable {
 
 @Suite(.serialized)
 struct APIClientTests {
+    @Test func nodeImportUsesLocalDesktopHeaderAndOnlySendsExplicitDeviceIdentifier() async throws {
+        CapturingURLProtocol.reset(responseData: Data(#"{"state":"confirmation_required"}"#.utf8))
+        let result = try await makeClient().importShadowrocket(deviceID: "selected-phone")
+        #expect(result.state == .confirmationRequired)
+        let request = try #require(CapturingURLProtocol.observedRequests.first)
+        #expect(request.url?.path == "/api/ios-setup/shadowrocket/import")
+        #expect(request.httpMethod == "POST")
+        #expect(request.value(forHTTPHeaderField: "X-Capture-Desktop") == "shadowrocket")
+        #expect(try JSONDecoder().decode([String: String].self, from: #require(request.httpBody)) == ["device_id": "selected-phone"])
+    }
+
+    @Test func nodeParametersAreFetchedWithoutPuttingSecretsInRequestURL() async throws {
+        CapturingURLProtocol.reset(responseData: Data(#"{"host":"192.168.1.2","port":9000,"username":"ios","password":"fake","import_url":"shadowrocket://add/http://fake","profile_path":"/tmp/ios-setup/session-one/shadowrocket/iPhone.mobileconfig","devices":[]}"#.utf8))
+        let info = try await makeClient().readShadowrocket()
+        #expect(info.port == 9000)
+        let request = try #require(CapturingURLProtocol.observedRequests.first)
+        #expect(request.url?.path == "/api/ios-setup/shadowrocket")
+        #expect(request.url?.query == nil)
+        #expect(request.value(forHTTPHeaderField: "X-Capture-Desktop") == "shadowrocket")
+    }
+
     @Test func iphoneDeviceCaptureSendsNoProjectOrDomainSelection() async throws {
         CapturingURLProtocol.reset(responseData: Data("""
         {"phase":"capturing","connection_state":"ready","recording_state":"recording",

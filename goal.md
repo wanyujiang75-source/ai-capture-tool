@@ -4,6 +4,10 @@
 
 IOS-NEWDEVICE1：用户更换iOS真机，使用现有桌面端验证iPhone_AA7（iPhone14,7，iOS26.5）PokeHub抓包。连接准备、检查状态、开始/停止录制和接口详情均走桌面UI；手机安全确认/登录/网络转发由用户完成，不沿用旧手机已验证状态。不越狱、不改包、不擅改VPN原配置；范围及验收见specs/ios-new-device-20261110.md。
 
+用户追加：补齐必需的小火箭节点导入操作，桌面先尝试向明确选定的有线iPhone发送仅新增节点的导入请求，失败提供本机实时参数/扫码回退；不自动选择节点、切换路由或VPN，不覆盖原配置。补充换电脑/手机/网络时地址、端口、证书处理规则，按specs/ios-shadowrocket-onboarding.md实现及隔离验收，不为测试重复导入用户手机或重启现用代理。上一轮原节点已恢复，路由与联网恢复仍待本人确认，不因本次开发标为已完成。
+
+追加功能结果：源码/文案/指南及隔离原生UI验收完成，88项后端、3项真实隔离代理链路、191项Swift测试通过；未安装/发布新包，未改真实手机节点或配置。整体IOS-NEWDEVICE1保持DOING，真实业务#90及停止通过，原路由与联网恢复仍待确认。
+
 ## 2026-11-10 PokeTrade 原版对照
 
 ANDROID-POKETRADE1：用户指定手机桌面PokeTrade，已确认Play来源me.poketrade.app 1.42.6(195)，不是com.mi.poketrade。只读核对网络组件与信任设置，再以独立临时代理/用户CA验证真实HTTPS请求响应。不Root、不改包、不注入、不改原VPN配置节点，VPN保持开启；登录及安全确认由用户处理，结束恢复并删除本轮资源。范围及验收见specs/android-poketrade-original-trial.md。

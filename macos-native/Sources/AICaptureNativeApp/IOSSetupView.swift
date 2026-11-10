@@ -1,11 +1,11 @@
 import AppKit
-import CoreImage.CIFilterBuiltins
 import CoreWLAN
 import SwiftUI
 
 struct IOSSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var controller: IOSSetupController
+    @StateObject private var nodeController = IOSShadowrocketController()
     @State private var ssid = ""
     @State private var confirmsRemoval = false
 
@@ -85,26 +85,34 @@ struct IOSSetupView: View {
                 } else {
                     installationInstructions
                 }
+                IOSShadowrocketView(controller: nodeController, isRecording: controller.status.isRecording)
+                    .id(controller.status.profilePath)
                 Text(AppCopy.IOSSetup.verify).font(.headline)
                 Text(AppCopy.IOSSetup.verifyHelp)
             }.font(.callout)
-            if let value = controller.status.checkURL, let image = qrImage(value) {
-                Image(nsImage: image).interpolation(.none).resizable().frame(width: 140, height: 140)
-                    .padding(8).background(.white)
-                    .accessibilityLabel(AppCopy.IOSSetup.verify)
+            if let value = controller.status.checkURL {
+                IOSConnectionQRCode(value: value, label: AppCopy.IOSSetup.verify)
             }
         }
     }
 
-    private func shareInstructions(_ profile: URL) -> some View {
+    private func shareInstructions(_ originalProfile: URL) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            ShareLink(item: profile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
-                .buttonStyle(.borderedProminent)
+            if let profile = nodeController.info?.profileURL {
+                ShareLink(item: profile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Text(nodeController.issue ?? AppCopy.IOSSetup.nodeLoading).foregroundStyle(.secondary)
+            }
             Text(AppCopy.IOSSetup.shareHelp).font(.callout).foregroundStyle(.secondary)
             DisclosureGroup(AppCopy.IOSSetup.airdropHelpTitle) {
                 Text(AppCopy.IOSSetup.airdropHelp)
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            DisclosureGroup(AppCopy.IOSSetup.wifiAlternative) {
+                Text(AppCopy.IOSSetup.wifiAlternativeHelp).font(.callout).foregroundStyle(.secondary)
+                ShareLink(item: originalProfile) { Label(AppCopy.IOSSetup.share, systemImage: "square.and.arrow.up") }
             }
         }
     }
@@ -118,11 +126,4 @@ struct IOSSetupView: View {
         }
     }
 
-    private func qrImage(_ text: String) -> NSImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        guard let output = filter.outputImage,
-              let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
-        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-    }
 }

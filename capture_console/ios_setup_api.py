@@ -1,6 +1,7 @@
 """Local desktop control plane; profile files never served on the LAN."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from .ios_keychain import IOSPairingError
 
@@ -27,6 +28,20 @@ class IOSRecordingPayload(BaseModel):
     project_id: str | None = None
 
 
+class IOSNodeImportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    device_id: str = Field(min_length=1, max_length=80)
+
+
+def require_node_desktop(request):
+    local = {"127.0.0.1", "::1", "localhost"}
+    origin = request.headers.get("origin")
+    if (not request.client or request.client.host not in local or request.url.hostname not in local
+            or request.headers.get("x-capture-desktop") != "shadowrocket"
+            or (origin and origin != f"{request.url.scheme}://{request.url.netloc}")):
+        raise HTTPException(403, detail="此操作仅供本机桌面端使用。")
+
+
 def ios_operation(operation, *args, **kwargs):
     try:
         return operation(*args, **kwargs)
@@ -46,6 +61,18 @@ def ios_setup_router(service):
     @router.get("")
     def status():
         return service.status()
+
+    @router.get("/shadowrocket")
+    def node_connection(request: Request):
+        require_node_desktop(request)
+        from .ios_shadowrocket import IOSShadowrocket
+        return JSONResponse(ios_operation(IOSShadowrocket(service).connection), headers={"Cache-Control": "no-store"})
+
+    @router.post("/shadowrocket/import")
+    def import_node(request: Request, payload: IOSNodeImportPayload):
+        require_node_desktop(request)
+        from .ios_shadowrocket import IOSShadowrocket
+        return JSONResponse(ios_operation(IOSShadowrocket(service).send, payload.device_id), headers={"Cache-Control": "no-store"})
 
     @router.get("/projects")
     def projects():

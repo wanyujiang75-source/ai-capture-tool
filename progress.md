@@ -6,6 +6,10 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | IOS-NEWDEVICE1 | DOING | 桌面端新iPhone验收及用户追加引导补齐 | goal.md、progress.md、specs/ios-new-device-20261110.md；IOSSetupCopy.swift、IOSSetupView.swift、tests/test_ios_setup_guidance.py、docs/desktop-user-guide.md；桌面/手机UI证据；Downloads本轮证书副本；私有节点导入脚本/测试 | 引导结构回归/Swift测试/构建及隔离UI检查；新机HTTPS与桌面状态一致、真实PokeHub请求响应、停止及网络恢复 | 引导3回归/Swift184项/隔离UI通过；新机HTTPS实际通过/client_ip .236；登录后桌面#90验证业务POST200、请求20字节/响应2143字节JSON完整未截断，原生停止后保留127条总请求；USB已见原美国节点选中 | 等本人恢复全局路由“配置”，核对VPN开启及联网，完整恢复前不标DONE；原配置文件未改，安装包未覆盖 |
 
+同一DOING追加节点导入：范围增加specs/ios-shadowrocket-onboarding.md、capture_console/{ios_shadowrocket,ios_setup_api}.py、tests/test_ios_shadowrocket.py、macos-native/Sources/AICaptureNativeApp/IOSShadowrocket*.swift及APIClient.swift、对应Swift测试、tests/ios_native_ui_fixture.py。先RED/GREEN，再后端/Swift回归及隔离原生UI验收；不向手机重复导入、不重启现用代理、不改VPN原配置。前一轮路由恢复仍独立待核对。
+
+追加功能源码已验收：后端88项/隔离实链路3项、Swift191项/25 suites通过；原生合成UI验证多设备选择、待确认、读取失败清除、导入失败自动手动回退、密码隐藏/二维码/迁移说明，长提示截断已修复。源码发现新机有线连接，但未再次向手机导入；17001及合成预览已退出，7001仍stopped/#90/127。使用指南已同步，不推送、不覆盖安装包。范围包含APIClientTests.swift；详见新增规格。IOS-NEWDEVICE1仍DOING，仅前一轮原路由及联网恢复待本人确认。
+
 ## 2026-11-10 PokeTrade 原版
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

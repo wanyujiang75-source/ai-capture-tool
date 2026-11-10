@@ -57,7 +57,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSCaptureAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSCaptureAPI, IOSShadowrocketAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -90,6 +90,23 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
 
     func readIOSSetup() async throws -> IOSSetupStatus {
         try await get("api/ios-setup", timeoutInterval: 5)
+    }
+
+    func readShadowrocket() async throws -> IOSShadowrocketInfo {
+        var request = URLRequest(url: url(path: "api/ios-setup/shadowrocket", queryItems: []))
+        request.timeoutInterval = 25
+        request.setValue("shadowrocket", forHTTPHeaderField: "X-Capture-Desktop")
+        return try await send(request)
+    }
+
+    func importShadowrocket(deviceID: String) async throws -> IOSNodeDelivery {
+        var request = URLRequest(url: url(path: "api/ios-setup/shadowrocket/import", queryItems: []))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 35
+        request.setValue("shadowrocket", forHTTPHeaderField: "X-Capture-Desktop")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["device_id": deviceID])
+        return try await send(request)
     }
 
     func prepareIOSSetup(ssid: String) async throws -> IOSSetupStatus {

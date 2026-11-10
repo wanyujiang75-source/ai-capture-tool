@@ -28,6 +28,12 @@ class IOSSetupGuidanceTests(unittest.TestCase):
         self.assertIn("不会自动替手机恢复", copy)
         self.assertIn("新 iPhone", copy)
 
+    def test_node_import_is_required_before_verification_and_share_uses_certificate_copy(self):
+        view = (ROOT / "macos-native/Sources/AICaptureNativeApp/IOSSetupView.swift").read_text()
+        self.assertIn("IOSShadowrocketView", view)
+        self.assertIn("nodeController.info?.profileURL", view)
+        self.assertLess(view.index("IOSShadowrocketView"), view.index("Text(AppCopy.IOSSetup.verify)"))
+
 
 if __name__ == "__main__":
     unittest.main()

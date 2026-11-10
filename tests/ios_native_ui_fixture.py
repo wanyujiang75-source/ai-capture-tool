@@ -28,7 +28,7 @@ class Fixture:
         self.project = {"id": "visual-only", "name": "[合成验收] 示例项目", "domains": ["example.test"]}
 
     def status(self):
-        if self.mode in {"paused", "reused", "changed"}:
+        if self.mode in {"paused", "reused", "changed"} or self.mode.startswith("node-"):
             paused = self.mode == "paused"
             return {"phase": "failed" if paused else "waiting_phone", "connection_state": "needs_cleanup" if paused else "waiting_phone",
                     "recording_state": "stopped", "flow_count": 0, "flows": [], "can_resume": paused,
@@ -44,7 +44,8 @@ class Fixture:
     def reply(self, method, path, body):
         if path == "/__scenario" and method == "PUT":
             if body.get("mode") not in {"normal", "empty", "loading", "failed", "paused", "reused", "changed",
-                                       "filter", "filter-update", "filter-empty"}:
+                                       "filter", "filter-update", "filter-empty", "node-normal", "node-empty",
+                                       "node-failed", "node-loading", "node-manual"}:
                 return 400, {}
             self.mode = body["mode"]
             if self.mode.startswith("filter"):
@@ -75,6 +76,19 @@ class Fixture:
             return 503, {"detail": {"user_message": "synthetic private error HTTP 409"}}
         if path == "/api/ios-setup":
             return 200, self.status()
+        if path == "/api/ios-setup/shadowrocket":
+            if self.mode == "node-loading":
+                time.sleep(5)
+            if self.mode == "node-failed":
+                return 503, {"detail": "synthetic private token must not display"}
+            return 200, {"host": "192.0.2.10", "port": 12345, "username": "ios", "password": "SYNTHETIC-NOT-A-CREDENTIAL",
+                         "profile_path": str(self.runtime / "ios-setup/session-visual/shadowrocket/iPhone.mobileconfig"),
+                         "import_url": "shadowrocket://add/http://aW9zOmZha2VAMTkyLjAuMi4xMDoxMjM0NQ?remarks=Capture-Mac",
+                         "devices": [] if self.mode == "node-empty" else [
+                             {"id": "synthetic-1", "name": "[合成] First iPhone"},
+                             {"id": "synthetic-2", "name": "[合成] Second iPhone"}]}
+        if path == "/api/ios-setup/shadowrocket/import" and method == "POST":
+            return 200, {"state": "manual_required" if self.mode == "node-manual" else "confirmation_required"}
         if path == "/api/ios-setup/prepare" and method == "POST":
             self.mode = "reused"
             return 200, self.status()
