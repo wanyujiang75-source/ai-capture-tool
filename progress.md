@@ -5,7 +5,7 @@
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | ANDROID-NR0 | DONE | 实现纯准入契约及AP-0只读边界测试 | goal.md、progress.md、specs/android-nr0-admission-contract.md、capture_console/android_capture_admission.py、tests/test_android_capture_admission.py、tests/test_android_physical_capabilities.py | 新身份无需历史即可有条件验证；正式采集需要有效业务证据；身份/路线/连接/10分钟/重启失效；恢复失败不准入；AP-0定向只读、错误脱敏、时长/输出有界；聚焦测试与差异检查通过 | TDD先24项预期失败；追加RED复现清理中身份变化、时钟丢恢复态、重复停止、畸形输入及VPN未知准入，均修复；最终29准入+16 AP-0+16日志共61项8.287秒通过，py_compile/diff检查通过。模拟输入/自有进程夹具，无ADB实机、API/GUI或网络配置变更 | 本地独立模块交付；NR-1寻找新的真实正文出口，原版解密任务仍BLOCKED，不推送或发包 |
-| ANDROID-NR1 | BLOCKED | 基于既有证据验证新增原版正文出口假设 | goal.md、progress.md、specs/android-nr1-route-investigation.md；官方资料与获准只读设备检查、本地原包副本/测试源码、指定两应用的正常启动/只读页面 | 每个候选记录新证据、权限、具体接入、预期原版证明、停止/恢复方法；本轮启动MelodyCraft/Wishly并核对运行时正文/诊断出口、前后网络状态；不Root/改包/改VPN，不重复旧CA试验，无候选继续BLOCKED | 已正常打开MelodyCraft及Wishly并访问内容/设置，最新列表/肯定语可见；两款本次PID日志诊断/正文/keylog标记0、对应WebView套接字未见，没有实际出口。记录窗口截断/缓存等局限；工具新增mobilecli-server单条USB forward经精确增量核对后删除，原2条映射及proxy/VPN/reverse摘要均恢复一致，无Root/证书/包或VPN改动 | 动态覆盖缺口已补齐，但正文解密仍无可执行候选；等待原版诊断/密钥出口、服务端授权或符合约束的新机制，不进入NR-2，不把页面加载等同抓包成功 |
+| ANDROID-NR1 | BLOCKED | 基于既有证据验证新增原版正文出口假设 | goal.md、progress.md、specs/android-nr1-route-investigation.md；官方资料与获准只读设备检查、本地原包副本/测试源码及日志依赖 | 新候选需新证据、权限、具体接入与正文证明；本轮核查PokeHub既有日志/诊断文件、系统观测和被动解密；禁止改包/提权/改VPN、复制私有数据或全量bugreport；无候选继续BLOCKED | 日志依赖Release过滤及默认输出已核实，但不是线上构建映射；无公开完整导出；系统调试/备份或被动解密前提缺失。完整业务正文未取得，不进入NR-2。VPN仍连接，proxy及USB映射一致；宽泛VPN摘要含动态字段，最终哈希不同，未执行任何网络写入 | 仅在发布方确认原版已有合法诊断/会话密钥出口或提供获准TLS终止端正文来源后，恢复具体候选验证；不重复换CA或启动应用 |
 
 ## 2026-11-10 Android 免 Root 计划书 V2
 

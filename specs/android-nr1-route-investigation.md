@@ -144,3 +144,71 @@ NR-1技术状态：BLOCKED。本轮已核查5个出口假设，未形成同时�
 补齐了这两款应用在本轮指定页面的运行时观察，不再标为“未启动”；但没有形成可用的原版业务正文出口，NR-1仍为BLOCKED，不进入NR-2，不生成已验证候选。
 
 本次是运行时入口核查，不是对这两款执行了新的代理/证书解密试验。结论是“已观察的原版页面及进程未发现满足约束的现成出口”，不是“新CA试验再次失败”或“已证明所有免Root方式不可能”。下一步仍需原版确实提供诊断/密钥出口、授权服务端正文来源或其他符合约束的新机制；再次重复启动或换证书不能自动解除这一阻塞。
+
+## 再追加：PokeHub 其他免 Root 路径补查
+
+### 范围和新增检查
+
+用户再次明确目标是原版PokeHub完整Request/Response，不改源码/APK、VPN开启且原节点/配置不改。恢复同一NR-1任务，仅核查此前未展开的日志依赖、现成导出机制、系统调试/备份/报告及被动解密前提；没有重复CA、VM服务或两应用启动试验，没有进入手机私有目录。
+
+起始可读基线为proxy=null、VPN transport存在，reverse为0、forward为2，摘要与上次恢复后的基线一致。只读核对当前PokeHub为2.1.1(98)、targetSdk36、不含DEBUGGABLE。本次主进程有界logcat读取为0字节，未启动/重启应用或触发新业务操作；这不是“原版永远不打印日志”的证明。
+
+最终复核：proxy_unchanged=true、vpn_present=true、reverse_unchanged=true、forward_unchanged=true；VPN代理条目仍为CONNECTED。但vpn_summary_unchanged=false，不能记录成全部摘要一致。原筛选Transports:.*VPN也会命中NOT_VPN的Wi-Fi条目及网络请求，包含带宽、RSSI、链路速率等动态字段；本次只确认该摘要不足以作为静态配置等价证据，未保留起始原文，不能确定具体哪个字段导致变化。没有执行任何网络写入或读取VPN私有节点/订阅，不把哈希不同解释成已发生节点修改，也不声称已证明私有配置逐项一致。只在内存中检查连接状态，未将完整connectivity数据写入仓库。
+
+### H6：既有业务日志和文件导出
+
+本地package_config.json将测试工程bd_logger指向已缓存的bd_logger-51d269bf8859a232c57111f931bbf04a4582f493，按该精确版本只读检查：
+
+- lib/src/bd_logger.dart:8–21：Release默认保留config/info/network/warning/error/encrypt，排除verbose/debug；并非关闭所有日志。
+- lib/src/bd_logger_manager.dart:35–40：不在允许类型中的消息直接返回；默认输出列表只有BDConsoleLogger。
+- 现有业务结果和查询参数虽有若干BDLogger.verbose调用，但在上述默认Release配置下不进入输出。这不等于线上包已证明使用相同依赖和配置。
+- lib/src/bd_file_logger.dart:67–74：备用文件日志写到getApplicationDocumentsDirectory()/log/...；它是需要显式注册的输出器，不是默认开启的公开网络录制服务。
+- 在测试工程lib中精确检索enableLogger、setupLoggerTypes、setCustomerLogger、addLogger、BDFileLogger等，未发现调用；BDLogger.network/debugNetwork也没有使用点。没有因库里存在文件日志类就去读取手机全部存储。
+- android/app/src/main/res/xml/filepaths.xml仅声明cache-path image，FileProvider exported=false且要求URI授权；没有发现它被用作网络日志导出入口，不尝试伪造URI或绕过授权读取缓存。
+- Constant.debugMode在这个测试分支为静态const；Flutter kReleaseMode也为构建期常量，不能当作手机“开发者选项”里的运行时日志开关。本轮没有修改常量或远程配置。
+
+局限：这是用户给定测试源码及其依赖的事实，不能作为线上2.1.1包的精确源码映射。当前既没有原版公开可用的完整日志导出，也没有覆盖每个业务请求的headers/body与响应流记录；即使解锁部分verbose日志，部分业务对象打印也不足以保证完整Request/Response。该候选仍未成立。
+
+若发布方能够确认当前已安装原版本来有用户可启用的完整诊断导出，且不需要更换包，才有新的最小验证入口；需核对导出字段、请求响应配对、权限和脱敏，不是要求用户交出账号或后台密钥。
+
+### H7：系统允许的调试、备份和观测
+
+| 路径 | 这轮核实的前提/限制 | 本轮处置 |
+| --- | --- | --- |
+| wrap.sh / 启动包装器 | Android官方要求可调试APK，且脚本必须随原包打包；不是给任意Release附加脚本的开关 | 不写wrap脚本、不改环境属性、不重启原版 |
+| JVMTI / attach-agent | AOSP ART TI要求运行中的应用标记debuggable；不能只凭shell USB权限就获得任意进程内正文 | 不注入、不安装agent，不启动手动ART运行时替代原包 |
+| 选择调试应用 / am set-debug-app | Android16 AOSP中选择动作会force-stop目标；ProcessList生成JDWP/ptrace/Java-debuggable标志仍有包调试属性条件，不能把选择成功等同于原版可注入 | 仅核对源码，不修改系统调试目标或让原版等待调试器；未对一加vendor实现作等价证明 |
+| adb backup / 恢复后读取日志 | Android12+对targetSdk31+的非debuggable应用排除应用数据；现有原版target36；备份即使可读，也未必有HTTP正文和完整事务 | 不备份、不恢复、不提取登录态或数据库 |
+| bugreport | 汇总已有设备日志、堆栈及诊断，不会令未记录的TLS业务正文自动出现；还可能收集无关个人数据 | 未生成或复制全量报告，不切换系统日志开关 |
+| 企业Network Logging | 官方字段为DNS查询和TCP连接等元数据，并需设备/资料管理前提；不是完整HTTP请求响应 | 不安装DPC/MDM、不改变设备管理状态 |
+
+没有把AOSP参考实现说成一加厂商代码逐字相同，也没有依据搜索片段尝试改变权限。若出现新的原版已支持诊断机制，可恢复具体假设；当前没有足够条件启动上述主动操作。
+
+### H8：被动TLS解密 / 拿到服务器证书即可解密
+
+Wireshark官方说明被动TLS解密需要匹配的会话secret、PSK或极受限条件下的服务器RSA私钥。RSA私钥路线不适用于TLS1.3或(EC)DHE协商，CA证书/CA私钥也不等同于服务器会话secret。换一本根证书、拿公开服务器证书或取得VPN外层解密能力，都不满足这个条件。
+
+本轮没有取得目标PokeHub会话secret/PSK，没有向用户索取服务器或CA私钥，也没有改变TLS协议/密码套件、抓取全手机密文或进行降级试验。没有测量当前手机全部业务连接的实际协商参数，因此不声称已证明它们均为TLS1.3；仅记录被动解密的条件缺失。
+
+### 本轮新增来源
+
+- Android wrap脚本：https://developer.android.com/ndk/guides/wrap-script
+- AOSP ART TI：https://source.android.com/docs/core/runtime/art-ti
+- Android16 ProcessList：https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android16-release/services/core/java/com/android/server/am/ProcessList.java （debuggableFlag及wrap.sh条件）
+- Android16 ActivityManagerService：https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android16-release/services/core/java/com/android/server/am/ActivityManagerService.java （setDebugApp及force-stop）
+- Android12 ADB备份限制：https://developer.android.com/about/versions/12/behavior-changes-12 （ADB backup restriction）
+- Android bugreport：https://developer.android.com/studio/debug/bug-report
+- Android企业网络日志：https://developer.android.com/work/dpc/logging
+- Flutter kReleaseMode：https://api.flutter.dev/flutter/foundation/kReleaseMode-constant.html
+- Wireshark TLS解密：https://wiki.wireshark.org/TLS
+- 本地bd_logger依赖：上述package_config指向的lib/src/bd_logger.dart、bd_logger_manager.dart、bd_file_logger.dart、bd_console_logger.dart；仅作测试工程依赖证据，不公开其源码、日志或生产报文。
+
+检索改进：第一次业务日志关键词过宽，命中大量普通日志调用；随后缩小为日志配置/注册、network类型及精确依赖实现。只把定向检查支持的事实纳入结论，未将普通业务打印或其他语言词汇当成完整网络出口。
+
+### 最终判定
+
+NR-1仍BLOCKED，没有新的合格候选，不进入NR-2。新增实质发现是日志依赖的Release过滤/默认输出方式及系统路径具体前提，而非再次泛泛检查证书。源码/缓存依赖与线上包未建立精确构建映射，不把这些发现升级为线上实现的绝对证明。
+
+当前限制全部保持时，下一步必须有新的、合法可访问的明文来源，例如发布方确认原版已有诊断导出，或授权TLS终止端采集正文。没有这些新增事实，继续重复代理工具、日志级别开关或启动应用不会构成新的验证路线；不以持续试错承诺一定突破。
+
+文档验收：git diff --check通过，变更仅限goal.md、progress.md和本报告；未改产品实现，因此不构建或运行产品测试。与本轮无关的用户文档保持原样，不纳入提交。不把文档验收通过写成原版解密成功。
