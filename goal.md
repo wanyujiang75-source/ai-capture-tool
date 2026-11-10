@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 Android 免 Root 实施计划书
+
+ANDROID-NR-PLAN：仅编写及自审分阶段计划，覆盖现有原版应用、VPN 共存、技术准入、真实业务请求响应验收与停止恢复。复用既有 AP-0 模块，不将能力诊断或加密流量采集降格为完整解密目标。计划见 specs/android-nonroot-plan-20261110.md；交付后停止，不操作手机、不实现产品、不构建或推送。ANDROID-NR-RESEARCH 的技术阻塞保持原状。
+
 ## 2026-11-10 Android 原版免 Root 技术调研
 
 ANDROID-NR-RESEARCH：调研并验证未 Root Android 真机原版应用完整 Request/Response 的可行路径。沿用用户边界：不改源码或安装包、不 Root、不修改原 VPN 节点和配置、VPN 保持开启。先完成官方资料与只读实机条件核查；只有确认存在满足边界的入口后才进入产品实现。不得将域名、CONNECT、加密 PCAP、浏览器对照或其他构建的结果作为目标应用解密通过。范围、来源、结果及实施门槛见 specs/android-nonroot-feasibility-20261110.md。该目标未因完成调研而视为实现完成；不推送或发包。

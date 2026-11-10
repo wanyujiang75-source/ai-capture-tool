@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 Android 免 Root 计划书
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-NR-PLAN | DONE | 编写原版 Android 真机免 Root 抓包分阶段计划 | goal.md、progress.md、specs/android-nonroot-plan-20261110.md | 边界、阶段依赖、文件范围、通过/停止条件、验收矩阵和风险完整；保留现有技术阻塞；不实施或操作手机 | NR-0至NR-4依赖与硬性验收、只读模块复用、VPN/证书边界、正文真实性、条件排期及停止条件已自审；diff检查通过；未执行构建、实机变更或产品实现 | 计划已交付；技术调研任务仍BLOCKED，只有后续实施请求才启动对应阶段 |
+
 ## 2026-11-10 Android 原版免 Root 调研
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
