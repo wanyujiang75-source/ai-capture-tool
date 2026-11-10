@@ -95,6 +95,24 @@ class CapabilitiesTests(unittest.TestCase):
         self.assertEqual(result["status"], "unknown")
         self.assertEqual(len(calls), 1)
 
+    def test_duplicate_target_never_selects_an_arbitrary_transport(self):
+        result, calls = self.inspect(devices="phone device transport_id:1\nphone device transport_id:2")
+        self.assertEqual(result["status"], "ambiguous_device")
+        self.assertEqual([key for key, _ in calls], ["devices"])
+
+    def test_diagnostic_cannot_upgrade_an_online_device_to_capture_ready(self):
+        result, _ = self.inspect()
+        self.assertEqual({key: result[key] for key in ("capture_ready", "transport_state", "tls_state", "app_http_state", "breakpoint_state")}, {
+            "capture_ready": False, "transport_state": "adb_authorized_only",
+            "tls_state": "unknown", "app_http_state": "unknown", "breakpoint_state": "unknown",
+        })
+
+    def test_rejected_identifiers_do_not_execute_any_command(self):
+        calls = []
+        with self.assertRaises(ValueError):
+            cap.inspect_device("adb", "phone", "com.app && install", execute=lambda *args: calls.append(args))
+        self.assertEqual(calls, [])
+
     def test_process_output_and_exit_are_bounded(self):
         self.assertEqual(cap.run_readonly("fixture", [sys.executable, "-c", "print('ok')"]), "ok")
         with self.assertRaises(ValueError):

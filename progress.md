@@ -1,5 +1,12 @@
 # 进度记录
 
+## 2026-11-10 NR-0 实施
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-NR0 | DONE | 实现纯准入契约及AP-0只读边界测试 | goal.md、progress.md、specs/android-nr0-admission-contract.md、capture_console/android_capture_admission.py、tests/test_android_capture_admission.py、tests/test_android_physical_capabilities.py | 新身份无需历史即可有条件验证；正式采集需要有效业务证据；身份/路线/连接/10分钟/重启失效；恢复失败不准入；AP-0定向只读、错误脱敏、时长/输出有界；聚焦测试与差异检查通过 | TDD先24项预期失败；追加RED复现清理中身份变化、时钟丢恢复态、重复停止、畸形输入及VPN未知准入，均修复；最终29准入+16 AP-0+16日志共61项8.287秒通过，py_compile/diff检查通过。模拟输入/自有进程夹具，无ADB实机、API/GUI或网络配置变更 | 本地独立模块交付；NR-1寻找新的真实正文出口，原版解密任务仍BLOCKED，不推送或发包 |
+| ANDROID-NR1 | TODO | 基于既有证据验证新增原版正文出口假设 | goal.md、progress.md、specs/android-nr1-route-investigation.md；官方资料与获准只读设备检查 | 每个候选记录新证据、权限、具体接入、预期原版证明、停止/恢复方法；不重复旧CA试验；1工作日时间盒，无候选记录BLOCKED，不进入NR-2或改变VPN/原包 | NR-0契约已具备；现有四原版尚无符合全部边界的解密入口 | 后续轮次领取并做只读技术核查，不因该TODO授予临时变更权限 |
+
 ## 2026-11-10 Android 免 Root 计划书 V2
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
