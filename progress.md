@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 StickerHub TLS透传
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-TUNNEL1 | DONE | 原版StickerHub独立代理透传对照 | goal.md、progress.md、specs/android-sticker-tunnel-trial.md；私有有界代理脚本/测试/临时配置 | 本机认证与TLS对照通过；业务目标连接和应用状态核对；VPN保持开启；恢复原模式节点并清理自有资源；不宣称取得HTTPS正文 | 原型4测试通过；认证对照200/TLS验证0、未认证407；业务12条隧道，上传56479/下载139051加密字节，画册正常、无证书错误；原VPN配置/节点恢复、实例189未变；临时配置/转发/服务/凭据清理，12个APK摘要一致 | 仅透传对照验收完成，ANDROID-STICKER1完整正文目标仍BLOCKED；不把连接数当接口数 |
+
 ## 2026-11-09 StickerHub 正式包对照
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

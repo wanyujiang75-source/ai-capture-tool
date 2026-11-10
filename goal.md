@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-10 StickerHub 代理透传对照
+
+ANDROID-TUNNEL1：在原一加d5f39352验证原版StickerHub通过独立认证HTTP CONNECT代理出网。仅透传TLS、不生成或安装CA、不Root、不改包、不注入；复用Mac现有上游，VPN保持开启，独立临时配置不编辑原配置/节点，结束恢复。验收目标是确认业务TLS连接和应用页面可用性，不能把加密字节或域名记作完整接口成功。规范见specs/android-sticker-tunnel-trial.md。
+
 ## 2026-11-09 StickerHub 正式包真机对照
 
 ANDROID-STICKER1：仅验证一加上的StickerHub原版正式包，先核对Play来源、应用名和版本，复用临时独立VPN转发/用户CA验证流程。不改包、不Root、不注入、不关闭VPN、不编辑原节点/配置；只读业务操作，登录由用户完成。接受临时独立配置及测试证书，结束后恢复并清理；以真实业务Request/Response和错误层为证据，不能用浏览器代替。产品代码/发布不在范围，详见specs/android-sticker-original-trial.md。
