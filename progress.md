@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 Android 免 Root 计划书 V2
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-NR-PLAN-V2 | DONE | 按五项评审问题生成替代版计划书 | goal.md、progress.md、specs/android-nonroot-plan-20261110.md、specs/android-nonroot-plan-20261110-v2.md | 首次验证无循环；采集/编辑能力独立；异常恢复有故障用例；身份及缓存契约明确；本地整包验证不依赖发布；无产品或设备改动 | V2五项闭环逐条自审；首次验证与正式采集分离、五项能力独立、六类故障矩阵、签名/split摘要/10分钟证据有效期、本地构建与发布分离；V1标注替代；构建路径已核对，文档差异检查通过 | V2已交付，仅计划修订；技术阻塞保留，不启动实施或发布 |
+
 ## 2026-11-10 Android 免 Root 计划书
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
