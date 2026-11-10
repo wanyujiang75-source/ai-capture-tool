@@ -40,3 +40,21 @@ Finder已进入该副本的隔空投送发送页。仅发现iPhone14_Test及iPho
 - 独立17001合成fixture、私有运行目录和独立bundle ID的预览窗口完成AX与截图验收：复用连接的提示直接可见、两层折叠可展开、长文案可滚动，标题/步骤无重叠。此为合成UI验收，不是手机接通证据。
 - 初次裸可执行文件无法可靠区分应用窗口，改用独立app bundle后验收；临时预览启动有sandbox extension日志但窗口正常，未用其访问真实设备/7001服务。最后停止自有预览PID13103及fixture12642，未停止真实桌面代理，也未覆盖/重启当前/Applications安装包。
 - 使用指南同步更新；引导修改本地提交，不推送、不发布安装包。IOS-NEWDEVICE1仍DOING，完整PokeHub真机请求响应、停止与恢复未验收。
+
+## 节点导入格式修正
+
+用户截图明确为小火箭“服务器URL遇到问题”，不是抓包工具的服务错误。原节点“日用 专线 美国[0.2]”、全局路由“配置”、VPN开启均可见，作为恢复基线。没有按弹窗建议关闭VPN。
+
+检查私有导入脚本发现原候选仅对user:password编码，外层仍拼接@host:port，且使用remark参数；与所查HTTP订阅分享格式（完整user:password@host:port进行URL-safe Base64编码，remarks参数）不一致。参考可检查的subconverter解析实现https://github.com/tindy2013/subconverter/blob/master/src/parser/subparser.cpp 的explodeHTTPSub；这不是Shadowrocket官方实现，仍需实机确认，不将来源兼容性当作客户端通过。
+
+私有test_open_node.py以虚拟凭据拦截launch验证完整authority解码及remarks参数，并确认不包含select/connect命令：先FAIL（实际仅解码到user:password），修正后1项PASS。原脚本只在内存读取本机认证，未打印或把真实URI写入文件。修正后只发一次新导入请求；用户回复“出现节点导入确认”，证明本机客户端已识别此格式，尚不能证明节点连接成功。
+
+已请本人确认新增后核对HTTP/192.168.76.70:53952，临时选用Capture-Mac及代理模式，保留原节点/配置文件与VPN开启，再打开手机检查入口。明确告知流量将经Mac解密、不要操作无关敏感应用，结束恢复截图记录的原选择。等待手机HTTPS结果，不将launch exit0计作抓包成功。失败导入可能留下的URL分组尚未核对身份，不擅自删除截图中的分组或原订阅。
+
+## 用户报告检查页失败后的自动检查
+
+用户要求自动检查。真实代理PID7987仍监听192.168.76.70:53952，Mac防火墙为关闭（只读检查，未修改）。当前证书有效，截止2027-11-03T10:29:41Z；本机当前认证HTTPS对照已通过200/TLS验证0，无需反复重装CA。
+
+通过USB devicectl向指定新机Safari重新打开当前桌面生成的check_url，launch exit0；随后后端仍waiting_phone、recording idle、client_ip未建立。此结果只能表明监控尚未收到符合条件的已认证手机连接，不能区分TCP未达、407认证失败、手机转发未生效，也不能直接归因证书。worker.log为空（运行时未开普通终端日志）。
+
+尝试仅过滤本代理端口的TCP头捕获，系统返回BPF Permission denied，未提权、未捕获其他流量；手机专用截图工具再次返回agent未安装，未擅自安装控制组件。本轮无网络/权限设置变更，未启用录制。已请用户仅提供Capture-Mac详情的类型/地址/端口/用户名截图，密码隐藏，以核对导入后的实际参数。新机验证仍未完成，不能宣称不同设备支持已验收。
