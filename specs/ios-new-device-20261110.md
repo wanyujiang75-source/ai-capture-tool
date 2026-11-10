@@ -82,3 +82,13 @@ Finder已进入该副本的隔空投送发送页。仅发现iPhone14_Test及iPho
 手机截图为PokeHub登录页，未自动登录或创建账号。桌面新记录出现10条请求，含Firebase及广告SDK的HTTP200请求，证明此新手机TLS解密及归档初步可用，但尚无业务域名请求，不能当PokeHub业务完整Request/Response通过；不在文档保存原始查询或SDK正文。为避免本人登录期间继续录制，通过原生抓包页点击“停止抓包”，观察“抓包已停止，手机仍保持连接 / 已保留本次结果”，按钮回到开始。
 
 已请本人登录进入首页后继续。当前Capture-Mac及代理模式保持临时测试状态，VPN开启，尚未恢复原选择，因为后续业务验收未完成。连接保持可用不等于仍在录制；产品引导源码已补齐，但未覆盖当前运行安装包，未重启真实代理。IOS-NEWDEVICE1保持DOING。
+
+## 登录后真实业务验收（记录 #90）
+
+用户确认已登录进入首页后，USB截图核对指定新机PokeHub已展示首页。通过现有桌面原生“开始抓包”建立新记录#90；为减少无关信息展示，在接口页搜索get_app_version_config，并重新启动原版应用，不清除数据、不复制登录态、不修改包或VPN配置。
+
+桌面选中POST /rest/v1/rpc/get_app_version_config，分别查看Request和Response：请求为JSON {"p_platform":"ios"}，响应HTTP200，版本配置JSON按键值换行展示。只读归档API复核请求20字节、响应2143字节，均可解析为JSON，request_complete/response_complete均为true，两侧truncated均为false。没有将SDK请求或旧历史当作业务成功，也未保存认证头、Cookie或用户正文到文档。
+
+通过桌面原生“停止抓包”，观察“抓包已停止，手机仍保持连接”；随后接口页显示历史记录#90、127条请求。127为该录制的总流量数量，包含SDK等请求，不代表127个PokeHub业务接口。后端只读复核recording_state=stopped、session_id=90、flow_count=127，新机client_ip仍为192.168.76.236。
+
+收尾已通过Shadowrocket原生select动作选择原节点“日用 专线 美国[0.2]”，USB截图显示该节点选中标记；该动作不修改节点内容、订阅、DNS或配置文件，也不关闭VPN。已请用户将全局路由恢复“配置”，等待首页截图和联网复核后才结束整体任务。未发布GitHub、未替换当前运行安装包。

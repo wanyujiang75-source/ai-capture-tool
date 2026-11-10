@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| IOS-NEWDEVICE1 | DOING | 桌面端新iPhone验收及用户追加引导补齐 | goal.md、progress.md、specs/ios-new-device-20261110.md；IOSSetupCopy.swift、IOSSetupView.swift、tests/test_ios_setup_guidance.py、docs/desktop-user-guide.md；桌面/手机UI证据；Downloads本轮证书副本；私有节点导入脚本/测试 | 引导结构回归/Swift测试/构建及隔离UI检查；新机HTTPS与桌面状态一致、真实PokeHub请求响应、停止及网络恢复 | 引导3回归/Swift184项/隔离UI通过；USB截图定位原节点仍选中，临时选Capture-Mac后新机HTTPS实际通过/client_ip .236；桌面开始#89收到10条SDK请求并原生停止；PokeHub停登录页 | 等本人登录首页后录制业务请求响应；最后恢复美国[0.2]/配置及验证网络。当前录制已停、临时连接保留，完整业务验收未完成 |
+| IOS-NEWDEVICE1 | DOING | 桌面端新iPhone验收及用户追加引导补齐 | goal.md、progress.md、specs/ios-new-device-20261110.md；IOSSetupCopy.swift、IOSSetupView.swift、tests/test_ios_setup_guidance.py、docs/desktop-user-guide.md；桌面/手机UI证据；Downloads本轮证书副本；私有节点导入脚本/测试 | 引导结构回归/Swift测试/构建及隔离UI检查；新机HTTPS与桌面状态一致、真实PokeHub请求响应、停止及网络恢复 | 引导3回归/Swift184项/隔离UI通过；新机HTTPS实际通过/client_ip .236；登录后桌面#90验证业务POST200、请求20字节/响应2143字节JSON完整未截断，原生停止后保留127条总请求；USB已见原美国节点选中 | 等本人恢复全局路由“配置”，核对VPN开启及联网，完整恢复前不标DONE；原配置文件未改，安装包未覆盖 |
 
 ## 2026-11-10 PokeTrade 原版
 
