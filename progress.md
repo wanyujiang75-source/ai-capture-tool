@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-10 合并与下载包发布
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-1110 | DOING | 合并main并发布含节点导入的新下载包 | goal.md、progress.md、specs/desktop-release-20261110.md、release/notes-20261110.md；main、既有构建脚本/产物、新标签及Release | main远端SHA一致；最终包签名/源码/指南/隔离生命周期与节点回归通过；公开ZIP及校验文件与本地一致 | 产品7603b15、交付e6ccf6c已验收；本机在用版本不替换；两工作树无关未提交文件保持不动 | 快进合并、固定构建、最终包验收、草稿上传核验后公开下载校验 |
+
 ## 2026-11-10 推送与本机更新
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
