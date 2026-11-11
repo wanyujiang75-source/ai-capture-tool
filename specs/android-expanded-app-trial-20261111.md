@@ -1,5 +1,11 @@
 # Android 扩展应用实测与桌面入口评估
 
+## 本轮恢复：PKG110 两包对照
+
+用户明确开始验证并指定 PokeHub 正式包和测试包，替代此前延后及优先 PokeTrade 的安排。本轮只验证两包，不启动其他业务应用。目标 d265cb0a / PKG110，重新建立身份与网络基线；先核对包名、版本、来源、全部 APK 摘要和调试属性，不凭桌面图标推断正式/测试环境。临时转发只含单个当前目标包，结束恢复原 VPN。原始包、登录态、节点、订阅、配置文件和系统代理不编辑；不新增 CA，复用已获准的隔离 eMudhra 路线，不将其当长期通用能力。
+
+验收：两包分别给出至少一组完整业务 Request/Response（头、正文长度/哈希、结束时间、可读 JSON），或准确记录接入/TLS/登录/未触发等失败层；不得用浏览器或另一包成功替代。私有临时材料/转发组件/隧道的所有权与恢复路径明确后才接管 VPN。无业务写按钮或请求重放；记录应用自身启动写请求。最终 APK/系统代理/原 USB 映射一致、原 VPN 模式/节点/配置恢复，自有密钥/正文/隧道清理后更新结果。
+
 日期：2026-11-11。任务 ANDROID-CA-EXPAND。当前仅进行隔离验证和产品接入评估，不实施桌面功能。
 
 ## 目标与不变边界
@@ -74,3 +80,54 @@
 - 已发送一次设备选择问题，等待用户确认继续上一台或改用当前机；确认前不将前轮临时变更条件默认为已适配新设备。
 - 已只读核对当前 SwiftUI 入口与 NR-0 契约。没有修改 Swift/Python 产品代码，没有运行产品构建或抓包服务。
 - 收尾再次读取 ADB，仍只有 PKG110 与模拟器；设备确认尚缺，任务保持 BLOCKED。本轮规格自审及 git diff --check 通过不代表新增应用验收通过。没有创建私有运行时、手机转发或需恢复的配置变更。
+
+## 后续设备确认与延期
+
+- 用户回复明确改用 PKG110 / d265cb0a；设备选择阻塞解除，不再默认使用旧机 d5f39352。
+- 同时遵守用户此前“明天继续验证”的安排。此次回复只更新目标，不视为立即恢复抓包的指令；任务回到 TODO，未创建定时任务或后台自动运行。
+- 只读复核当前 transport33 在线，原 forward 为 tcp:19387→10156、tcp:46619→10157；com.wireguard.android 尚未安装。没有调用手机 UI、添加映射、安装组件或改 VPN。
+- 正式继续时重新记录 PKG110 的完整基线，不能将此次短暂只读观察当作跨日期有效基线。优先 PokeTrade 的不同网络栈实测，再用已安装 MelodyCraft/StickerHub 对照跨设备差异；辅助转发组件的准备和必要系统确认尚未完成。
+
+## PKG110 两包实际结果
+
+2026-11-11 19:36 至 19:52，用户明确恢复并指定两包后执行。只操作 PKG110 / d265cb0a / transport35；Android 16、补丁 2026-08-01、user 构建、ro.debuggable=0，未使用模拟器或旧机数据替代。
+
+### 身份与接入
+
+| 目标 | 包名 | 版本 | 来源 | APK/split | 可调试 |
+| --- | --- | --- | --- | --- | --- |
+| PokeHub 正式包 | com.mi.poketrade | 2.1.1 (98) | com.android.vending | 21 | 否 |
+| PokeHub 测试包 | com.test.tcgp | 1.0.0 (1) | com.android.packageinstaller | 1 | 否 |
+
+- 两包均解析出应用名 PokeHub，但包名及签名不同。正式包签名 SHA-256 为 546afb7a484cc2ad4269c143565db5e232dcf510a69e303896b22587521efc46；测试包为 a72ed4b85bc3f1285dea5b337b9491058d5ea7f7b05209b3ac69f21ced8ce4e9。测试环境不等于 debuggable 构建。
+- 分别实际观察生产主机 yqctnvcripabohfhzgya.supabase.co 与测试主机 ljqtluquodlabkcblhly.supabase.co 的 SNI 和真实 HTTP，未仅依据测试源码推断包环境。
+- 本机独立 Python 3.12.5 / mitmproxy 12.3.1，保持 ssl_insecure=false，经原有 127.0.0.1:7897 出网。未修改桌面运行时、Mac 系统代理或原上游。
+- 手机原无 WireGuard；从官方 HTTPS 站点取得 1.0.20260315，apksigner 校验通过，签名 SHA-256 84a13fa2c4e0064b0c11654b8a86574b7a9b9352a3834cee32455b061c3d4127。安装和 Android VPN 安全确认由用户完成。两隧道 CA-PH-release、CA-PH-test 的 IncludedApplications 各仅一个目标包；逐轮临时替换 Clash 并恢复，不宣称两个 VPN 同时运行。
+- 沿用官方 eMudhra 实验选项，不 Root、不修改两个原包、不注入、不安装新 CA。独立代理中 SNI/Host 一致时修正内部路由，不改原请求头/authority/正文，也不重放请求。此证书信任漏洞仍是成功的条件，不是长期通用方案。
+
+### 正文验收
+
+| 目标 | HTTP 记录 | TLS 成功 | 代表请求 | HTTP | 请求体 / 响应体原始字节 |
+| --- | --- | --- | --- | --- | --- |
+| 正式包 | 6 | 3 | POST /rest/v1/rpc/get_app_config | 200 | 80 / 2774 |
+| 测试包 | 7 | 5 | POST /rest/v1/rpc/get_app_config | 200 | 77 / 2413 |
+
+- 正式包为 4 条 200、1 条 101、1 条 204；测试包为 5 条 200、1 条 101、1 条 204。13 条为关联 HTTP 记录，不是 13 个不同业务接口；101 只验收升级握手，204 正常无响应正文。
+- 两轮均验证 get_app_config、get_latest_messages、get_active_lucky_draw、get_my_posts 的实际 RPC 正文；未出现目标 TLS 失败、HTTP 连接错误、正文不可用或归档上限事件。测试包多一条非 RPC 200，未用其代替 RPC 证据。
+- 两包 get_app_config 均有 10 项 Request 头和 23 项 Response 头；请求为 3 字段 JSON，响应为 10 字段 JSON，递归解析含 28 个对象和 7 个数组，内层结构可读，不只是外层包装。正式响应 SHA-256 b96a91b420803a9a0610bf51768aaf028d0db97760bf51474daba1d5036b2813；测试响应 f0d26f879b10d04be42e16e4e69036b583493312d1de2feba84c0d227e43aa6d。
+- 两包均保留已有登录态；正式包从个人页切市场后出现新手引导，未继续引导或点击交易。测试包从已拥有编辑页面返回个人页，再切到市场，可见卡牌列表，未改卡牌状态、同步数据、发帖或兑换。启动自行产生 update_last_active 等写请求，未手工提交或修改业务请求。未验收重新登录及全部业务页面。
+- 私有 FlowReader 独立逐条校验 13 条 ID、Request/Response 原始正文长度与 SHA-256、头数量、结束时间、客户端/上游 TLS、非流式正文，以及适用的 Content-Length。完整 JSON 解码后递归统计结构，不写入参数值、Token、Cookie 或个人响应内容。两次最终 verify.py 分别退出 0、integrity=PASS。
+- 4 项离线验证通过：路由规范化保持请求字节、无关 SNI 不改变、SNI/Host 不同拒绝、归档达上限不停止转发。没有修改产品代码，因此未运行桌面构建或将此次独立脚本检查称为产品回归。
+
+### 恢复及清理
+
+- 每轮结束关闭对应 WireGuard 隧道并恢复 Clash。最终 UI 仍为运行中、规则模式、“新配置 已激活”，Proxies 选 US，节点仍为“日用 专线 美国[0.2]”。这是可见状态及行为验证，没有读取或声称核对 VPN 私有配置文件哈希。
+- baseline.py final 退出 0、RESTORATION PASS：22 个 APK/split、设备身份、手机 http_proxy=null、Mac scutil --proxy、原 forward/reverse 全部一致；原 Clash 所有者恢复，VPN CONNECTED/VALIDATED。
+- 临时代理 PID 32627、33893 已正常退出 0；UDP 51620、57161 无监听。仅删除本轮新增 tcp:50055→mobilecli-server，原 tcp:19387→10156、tcp:46619→10157 保留。
+- WireGuard 是本轮新装且仅有两个自有隧道，恢复 Clash 后卸载成功，包查询为空；其隧道/密钥随应用移除。两个 Download 配置文件已删除并逐个确认不存在；未删除其他用户工具、文件、节点或配置。
+- 基线脚本 SHA-256 c3ac2ec34d88fd91da34ed95258cdbbf171d831a016be82262106addab39365b；代理脚本 82cd736368a56e0b18e75fa449eb946548a839588de9db5934fdd30f1b8841e8；独立验证脚本 da12df17e61d886496ac6582f7677c31c09d54318e792408ce65b8f87a98c048。
+- 私有目录 /private/tmp/pokehub-pkg110-20261111.b4Z2S7 包含原始归档、临时密钥、独立运行时及只读 APK 副本；脱敏证据写入后统一清理，最终删除与差异检查结果见 progress.md。
+
+### 结论
+
+当前 PKG110 上 PokeHub 正式包和测试包的真实 HTTPS Request/Response 正文均通过隔离技术验证。此次确认了新设备及两环境，但不代表其他网络栈、修复后 SDK、所有页面或所有 Android 原版都可用。跨栈应用扩展与 Android 真机产品接入仍属后续，未改桌面功能、合并、推送或更新安装包。

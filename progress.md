@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-CA-EXPAND | BLOCKED | 扩展原版应用样本并评估 Android 真机入口 | goal.md、progress.md、specs/android-expanded-app-trial-20261111.md；本轮私有隔离材料与明确目标设备 | 目标身份确认；新增已安装原版按网络栈逐项验证实际正文或明确失败层；原包/代理/原节点配置及自有资源恢复；提出 Android 下真机/模拟器分离与产品准入门槛；diff 检查 | 两次ADB均仅 PKG110/d265cb0a 与模拟器，上一轮 PHK110/d5f39352 不在线；本轮设备尚未确认。仅只读包名/安装来源及现有代码，未启动应用、安装工具或改变网络。跨栈候选、Android下模拟器/真机分离和产品门槛已写入规格并自审，diff检查通过；新增手机业务抓包未开始 | 用户确认改用PKG110或重接PHK110后，重新建立该机基线再继续本任务；不能用入口方案或旧机证据替代新实测 |
+| ANDROID-CA-EXPAND | DONE | PKG110 上 PokeHub 正式包/测试包隔离对照 | goal.md、progress.md、specs/android-expanded-app-trial-20261111.md；本轮私有隔离脚本/基线/归档/临时隧道及明确目标设备 | 分别确认两包身份；独立验证真实 Request/Response 完整正文或明确失败层；原 APK/系统代理/原 VPN 可见节点配置与自有资源恢复；diff 检查 | PKG110正式2.1.1(98)/测试1.0.0(1)分别6/7条HTTP、3/5次目标TLS成功；两包get_app_config等RPC200完整头/正文及内层JSON通过，4项离线检查及两轮最终FlowReader退出0。22个APK摘要、手机/Mac系统代理、原USB映射一致，原Clash规则模式/新配置/美国节点恢复，VPN CONNECTED/VALIDATED。两进程/端口、自有新增50055映射、两个下载配置及本轮新装WireGuard已移除；私有目录删除、test不存在和diff检查退出0 | 仅当前两包新设备隔离验收完成；依赖证书信任漏洞，不代表长期通用。其他网络栈、修复版、桌面接入和发布另行处理；本轮不推送/发包 |
 
 ## 2026-11-11 三应用原版追加验证
 
