@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-11 Android 受损 CA 隔离验证
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-CA-TRIAL | DONE | 核验并隔离测试原版 PokeHub 的 eMudhra 信任路径 | goal.md、progress.md、specs/android-emudhra-trial-20261111.md；本轮私有临时目录/独立代理/临时隧道 | 官方版本及安全边界核实；原包身份前后一致；真实业务 Request/Response 未截断或明确失败层；恢复原 Clash 模式/节点/配置及系统代理/USB映射；清理自有资源；diff检查 | mitmproxy12.3.1独立链路，14次目标TLS通过，27组关联HTTP含3条RPC200及1条真实500；FlowReader逐条核对正文长度/哈希/结束时间/头及JSON，退出0。修正旧fake-IP内部路由，原请求头/authority未变。原Clash CONNECTED/VALIDATED、规则/自动配置/美国节点恢复；12个APK摘要、手机及Mac代理、原USB映射一致；临时隧道/下载配置/代理/私有目录已移除；diff检查通过 | 隔离技术验收完成，限制于受影响原版构建；产品接入、其他应用及修复版不在本轮验收，不推送/发包 |
+
 ## 2026-11-10 NR-0 实施
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
