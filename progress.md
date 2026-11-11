@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-11 扩展应用验证与 Android 真机入口评估
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-CA-EXPAND | BLOCKED | 扩展原版应用样本并评估 Android 真机入口 | goal.md、progress.md、specs/android-expanded-app-trial-20261111.md；本轮私有隔离材料与明确目标设备 | 目标身份确认；新增已安装原版按网络栈逐项验证实际正文或明确失败层；原包/代理/原节点配置及自有资源恢复；提出 Android 下真机/模拟器分离与产品准入门槛；diff 检查 | 两次ADB均仅 PKG110/d265cb0a 与模拟器，上一轮 PHK110/d5f39352 不在线；本轮设备尚未确认。仅只读包名/安装来源及现有代码，未启动应用、安装工具或改变网络。跨栈候选、Android下模拟器/真机分离和产品门槛已写入规格并自审，diff检查通过；新增手机业务抓包未开始 | 用户确认改用PKG110或重接PHK110后，重新建立该机基线再继续本任务；不能用入口方案或旧机证据替代新实测 |
+
 ## 2026-11-11 三应用原版追加验证
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
