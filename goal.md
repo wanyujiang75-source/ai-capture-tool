@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-11 三应用原版追加验证
+
+ANDROID-CA-MULTI：用户追加要求实测一加上的 MelodyCraft、Wishly、StickerHub 原版。延续受损 CA 隔离路线，仅临时接管各目标应用流量，不 Root、不改源码/包、不安装新 CA、不改原 VPN 节点/配置或 Mac 系统代理。各应用独立记录真实 Request/Response、失败层和恢复证据；只操作只读页面，不登录、购买、发帖或修改数据。范围及验收见 specs/android-ca-multi-trial-20261111.md；不改产品、不推送或发包。
+
 ## 2026-11-11 Android 受损 CA 隔离验证
 
 ANDROID-CA-TRIAL：用户明确授权验证新发现的 mitmproxy eMudhra 测试路径，仅限已连接 PHK110 / d5f39352 上原版 PokeHub com.mi.poketrade。先核对官方实现和原包/信任链基线，再通过独立临时抓包转发验证真实 Request/Response。允许测试期间临时替换 VPN 转发，保留原节点、配置文件及原安装包，结束恢复。此范围仅替代历史试验对该信任漏洞测试的限制；仍禁止 Root、系统漏洞提权、改包、进程注入、降级、关闭更新或采集无关应用。完整正文/恢复标准见 specs/android-emudhra-trial-20261111.md；只维护隔离试验及脱敏证据，不改产品、不推送或发包。

@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-11 三应用原版追加验证
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-CA-MULTI | BLOCKED | 隔离验证 MelodyCraft/Wishly/StickerHub 原版正文 | goal.md、progress.md、specs/android-ca-multi-trial-20261111.md；本轮私有临时脚本/归档/隧道 | 三原版身份及前后 APK 摘要一致；每应用单独临时隧道、真实业务头/正文完整或准确失败层；各轮恢复原 Clash，最终配置/节点/系统代理/USB 映射一致并清理自有资源；diff 检查 | 起始确认三包均为 Play 来源，随后一加 USB 掉线，基线命令报 device not found，多次只见模拟器。独立脚本编译及4项离线检查通过（首次夹具缺Host，已修正重验）；尚未开始手机转发/抓包，未改 VPN/原节点/配置 | 等一加重新连接并授权，重新记录基线后逐应用实测；不以离线检查或 PokeHub 结果代替三款真机结果 |
+
 ## 2026-11-11 Android 受损 CA 隔离验证
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
