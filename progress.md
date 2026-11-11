@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-CA-MULTI | BLOCKED | 隔离验证 MelodyCraft/Wishly/StickerHub 原版正文 | goal.md、progress.md、specs/android-ca-multi-trial-20261111.md；本轮私有临时脚本/归档/隧道 | 三原版身份及前后 APK 摘要一致；每应用单独临时隧道、真实业务头/正文完整或准确失败层；各轮恢复原 Clash，最终配置/节点/系统代理/USB 映射一致并清理自有资源；diff 检查 | 起始确认三包均为 Play 来源，随后一加 USB 掉线，基线命令报 device not found，多次只见模拟器。独立脚本编译及4项离线检查通过（首次夹具缺Host，已修正重验）；尚未开始手机转发/抓包，未改 VPN/原节点/配置 | 等一加重新连接并授权，重新记录基线后逐应用实测；不以离线检查或 PokeHub 结果代替三款真机结果 |
+| ANDROID-CA-MULTI | DONE | 隔离验证 MelodyCraft/Wishly/StickerHub 原版正文 | goal.md、progress.md、specs/android-ca-multi-trial-20261111.md；本轮私有临时脚本/归档/隧道 | 三原版身份及前后 APK 摘要一致；每应用单独临时隧道、真实业务头/正文完整或准确失败层；各轮恢复原 Clash，最终配置/节点/系统代理/USB 映射一致并清理自有资源；diff 检查 | 重连 PHK110 后三原版分别24/1/39组真实HTTP，38次目标TLS通过；每款代表POST200具完整头/正文及内层可读JSON，独立FlowReader三轮退出0。最终4项离线检查通过。Wishly仅启动配置、未验收登录后接口；Melody导航不确定及启动自动写请求已披露。原Clash规则/自动配置/美国节点恢复，final基线验证36个APK摘要、系统代理及原USB映射一致、VPN VALIDATED；三临时隧道/四下载文件/三个代理进程/新增62152映射已移除。私有运行时/原文/密钥目录删除并test不存在退出0；diff检查通过 | 本轮隔离验收完成；产品集成、修复版适配、Wishly登录后业务另行处理，不推送/发包，不把漏洞路径当作通用长期方案 |
 
 ## 2026-11-11 Android 受损 CA 隔离验证
 
