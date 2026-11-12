@@ -62,6 +62,9 @@ struct AndroidPhysicalView: View {
                             }.disabled(controller.status.phase == .preparing)
                         }
                     }
+                    if controller.canTerminate || controller.status.phase == .terminating {
+                        Text(AppCopy.AndroidPhysical.terminateHelp).font(.callout).foregroundStyle(.secondary)
+                    }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
                 if let pending = controller.status.pendingRecoveries, !pending.isEmpty {
@@ -84,6 +87,7 @@ struct AndroidPhysicalView: View {
                     Text(AppCopy.AndroidPhysical.automatic).foregroundStyle(.secondary)
                     Text(AppCopy.AndroidPhysical.recovery).foregroundStyle(.secondary)
                     DisclosureGroup(AppCopy.AndroidPhysical.details) {
+                        Text(AppCopy.AndroidPhysical.compatibility).foregroundStyle(.secondary)
                         VStack(alignment: .leading) {
                             if let serial = controller.status.serial { Text(serial) }
                             if let package = controller.status.package { Text(package) }

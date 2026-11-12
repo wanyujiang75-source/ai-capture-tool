@@ -4,6 +4,18 @@ import Testing
 
 @MainActor
 struct AndroidPhysicalTests {
+    @Test func deviceEntryAndLifecycleCopyExplainScopeAndNextAction() {
+        #expect(AndroidCaptureTarget.allCases.map(\.rawValue) == ["模拟器", "真机"])
+        let phases: [AndroidPhysicalPhase] = [.waitingInstall, .waitingVPN, .failed, .terminating]
+        #expect(phases.map { AndroidPhysicalStatus(phase: $0).title } == [
+            "正在准备连接助手…", "等待 VPN 授权", "抓包流程未完成", "正在结束流程…"
+        ])
+        #expect(AppCopy.AndroidPhysical.terminate == "结束流程并重新检测")
+        #expect(AppCopy.AndroidPhysical.terminateHelp.contains("保留抓包记录"))
+        #expect(AppCopy.AndroidPhysical.consent.contains("临时替换手机 VPN"))
+        #expect(AppCopy.AndroidPhysical.network.contains("不再由原 VPN 保护"))
+        #expect(AppCopy.AndroidPhysical.boundary.contains("仅部分应用"))
+    }
     @Test func returningFromFlowsKeepsPhysicalSelectionAndController() {
         let state = AppState()
         state.selectedAndroidCaptureTarget = .physical
@@ -27,7 +39,7 @@ struct AndroidPhysicalTests {
         let status = AndroidPhysicalStatus(phase: .waitingVPN)
         #expect(!status.canStart)
         #expect(status.action == .stop)
-        #expect(status.title == "等待手机授权")
+        #expect(status.title == "等待 VPN 授权")
     }
     @Test func unknownPhaseDoesNotEnableCapture() throws {
         let data = Data("{\"phase\":\"future_state\"}".utf8)

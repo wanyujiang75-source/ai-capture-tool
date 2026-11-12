@@ -1,7 +1,7 @@
 import Foundation
 
 enum AndroidCaptureTarget: String, CaseIterable, Identifiable {
-    case emulator = "模拟器", physical = "真机（实验）"
+    case emulator = "模拟器", physical = "真机"
     var id: String { rawValue }
 }
 

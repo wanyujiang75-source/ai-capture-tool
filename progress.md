@@ -1,5 +1,9 @@
 # 进度记录
 
+2026-11-12 继续本人 ANDROID-PHYSICAL-V1（DOING）：真机文案子项。范围：goal.md、progress.md、specs/android-physical-desktop-v1.md；AndroidPhysicalModels/Copy/View.swift、AndroidPhysicalTests.swift；android_physical_service.py；tests/test_android_physical_copy.py；docs/desktop-user-guide.md、release/安装说明.md。验收：入口/状态/授权/终止/恢复与文档一致，兼容限制不丢失；文案契约、Swift/Python 回归、完整构建验签和 diff 检查。只本地改文案，不重启现用桌面，不操作手机/VPN，不推送发包。
+
+真机文案子项 DONE：入口改为“真机”，全流程按钮统一为“结束流程并重新检测”，恢复/安装/授权/失败提示及使用指南同步，保留兼容限制与技术详情。Python 3 个预期 RED、Swift 5 个文案不匹配修复后，33 项后端及 201 项桌面测试通过（另 1 opt-in 跳过）；完整 App 构建与严格签名、diff 检查通过。构建位于 macos-native/build/抓包工具.app，build=physical-copy-20261112；未覆盖 /Applications 或操作当前验收窗口/手机，不推送发包。ANDROID-PHYSICAL-V1 整体 DOING，既有硬件验收缺口不变。
+
 2026-11-12 继续本人 ANDROID-PHYSICAL-V1（DOING）：新增终止当前任务并重新检测、旧机待恢复记录隔离及按设备恢复；范围补充 `android_physical_recovery.py`、`tests/test_android_physical_switch.py`、原生换机测试。验收为停止/重启/新旧设备隔离的 TDD、Swift/Python 回归与隔离桌面验收；真实旧手机仍离线，不能宣告其 VPN 已恢复。本轮不推送、不发布、不改手机网络。
 
 换机补修子项 DONE：最终后端 228 项、Swift 200 项（另 1 opt-in 跳过）通过；9 项 Swift 包含迟到轮询不覆盖终止，7 项 Python 换机测试包含旧线程退出/记录持久化/按机恢复/停止互斥。隔离原生桌面实际点击终止并重新检测通过，新机可开始但未启动，旧机提醒及退出警告保留。已补使用指南并构建验签；此前缺失接口与停止互斥 RED 均已修复。ANDROID-PHYSICAL-V1 整体保持 DOING，真实手机恢复及先前未覆盖的硬件竞态不算通过。

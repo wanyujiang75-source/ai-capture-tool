@@ -35,7 +35,7 @@ def existing_upstream():
                 pass
             return [host[1], int(port[1])]
     if re.search(r'\b(?:SOCKSEnable|ProxyAutoConfigEnable)\s*:\s*1\b', text):
-        raise ValueError('当前电脑仅有 SOCKS/PAC 代理，真机实验模式需要可用的 HTTP 代理；工具不会修改原配置。')
+        raise ValueError('当前电脑仅有 SOCKS/PAC 代理，无法用于真机抓包。请检查是否有可用的 HTTP 代理；工具不会修改原配置。')
     return None
 
 
@@ -55,13 +55,13 @@ class PhysicalCaptureService:
             self.info = json.loads(self.marker.read_text())
             self.last.update(phase='recovery_required', serial=self.info['serial'], device_name=self.info.get('name'),
                              original_vpn=self.info.get('original_vpn'),
-                             message='上次连接未完成恢复。请连接原手机，点击恢复网络。')
+                             message='上次抓包的网络恢复尚未确认。请连接原手机，确认原 VPN 已连接，再点击“检查网络恢复”。')
 
     def status(self):
         with self.lock:
             result = {**self.last, 'pending_recoveries': self.pending.summaries()}
             if self.terminating:
-                result.update(phase='terminating', message='正在终止当前任务…完成后将重新检测手机，抓包记录会保留。')
+                result.update(phase='terminating', message='正在结束当前流程…完成后将重新检测手机，抓包记录会保留。')
             return result
 
     def update(self, **values):
@@ -77,7 +77,7 @@ class PhysicalCaptureService:
     def start(self, serial, desktop_pid, experimental_consent):
         with self.lock:
             if not experimental_consent:
-                raise ValueError('请先确认实验能力边界和临时 VPN 接管。')
+                raise ValueError('请先阅读适用范围和网络影响，勾选临时替换手机 VPN 的授权后再开始抓包。')
             if self.terminating or self.marker.exists() or self.thread and self.thread.is_alive():
                 raise ValueError('已有连接尚未结束，请先停止抓包并恢复原网络。')
             if self.pending.path(serial).exists():
@@ -108,13 +108,13 @@ class PhysicalCaptureService:
                 python = ROOT / 'macos-native/build/physical-runtime/bin/python3'
                 apk = ROOT / 'android-bridge/app/build/outputs/apk/debug/app-debug.apk'
             if not python.is_file() or not apk.is_file():
-                raise ValueError('此安装包缺少真机连接组件，请使用包含真机实验功能的完整桌面安装包。')
+                raise ValueError('此安装包缺少真机连接组件，请使用包含 Android 真机功能的完整桌面安装包。')
             upstream = existing_upstream()
             host = local_wifi_address()
             if not ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback:
                 raise ValueError('未找到可用局域网，请将手机与 Mac 连接同一 Wi-Fi。')
             self.journal(self.info)
-            self.update(phase='waiting_install', message='正在校验连接助手。如手机提示，请确认安装“抓包连接助手”；不会覆盖测试应用。')
+            self.update(phase='waiting_install', message='正在检查或安装“抓包连接助手”…仅在手机出现系统安装提示时确认，不会覆盖目标应用。')
             # PackageManager verifies the existing helper signer before we send keys.
             # A package-name-only check could trust an unrelated app using our ID.
             self.device.install(apk)
@@ -280,9 +280,9 @@ class PhysicalCaptureService:
                 self.pending.defer(self.marker)
                 self.info = {}
                 self.device = self.process = self.directory = None
-                self.last = {'phase': 'idle', 'message': '任务已终止，抓包记录已保留。请选择已连接的手机重新开始。'}
+                self.last = {'phase': 'idle', 'message': '当前流程已结束，抓包记录已保留。请确认检测到的手机，按需重新开始抓包。'}
         except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired):
-            self.update(phase='recovery_required', message='当前任务未能完全终止，已保留恢复记录，请重试终止任务。')
+            self.update(phase='recovery_required', message='当前流程未能完全结束，已保留恢复记录。请重试“结束流程并重新检测”。')
         finally:
             with self.lock:
                 self.terminating = False
