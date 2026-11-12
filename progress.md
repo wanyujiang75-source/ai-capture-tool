@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-12 换机修复合并与发布
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| DELIVERY-SWITCH-1112 | DOING | 合并 main、更新 GitHub 下载包与本机桌面 | goal.md、progress.md、specs/desktop-switch-release-20261112.md、release/notes-20261112-switch.md；已有构建脚本/产物、main 与预发布标签、/Applications/抓包工具.app 及可恢复备份 | Python/Swift 回归；最终 ZIP 解压验签与包内源码/指南校验、隔离生命周期；远端 main/标签/公开下载 SHA 一致；本机版本及 UI 入口、旧恢复记录保留 | 待合并 a5aa0fa 等 3 提交；原工作区另有无关脏文件保留。Android 真机 idle，PHK110 待恢复；iPhone waiting_phone/idle，不操作手机 | 完成回归、固定提交打包验收后合并发布及本机更新 |
+
 2026-11-12 继续本人 ANDROID-PHYSICAL-V1（DOING）：真机文案子项。范围：goal.md、progress.md、specs/android-physical-desktop-v1.md；AndroidPhysicalModels/Copy/View.swift、AndroidPhysicalTests.swift；android_physical_service.py；tests/test_android_physical_copy.py；docs/desktop-user-guide.md、release/安装说明.md。验收：入口/状态/授权/终止/恢复与文档一致，兼容限制不丢失；文案契约、Swift/Python 回归、完整构建验签和 diff 检查。只本地改文案，不重启现用桌面，不操作手机/VPN，不推送发包。
 
 真机文案子项 DONE：入口改为“真机”，全流程按钮统一为“结束流程并重新检测”，恢复/安装/授权/失败提示及使用指南同步，保留兼容限制与技术详情。Python 3 个预期 RED、Swift 5 个文案不匹配修复后，33 项后端及 201 项桌面测试通过（另 1 opt-in 跳过）；完整 App 构建与严格签名、diff 检查通过。构建位于 macos-native/build/抓包工具.app，build=physical-copy-20261112；未覆盖 /Applications 或操作当前验收窗口/手机，不推送发包。ANDROID-PHYSICAL-V1 整体 DOING，既有硬件验收缺口不变。
