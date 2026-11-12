@@ -14,12 +14,15 @@ from mitmproxy.tools.dump import DumpMaster
 from .ios_recording import IOSRecording
 from .ios_setup import process_identity
 from .android_physical_evidence import ApplicationNetworkEvidence
+from .android_physical_routing import ConnectionRouting, OwnerClient
 
 
-def single_app_config(config, package):
+def single_app_config(config, package, login_forwarding=False):
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', package):
         raise ValueError('invalid target package')
     config = re.sub(r'(?m)^PersistentKeepalive\s*=.*\n?', '', config)
+    if login_forwarding:
+        package += ', com.google.android.gms'
     return config.replace('[Peer]\n', '[Peer]\nPersistentKeepalive = 5\n', 1).replace(
         '[Interface]\n', '[Interface]\nIncludedApplications = ' + package + '\n', 1).replace(
         'AllowedIPs = 0.0.0.0/0', 'AllowedIPs = 0.0.0.0/0, ::/0')
@@ -92,6 +95,8 @@ async def run(config):
                 stream_large_bodies='256k', websocket=False, rawtcp=True)
     recorder = PhysicalRecorder(config)
     master.addons.add(recorder)
+    if config.get('owner_port'):
+        master.addons.add(ConnectionRouting(OwnerClient(config['owner_port'], config['owner_token']), config['upstream']))
     for sig in (signal.SIGTERM, signal.SIGINT):
         asyncio.get_running_loop().add_signal_handler(sig, master.shutdown)
 
@@ -107,7 +112,7 @@ async def run(config):
                 if not exported:
                     for server in master.addons.get('proxyserver').servers:
                         if hasattr(server, 'client_conf') and server.listen_addrs:
-                            (root / 'tunnel.conf').write_text(single_app_config(server.client_conf(), config['package']))
+                            (root / 'tunnel.conf').write_text(single_app_config(server.client_conf(), config['package'], bool(config.get('owner_port'))))
                             exported = True
                 recorder.recording.check_limit(lambda hosts: None)
                 state = {key: recorder.state[key] for key in ('flow_count', 'response_count', 'tls_failures')}

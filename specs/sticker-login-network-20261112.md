@@ -8,7 +8,15 @@
 
 ## 定位顺序
 
-### 本轮真实应用联网证据
+### 跨进程转发实现契约（本轮）
+
+- Android 10+ 使用 VPN 所属 UID 的 ConnectivityManager.getConnectionOwnerUid 查询原始 TCP 四元组。助手仅允许目标非共享 UID 与系统 com.google.android.gms 进入隧道；不能靠域名猜进程。
+- 私有 USB 文件下发每次随机认证令牌；localabstract 名称使用令牌的 SHA-256，不暴露认证值，控制端仅返回 target/login/unknown。查询/回复用 HMAC-SHA256 双向认证，绑定方向、随机 nonce、原四元组和角色，控制连接不发送令牌，防端口冒充与旧回复重放。ADB 仅新增本任务 tcp:0 转发，停止时核对序列号、端口、远端名称后只删除该项；记录归属以支持重启后的清理。请求/响应有长度、超时和并发上限，不包含账号或正文；断线/租约到期关闭。
+- worker 在 TLS 解密前查询连接身份。target 走现有采集；login 使用原电脑 HTTP 代理的 CONNECT 与不生成 flow 的原始 TCP 转发，保留端到端 TLS。UDP 仅允许 WireGuardMode 的既有虚拟 DNS 地址 10.0.0.53:53，其由 Mac 原系统 resolver 解析（Android netd 可能持有 DNS socket，明确豁免 UID 查询，不承诺 DNS 经 HTTP CONNECT）；任意其他 UDP/53 和 QUIC 拒绝以回落 TCP。除该既有 DNS 例外，身份未知或控制通道失败拒绝，不直连、不回落采集。
+- 本轮只实现系统 Google 服务 UID 的加密转发；目标应用内仍按既有范围抓包。未证实需要新增目标进程内 Google 端点旁路，不凭域名猜测扩大特殊处理。普通业务归档不扩大到系统服务，不关闭原有 TLS 校验。
+- 自动验收覆盖角色分类、错误/未知/失效控制通道、未解密 TLS 字节完整性、上游失败不直连、归档排除、单应用旧路径回归、停止清理。真机需抓包持续运行时首账号登录进入首页与业务完整响应，不清除登录态；如已登录导致无法重复登录，记录需要的用户动作，不自行清数据。
+
+### 前一子项：真实应用联网证据（历史范围）
 
 - 当前仅检查手机到 Mac 与 Mac 代理到 Google，不能推导目标应用的完整链路。保留这些准入保护，不增加 GMS 转发或 TLS 绕过。
 - worker 只对实际上游完成的 HTTPS 响应记录时间及状态码；排除 HTTP、重放、本地合成响应和 101。4xx/5xx 是服务有响应但请求失败，不标业务成功。错误及响应同时存在时显示部分连接异常。
@@ -42,3 +50,16 @@
 - 实施范围为已验证的操作流程提示修正：开始按钮前明确先用原 VPN 完成 Google 登录；重登录先停止恢复；不记录 Google 登录阶段。未增加 GMS UID、未改 TLS、未安装证书、未改 APK，不声称实现抓包中无缝 Google 登录。
 - 文案显示契约先 RED 后 GREEN，后端 28 项、Swift AndroidPhysicalTests 11 项通过；完整构建与签名通过，build=sticker-login-guidance-20261112。旧 App 备份于 CaptureToolBackups/20261112-before-login-guidance.IIFmh4。
 - 剩余工程：若要求抓包过程中直接 Google 登录，需独立的登录依赖加密转发和身份隔离，避免 GMS 为其他应用产生的流量被归档；当前无法仅靠扩大 IncludedApplications 安全完成。总体修复仍 DOING，本轮只确认原因边界和可用绕行，不标完整修复。
+
+## 跨进程转发实际验收（2026-11-12 续做）
+
+- 原因与修复：Google 账号选择/认证由系统 Google Play 服务参与，原先仅目标包入隧道导致该进程没有电脑代理出网路径。新增原始 TCP 四元组 UID 查询，在 TLS 前区分目标应用和系统 Google 服务；同签名、系统级共享 UID 组全部视为仅加密转发，不能作为采集目标。Google 服务原始 TLS 经现有 HTTP CONNECT，不终止 TLS、不生成归档 flow。
+- 真机 PKG110 / Android 16 / 原版 StickerHub 3.18.14(195)：桌面启动 #103 后在登录页选择用户授权的首个 Google 账号，进入画册首页。22 请求/22 响应，仅业务 Supabase 主机；应用自身 /auth/v1/token POST 200 请求1534B/响应1716B，get_dice_event POST200 请求4B/响应402B，complete=true、truncated=false。未读取或导出认证正文到代码/证据文档。系统 Google 服务无归档。
+- #103 后出现一次局域网探测失败，保护机制停止并恢复基线；复测实际链路恢复。增加仅对已经就绪连接的一次新鲜重试，不放过首次准入失败、Wi-Fi 关闭、取消或连续失败。RED 复现后 GREEN。
+- 最终哈希通道构建的 #104：桌面启动后得到6请求/6响应；get_active_announcements POST200 请求27B/响应4180B，完整且未截断，Request/Response 页面已核对。已登录状态保留，没有为了重复登录退出账号或清数据。抓包持续数分钟、两项网络准入检查通过，然后从桌面点击“停止并恢复网络”成功。
+- 恢复：两轮测试前均无活动 VPN，结束后 active VPN type=-1、HTTP proxy=null、助手进程退出。仅本次 capture-owner USB 转发被移除，原有3条转发保留；本机 recovery.json 已清除，旧 PHK110 待恢复提醒原样保留。未改原节点、订阅、配置或目标 APK，未新增证书。
+- 边界：#103另有40次 TLS 失败，#104另有37次；101只代表握手。未验证广告 Banner、所有域名、其他版本、非系统Google服务或其他登录组件，不宣称通用成功。USB控制通道断开会拒绝新连接并依既有租约停止，不静默回退解密/直连。
+- 自动验收：Android真机相关107项（106通过、1 opt-in跳过）；iOS相关101项（96通过、5 opt-in跳过）；Swift205项通过（另1 opt-in跳过）；Android助手9项单元测试与APK构建通过；完整macOS构建严格验签通过。真实loopback TLS对照原站证书不变、HTTP钩子零调用，上游403不直连、unknown身份不接入；角色缓存并发上限RED=1031、修复GREEN=1024。
+- 收尾审查发现并修复控制端口被接管后冒充角色的P1，以及任意UDP/53放行的P2；两者先RED后GREEN。新增HMAC nonce/角色绑定、旧回复重放和跨Java/Python签名向量测试；复审未发现新的可复现P1/P2。仅保留上文明确的DNS例外，不改原DNS配置。
+- 加固版 #105 真机：桌面启动5请求/5响应，仅业务主机；get_latest_messages POST200 请求2B/响应2255B，get_active_announcements POST200 请求27B/响应4180B，均完整无截断。手动停止后助手退出、无活动VPN、HTTP proxy=null，本任务控制通道与本次mobile工具额外通道清理，保留原3条USB映射。最终版保留已有登录态，未再次注销重登；首次抓包中登录的证据为#103，身份认证加固后的业务链路证据为#105。
+- 最终本机构建：macos-native/build/抓包工具.app，build=google-routing-auth-20261112，并更新 /Applications/抓包工具.app；旧版备份于 CaptureToolBackups/20261112-google-routing.1uNlkY。仅更新独立连接助手，原APK保持；未推送或发布远程包。

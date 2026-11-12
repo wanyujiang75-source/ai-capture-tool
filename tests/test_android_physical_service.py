@@ -64,6 +64,20 @@ class PhysicalServiceTests(unittest.TestCase):
         self.assertEqual(self.service.stop()['phase'], 'idle')
         self.assertEqual(self.service.stop()['phase'], 'idle')
 
+    def test_restarted_service_cleans_persisted_owner_channel_without_losing_recovery(self):
+        channel = {'port': 12345, 'remote': 'localabstract:capture-owner-' + 'a' * 64}
+        self.service.journal({'serial': 'phone', 'original_vpn': None, 'owner_channel': channel})
+        restarted = PhysicalCaptureService(self.service.root, self.store, 'adb')
+        restarted.device = Mock()
+        restarted.device.close_owner_channel.side_effect = OSError('ADB temporarily unavailable')
+        with self.assertRaises(OSError): restarted._close_local_capture()
+        self.assertEqual(json.loads(restarted.marker.read_text())['owner_channel'], channel)
+        restarted.device.close_owner_channel.side_effect = None
+        restarted._close_local_capture()
+        restarted.device.close_owner_channel.assert_called_with(channel)
+        self.assertNotIn('owner_channel', json.loads(restarted.marker.read_text()))
+        self.assertTrue(restarted.marker.exists())
+
     def test_failed_cancellation_ack_keeps_recovery_marker(self):
         device = Mock()
         device.stop.side_effect = ValueError('pending consent has not closed')

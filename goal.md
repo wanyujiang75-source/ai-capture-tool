@@ -2,7 +2,11 @@
 
 ## 2026-11-12 StickerHub Google 登录链路修复
 
-本轮继续 STICKER-LOGIN-NETWORK 的真实应用联网判定：在单应用 worker 依据实际完成的 HTTPS 响应/连接错误生成有时效的证据，桌面分开显示局域网、电脑出网、应用响应；不将 VPN 开关、Banner、历史累计响应或电脑探针当作当前应用联网成功。仅记录计数/时间/状态码，不新增域名、正文或认证采集。验收为 worker 行为、过期/停止/旧版本回归、Swift 状态及隔离 UI/构建检查；不自动操作手机网络、不推送。跨进程登录修复仍单独待完成。
+本轮续做实际跨进程转发：目标应用与系统 Google Play 服务同入临时助手，但通过 Android 连接 UID 查询区分；目标应用继续既有抓包，Google 服务仅经电脑原 HTTP 代理 CONNECT 加密透传，未知身份不采集、不直连。仅授权 USB 的私有认证控制通道提供连接归属，不记录认证正文。先隔离回归再真机登录与停止恢复验收；不以状态提示代替修复。
+
+前一子项为真实应用联网判定：在单应用 worker 依据实际完成的 HTTPS 响应/连接错误生成有时效的证据，桌面分开显示局域网、电脑出网、应用响应；不将 VPN 开关、Banner、历史累计响应或电脑探针当作当前应用联网成功。该子项已完成，不能替代本轮跨进程登录验收。
+
+本轮验收命令：`macos-native/build/physical-runtime/bin/python3 -m unittest discover -s tests -p 'test_android_physical*.py'`、相同命令的 `test_ios*.py` 回归、`swift test --package-path macos-native`、`bash android-bridge/build.sh`、`AI_CAPTURE_BUILD_ID=google-routing-auth-20261112 bash macos-native/scripts/build-app.sh`、`git diff --check`。真机桌面 #103 已完成抓包中首账号 Google 登录，#104/#105 已核对完整业务 JSON 与停止恢复；收尾审查、当前任务状态与限制见 progress.md 和规格。不将未验证的 Banner 或其他 TLS 失败标为成功。
 
 STICKER-LOGIN-NETWORK：区分原版 StickerHub 登录的客户端证书拒绝与 Google 服务跨进程出网缺口，依据有界诊断和对照实验做最小修复并从桌面验收。保留原 APK、账号数据、VPN 节点和配置，不 Root、不关闭上游或客户端 TLS 校验，不获取账号凭据；仅用户授权的首个 Google 账号登录，额外密码/安全确认由本人处理。测试前记录网络基线，测试后恢复；不将分析/统计 TLS 错误等同于登录根因。范围、验收和停止条件见 specs/sticker-login-network-20261112.md；不推送、不发布。
 

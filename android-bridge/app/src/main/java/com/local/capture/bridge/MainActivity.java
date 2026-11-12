@@ -52,7 +52,7 @@ public final class MainActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(32, 64, 32, 32);
         TextView title = new TextView(this);
-        title.setText("抓包连接助手\n\n仅转发桌面端指定的测试应用。\n临时替换当前 VPN，原节点和配置不会修改。\n结束后请确认原 VPN 已恢复。\n\nUSB 断开或电脑停止响应时，20 秒内释放临时连接。\n请保持 USB 连接并返回桌面端操作。");
+        title.setText("抓包连接助手\n\n仅抓取桌面端指定的测试应用。\n支持的 Google 登录服务仅加密转发，不解密或保存内容。\n临时替换当前 VPN，原节点和配置不会修改。\n结束后请确认原 VPN 已恢复。\n\nUSB 断开或电脑停止响应时，20 秒内释放临时连接。\n请保持 USB 连接并返回桌面端操作。");
         title.setTextSize(19);
         layout.addView(title);
         Button stop = new Button(this);

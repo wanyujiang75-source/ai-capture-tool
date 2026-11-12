@@ -111,6 +111,7 @@ class NetworkReadiness:
         self.phone = self.external = 'checking'
 
     def check(self, heartbeat=lambda: None, cancelled=lambda: False):
+        previously_connected = self.phone == 'ready'
         self.phone = self.external = 'checking'
         heartbeat()
         try:
@@ -124,7 +125,15 @@ class NetworkReadiness:
             raise NetworkIssue('upstream_unreachable', '无法读取电脑代理，请检查已有代理后重新开始抓包。') from exc
         try:
             heartbeat()
-            check_phone(self.device, self.host, cancelled)
+            try:
+                check_phone(self.device, self.host, cancelled)
+            except NetworkIssue as exc:
+                if not previously_connected or exc.code != 'phone_lan_unreachable' or cancelled():
+                    raise
+                # One fresh, bounded roundtrip tolerates transient scheduler/Wi-Fi delay.
+                # Never ignore a second failure or replace it with a cached success.
+                heartbeat()
+                check_phone(self.device, self.host, cancelled)
             self.phone = 'ready'
         except NetworkIssue:
             self.phone = 'failed'

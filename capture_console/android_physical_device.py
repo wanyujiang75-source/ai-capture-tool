@@ -1,6 +1,7 @@
 """Authorized USB operations. Never write to the target app or the user's VPN."""
 
 import json
+import hashlib
 import re
 import shlex
 import subprocess
@@ -105,7 +106,7 @@ class PhysicalDevice:
             raise ValueError("连接助手未安装，请在手机确认安装后重试；不会替换原应用。")
 
     def write(self, name, value):
-        if name not in {'tunnel.conf', 'lease', 'stop'}:
+        if name not in {'tunnel.conf', 'lease', 'stop', 'routing-token'}:
             raise ValueError('invalid bridge file')
         # Only our own debuggable companion is used for private USB configuration.
         script = f'umask 077; mkdir -p files; cat > files/{name}.tmp && mv files/{name}.tmp files/{name}'
@@ -154,7 +155,31 @@ class PhysicalDevice:
 
     def cleanup(self):
         if self.installed():
-            self.shell('run-as', BRIDGE, 'rm', '-f', 'files/tunnel.conf', 'files/lease', 'files/stop', 'files/stop_ack')
+            self.shell('run-as', BRIDGE, 'rm', '-f', 'files/tunnel.conf', 'files/lease', 'files/stop', 'files/stop_ack', 'files/routing-token')
+
+    def login_forwarding_available(self):
+        sdk = self.shell('getprop', 'ro.build.version.sdk').strip()
+        return (sdk.isdigit() and int(sdk) >= 29 and
+                'package:com.google.android.gms' in self.shell('pm', 'list', 'packages', '-s', '--user', '0', 'com.google.android.gms').splitlines())
+
+    def open_owner_channel(self, token):
+        if not re.fullmatch('[a-f0-9]{64}', token):
+            raise ValueError('invalid routing token')
+        channel = 'localabstract:capture-owner-' + hashlib.sha256(token.encode()).hexdigest()
+        port = self.call('forward', 'tcp:0', channel, timeout=3).strip()
+        if not port.isdigit() or not 0 < int(port) < 65536:
+            raise ValueError('无法建立应用连接检查通道。')
+        return {'port': int(port), 'remote': channel}
+
+    def close_owner_channel(self, channel):
+        port, remote = channel.get('port'), channel.get('remote', '')
+        if (not isinstance(port, int) or not 0 < port < 65536
+                or not re.fullmatch('localabstract:capture-owner-[a-f0-9]{64}', remote)):
+            raise ValueError('invalid routing port')
+        # A restarted ADB server may have reassigned this port. Never delete another mapping.
+        expected = [self.serial, f'tcp:{port}', remote]
+        if any(line.split() == expected for line in self.call('forward', '--list', timeout=3).splitlines()):
+            self.call('forward', '--remove', f'tcp:{port}', timeout=3)
 
     def restore(self, original):
         current = self.vpn()

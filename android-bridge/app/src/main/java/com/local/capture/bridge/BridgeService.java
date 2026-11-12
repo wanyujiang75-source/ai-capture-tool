@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 public final class BridgeService extends Service {
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private GoBackend backend;
+    private ConnectionOwner owners;
     private Lease lease;
     private boolean started;
     private long sequence;
@@ -48,6 +49,12 @@ public final class BridgeService extends Service {
                 Config config = TargetIsolation.checkedConfig(this);
                 backend = new GoBackend(this);
                 backend.setState(tunnel, Tunnel.State.UP, config);
+                if (config.getInterface().getIncludedApplications().contains(TargetIsolation.LOGIN)) {
+                    String target = config.getInterface().getIncludedApplications().stream()
+                            .filter(value -> !value.equals(TargetIsolation.LOGIN)).findFirst().orElseThrow();
+                    owners = new ConnectionOwner(this, getPackageManager().getApplicationInfo(target, 0).uid,
+                            getPackageManager().getApplicationInfo(TargetIsolation.LOGIN, 0).uid);
+                }
                 executor.scheduleWithFixedDelay(this::checkLease, 1, 2, TimeUnit.SECONDS);
             } catch (Exception exception) { BridgeFiles.state(this, "failed"); stopSelf(); }
         });
@@ -67,11 +74,12 @@ public final class BridgeService extends Service {
     }
     @Override public void onDestroy() {
         executor.execute(() -> {
+            if (owners != null) owners.close();
             try { if (backend != null) backend.setState(tunnel, Tunnel.State.DOWN, null); }
             catch (Exception ignored) { }
             // Keep the stop marker until desktop acknowledgement prevents any
             // queued activity from reopening consent during shutdown.
-            for (String name : new String[]{"tunnel.conf", "lease"}) new File(getFilesDir(), name).delete();
+            for (String name : new String[]{"tunnel.conf", "lease", "routing-token"}) new File(getFilesDir(), name).delete();
             BridgeFiles.state(this, "stopped");
         });
         executor.shutdown();

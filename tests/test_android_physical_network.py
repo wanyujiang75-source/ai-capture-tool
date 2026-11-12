@@ -9,6 +9,33 @@ from capture_console.android_physical_network import NetworkIssue, NetworkReadin
 
 
 class NetworkReadinessTests(unittest.TestCase):
+    def test_lan_retry_does_not_mask_initial_failure_wifi_loss_or_cancellation(self):
+        for ready, code, cancelled in ((False, 'phone_lan_unreachable', False),
+                                       (True, 'phone_wifi_unavailable', False),
+                                       (True, 'phone_lan_unreachable', True)):
+            guard = NetworkReadiness(Mock(), '192.168.1.2', ['127.0.0.1', 7897], lambda: ['127.0.0.1', 7897])
+            guard.phone = 'ready' if ready else 'checking'
+            with patch('capture_console.android_physical_network.check_phone', side_effect=NetworkIssue(code, 'test')) as phone, \
+                 patch('capture_console.android_physical_network.check_https') as https:
+                with self.assertRaises(PreparationCancelled if cancelled else NetworkIssue):
+                    guard.check(cancelled=lambda: cancelled)
+                self.assertEqual(phone.call_count, 1)
+                https.assert_not_called()
+
+    def test_running_lan_check_retries_once_but_persistent_failure_still_stops(self):
+        guard = NetworkReadiness(Mock(), '192.168.1.2', ['127.0.0.1', 7897], lambda: ['127.0.0.1', 7897])
+        guard.phone = 'ready'
+        issue = NetworkIssue('phone_lan_unreachable', 'test')
+        with patch('capture_console.android_physical_network.check_phone', side_effect=[issue, None]) as phone, \
+             patch('capture_console.android_physical_network.check_https'):
+            guard.check()
+            self.assertEqual(phone.call_count, 2)
+            self.assertEqual(guard.phone, 'ready')
+        with patch('capture_console.android_physical_network.check_phone', side_effect=issue) as phone:
+            with self.assertRaises(NetworkIssue): guard.check()
+            self.assertEqual(phone.call_count, 2)
+            self.assertEqual(guard.phone, 'failed')
+
     def test_no_upstream_never_falls_back_to_direct(self):
         with self.assertRaisesRegex(NetworkIssue, '电脑.*代理'):
             NetworkReadiness(Mock(), '192.168.1.2', None, lambda: None)

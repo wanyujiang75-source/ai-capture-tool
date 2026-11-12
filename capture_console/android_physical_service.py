@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -147,6 +148,13 @@ class PhysicalCaptureService:
                 port = probe.getsockname()[1]
             config = {**self.info, 'directory': str(self.directory), 'host': host, 'port': port, 'outdir': str(outdir),
                       'upstream': upstream, 'owner_pid': owner_pid, 'owner_identity': owner_identity, 'parent_pid': os.getpid()}
+            if upstream and self.device.login_forwarding_available() is True:
+                token = secrets.token_hex(32)
+                self.device.write('routing-token', token)
+                channel = self.device.open_owner_channel(token)
+                self.info['owner_channel'] = channel
+                self.journal(self.info)
+                config.update(owner_port=channel['port'], owner_token=token)
             config_path = self.directory / 'config.json'
             config_path.write_text(json.dumps(config))
             config_path.chmod(0o600)
@@ -291,6 +299,11 @@ class PhysicalCaptureService:
             except subprocess.TimeoutExpired:
                 self.process.kill()  # Only the exact Popen child owned by this service.
                 self.process.wait(timeout=3)
+        if self.info.get('owner_channel') and self.device:
+            self.device.close_owner_channel(self.info['owner_channel'])
+            self.info.pop('owner_channel')
+            if self.marker.exists():
+                self.journal(self.info)
         if self.info.get('session_id') and self.store.get_session(self.info['session_id']):
             self.store.update_session_status(self.info['session_id'], 'stopped')
         directory = self.directory or (self.root / self.info['directory'] if self.info.get('directory') else None)
