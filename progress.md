@@ -771,7 +771,7 @@ W1 续验：r5 内嵌 Python + 包内后端通过隔离生命周期测试，清�
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| ANDROID-PHYSICAL-MERGE | DOING | 合并 main 并更新启动本机桌面 | goal.md、progress.md、specs/android-physical-desktop-v1.md；Git main；/Applications/抓包工具.app 与旧版备份 | 快进关系与远端一致；回归；无活动抓包；ZIP SHA/签名与安装版本匹配；原生窗口显示真机入口，服务 idle | 用户明确要求；保留无关未提交文件和原 VPN，不自动抓包 | 验证后快进主分支、备份替换、启动核对 |
+| ANDROID-PHYSICAL-MERGE | DONE | 合并 main 并更新启动本机桌面 | goal.md、progress.md、specs/android-physical-desktop-v1.md、release/notes-20261112.md；Git main；/Applications/抓包工具.app 与旧版备份 | 快进关系与远端一致；回归；无活动抓包；ZIP SHA/签名与安装版本匹配；原生窗口显示真机入口，服务 idle | 220 项回归通过；远端 main 从 4b1865e 快进到 e590e72，包含 637a133 功能及发布证据。旧 App 无活动抓包，正常退出后备份到 Library/Application Support/CaptureToolBackups/20261112-7603b154c1ac.Fs07JD；从已校验 ZIP 安装新版，严格签名与 build=637a1333ebb0 通过。原生 /Applications 窗口已打开真机入口并识别 PHK110，实验授权未勾选、抓包未启动；7001 health=idle、physical=idle。未清理运行数据、未修改 VPN，保留无关未提交文件 | 用户可直接试用；实验能力及剩余实机验收缺口不变 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
