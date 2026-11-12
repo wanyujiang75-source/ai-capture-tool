@@ -14,7 +14,15 @@ struct CaptureHomeView: View {
             .padding(.top, 20)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 28)
             if appState.selectedCapturePlatform == .android {
-                CaptureView(showsRuntimeCheck: $showsRuntimeCheck)
+                Picker("Android", selection: $appState.selectedAndroidCaptureTarget) {
+                    ForEach(AndroidCaptureTarget.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).frame(width: 280).padding(.top, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 28)
+                if appState.selectedAndroidCaptureTarget == .emulator {
+                    CaptureView(showsRuntimeCheck: $showsRuntimeCheck)
+                } else {
+                    AndroidPhysicalView(controller: appState.androidPhysicalController)
+                }
             } else {
                 IOSCaptureView(controller: appState.iosController)
             }

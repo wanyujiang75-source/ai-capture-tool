@@ -91,6 +91,13 @@ find "$BACKEND_DIR" -name '*.pyc' -delete
 
 if [[ "$EMBED_RUNTIME" == "1" ]]; then
   "$ROOT_DIR/scripts/build-runtime.sh" "$RESOURCES_DIR/runtime" >/dev/null
+  EMBEDDED_REQUIREMENTS_FILE="$PROJECT_ROOT/requirements-android-physical.txt" \
+    EMBEDDED_RUNTIME_CACHE_DIR="$ROOT_DIR/.build/physical-runtime-cache" \
+    "$ROOT_DIR/scripts/build-runtime.sh" "$RESOURCES_DIR/physical-runtime" >/dev/null
+  bash "$PROJECT_ROOT/android-bridge/build.sh" >/dev/null
+  cp "$PROJECT_ROOT/android-bridge/app/build/outputs/apk/debug/app-debug.apk" "$RESOURCES_DIR/android-bridge.apk"
+  cp "$PROJECT_ROOT/android-bridge/README.md" "$RESOURCES_DIR/android-bridge-NOTICE.md"
+  cp "$PROJECT_ROOT/android-bridge/LICENSE-Apache-2.0.txt" "$RESOURCES_DIR/android-bridge-LICENSE.txt"
 fi
 
 cat >"$CONTENTS_DIR/Info.plist" <<PLIST

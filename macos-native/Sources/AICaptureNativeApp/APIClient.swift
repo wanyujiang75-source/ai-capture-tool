@@ -57,7 +57,7 @@ protocol CaptureWorkflowAPI: Sendable {
     func stopCapture(deviceId: String) async throws -> CaptureStopResponse
 }
 
-struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSCaptureAPI, IOSShadowrocketAPI, @unchecked Sendable {
+struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTargetAPI, LocalPackageInstallAPI, FlowAPI, CaptureWorkflowAPI, WeakNetworkAPI, IOSCaptureAPI, IOSShadowrocketAPI, AndroidPhysicalAPI, @unchecked Sendable {
     let baseURL: URL
 
     private let session: URLSession
@@ -90,6 +90,39 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
 
     func readIOSSetup() async throws -> IOSSetupStatus {
         try await get("api/ios-setup", timeoutInterval: 5)
+    }
+
+    func readAndroidPhysical() async throws -> AndroidPhysicalStatus {
+        try await physicalRequest("")
+    }
+
+    func discoverAndroidPhysical() async throws -> [AndroidPhysicalDevice] {
+        struct Response: Decodable { let devices: [AndroidPhysicalDevice] }
+        let response: Response = try await physicalRequest("/devices")
+        return response.devices
+    }
+
+    func startAndroidPhysical(serial: String, consent: Bool) async throws -> AndroidPhysicalStatus {
+        let body = try JSONSerialization.data(withJSONObject: ["serial": serial, "experimental_consent": consent,
+                                                              "desktop_pid": ProcessInfo.processInfo.processIdentifier])
+        return try await physicalRequest("/start", body: body)
+    }
+
+    func actAndroidPhysical(_ action: String) async throws -> AndroidPhysicalStatus {
+        guard ["stop", "recover"].contains(action) else { throw APIClientError.invalidResponse }
+        return try await physicalRequest("/" + action, body: Data("{}".utf8))
+    }
+
+    private func physicalRequest<Response: Decodable>(_ suffix: String, body: Data? = nil) async throws -> Response {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/android-physical" + suffix))
+        request.timeoutInterval = 12
+        request.setValue("android-physical", forHTTPHeaderField: "X-Capture-Desktop")
+        if let body {
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body
+        }
+        return try await send(request)
     }
 
     func readShadowrocket() async throws -> IOSShadowrocketInfo {

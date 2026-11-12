@@ -26,11 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard IOSQuitSafety.requiresWarning(runtimeDirectory: RuntimeManager.shared.runtimeDirectory) else { return .terminateNow }
+        let physical = AndroidPhysicalQuitSafety.requiresWarning(runtimeDirectory: RuntimeManager.shared.runtimeDirectory)
+        guard physical || IOSQuitSafety.requiresWarning(runtimeDirectory: RuntimeManager.shared.runtimeDirectory) else { return .terminateNow }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = AppCopy.IOSCapture.quitTitle
-        alert.informativeText = AppCopy.IOSCapture.quitHelp
+        alert.messageText = physical ? AppCopy.AndroidPhysical.quitTitle : AppCopy.IOSCapture.quitTitle
+        alert.informativeText = physical ? AppCopy.AndroidPhysical.quitHelp : AppCopy.IOSCapture.quitHelp
         alert.addButton(withTitle: AppCopy.IOSCapture.cancelQuit)
         alert.addButton(withTitle: AppCopy.IOSCapture.confirmQuit)
         return alert.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel

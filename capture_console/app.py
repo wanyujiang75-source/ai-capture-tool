@@ -26,6 +26,8 @@ from .jenkins_source import JenkinsConfig, JenkinsPackageSource, JenkinsSourceEr
 from .ios_setup import IOSSetupService
 from .ios_setup_api import ios_operation, ios_setup_router
 from .ios_results import IOSCaptureArchive
+from .android_physical_api import physical_router
+from .android_physical_service import PhysicalCaptureService, MODE as PHYSICAL_MODE
 from .local_config import load_local_config
 from .logcat import LogcatService
 from .network import build_device_network_state, build_host_network_check, proxy_from_env
@@ -77,6 +79,8 @@ logcat_reaper_thread: Optional[threading.Thread] = None
 app = FastAPI(title="TraceDeck API", version="1.0.0")
 ios_setup_service = IOSSetupService(RUNTIME_DIR / "ios-setup", store=store)
 app.include_router(ios_setup_router(ios_setup_service))
+physical_service = PhysicalCaptureService(RUNTIME_DIR / 'android-physical', store, runner.adb_bin)
+app.include_router(physical_router(physical_service))
 
 
 @app.exception_handler(HTTPException)
@@ -321,6 +325,12 @@ def stop_all_active_captures() -> Dict[str, Any]:
     stopped_count = 0
     for active in list_active_sessions():
         device_id = active.get("device_id") or DEFAULT_DEVICE_ID
+        if active.get('mode') == PHYSICAL_MODE:
+            physical_service.shutdown()
+            stopped = store.get_session(active['id'])['status'] == 'stopped'
+            stopped_count += int(stopped)
+            results.append({'device_id': device_id, 'session_id': active['id'], 'ok': stopped})
+            continue
         if active.get("mode") == "ios-http-proxy":
             try:
                 ios_setup_service.stop_recording(session_id=active["id"])
@@ -1136,6 +1146,7 @@ def startup() -> None:
 @app.on_event("shutdown")
 def shutdown() -> None:
     try:
+        physical_service.shutdown()
         ios_setup_service.shutdown()
     finally:
         stop_logcat_reaper()
@@ -2685,6 +2696,10 @@ def api_desktop_stop_captures() -> Dict[str, Any]:
 @app.post("/api/captures/{session_id}/stop")
 def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
+    if session.get('mode') == PHYSICAL_MODE:
+        if physical_service.status().get('session_id') != session_id:
+            raise HTTPException(409, detail={'user_message': '此记录不是当前真机连接，请到真机页面检查网络恢复。'})
+        return physical_service.stop()
     if session.get("mode") == "ios-http-proxy":
         if session["status"] in {"starting", "running", "stopping"}:
             ios_operation(ios_setup_service.stop_recording, session_id=session_id)
@@ -2714,7 +2729,7 @@ def api_stop_capture_session(session_id: int) -> Dict[str, Any]:
 def api_get_capture(session_id: int) -> Dict[str, Any]:
     session = session_or_404(session_id)
     outdir = Path(session["outdir"])
-    if session.get("mode") == "ios-http-proxy":
+    if session.get("mode") in {"ios-http-proxy", PHYSICAL_MODE}:
         return {"session": session, "flow_count": IOSCaptureArchive(outdir, read_only=True).page(limit=1)["total"]}
     flows = scan_capture(outdir)
     return {"session": session, "flow_count": len(flows)}
@@ -2723,7 +2738,7 @@ def api_get_capture(session_id: int) -> Dict[str, Any]:
 @app.get("/api/captures/{session_id}/flows")
 def api_get_flows(session_id: int, cursor: int = 0, limit: int = 200) -> Dict[str, Any]:
     session = session_or_404(session_id)
-    if session.get("mode") == "ios-http-proxy":
+    if session.get("mode") in {"ios-http-proxy", PHYSICAL_MODE}:
         return IOSCaptureArchive(session["outdir"], read_only=True).page(cursor=cursor, limit=limit)
     flows = scan_capture(Path(session["outdir"]))
     return {"flows": flows}
@@ -2733,7 +2748,7 @@ def api_get_flows(session_id: int, cursor: int = 0, limit: int = 200) -> Dict[st
 def api_get_flow_detail(session_id: int, flow_id: str) -> Dict[str, Any]:
     session = session_or_404(session_id)
     try:
-        if session.get("mode") == "ios-http-proxy":
+        if session.get("mode") in {"ios-http-proxy", PHYSICAL_MODE}:
             return IOSCaptureArchive(session["outdir"], read_only=True).detail(flow_id)
         return get_flow_detail(Path(session["outdir"]), flow_id)
     except KeyError as exc:
@@ -2744,7 +2759,7 @@ def api_get_flow_detail(session_id: int, flow_id: str) -> Dict[str, Any]:
 def api_get_flow_curl(session_id: int, flow_id: str) -> str:
     session = session_or_404(session_id)
     try:
-        if session.get("mode") == "ios-http-proxy":
+        if session.get("mode") in {"ios-http-proxy", PHYSICAL_MODE}:
             return IOSCaptureArchive(session["outdir"], read_only=True).curl(flow_id)
         detail = get_flow_detail(
             Path(session["outdir"]),

@@ -3,7 +3,7 @@ import Foundation
 extension CaptureSource {
     var isRunning: Bool { status == "running" }
     var isActive: Bool { ["starting", "running", "stopping"].contains(status ?? "") }
-    var platformLabel: String { isIOS ? "iPhone" : "Android" }
+    var platformLabel: String { isIOS ? "iPhone" : (isAndroidPhysical ? "Android 真机" : "Android 模拟器") }
     var applicationName: String? {
         let name = (appName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty || ["iphone", "android"].contains(name.lowercased())

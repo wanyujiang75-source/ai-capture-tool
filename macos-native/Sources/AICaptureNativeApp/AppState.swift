@@ -13,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var lastRuntimeCheckAt: Date?
     @Published var selectedSection: SidebarSection = .capture
     @Published var selectedCapturePlatform: CapturePlatform = .android
+    @Published var selectedAndroidCaptureTarget: AndroidCaptureTarget = .emulator
+    let androidPhysicalController: AndroidPhysicalController
     let iosController = IOSSetupController()
     let breakpointController: BreakpointController
     @Published var devices: [CaptureDevice] = []
@@ -130,6 +132,7 @@ final class AppState: ObservableObject {
         workflowPollInterval: Duration = .seconds(2)
     ) {
         self.runtimeManager = runtimeManager
+        self.androidPhysicalController = AndroidPhysicalController(api: apiClient)
         self.breakpointController = BreakpointController(
             api: BreakpointHTTPClient(baseURL: apiClient.baseURL, directory: runtimeManager.runtimeDirectory),
             flowAPI: flowAPI ?? apiClient,
@@ -1023,7 +1026,7 @@ final class AppState: ObservableObject {
         flowLoadState = .loading
         do {
             var refreshedFlows: [FlowSummary]
-            if selectedFlowSource?.isIOS == true {
+            if selectedFlowSource?.usesRevisionArchive == true {
                 refreshedFlows = flows
                 var cursor = flowCursor
                 // Bound each refresh; later polls continue the revision journal without rereading bodies.
@@ -1094,7 +1097,7 @@ final class AppState: ObservableObject {
     func clearCurrentFlows() {
         clearedFlowIDs.formUnion(flows.map(\.id))
         clearedFlowIDs.formUnion(pendingFlowIDs)
-        if selectedFlowSource?.isIOS == true { flowClearedBefore = Date() }
+        if selectedFlowSource?.usesRevisionArchive == true { flowClearedBefore = Date() }
         selectedFlowID = nil
         selectedFlowDetail = nil
         selectedFlowCurl = ""

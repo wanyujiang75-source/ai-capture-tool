@@ -61,6 +61,8 @@ struct CaptureSource: Decodable, Identifiable, Equatable {
         case startedAt = "started_at"
     }
     var isIOS: Bool { platform == "ios" || mode == "ios-http-proxy" }
+    var isAndroidPhysical: Bool { mode == "android-physical-wireguard" }
+    var usesRevisionArchive: Bool { isIOS || isAndroidPhysical }
 }
 
 struct FlowPage: Decodable {

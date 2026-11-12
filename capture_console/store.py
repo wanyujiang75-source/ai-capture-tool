@@ -825,6 +825,20 @@ class CaptureStore:
                 raise ValueError("当前 iPhone 已有抓包任务，请先停止后再开始。") from exc
         return dict(row)
 
+    def create_physical_session(self, *, serial: str, package: str, outdir: str) -> Dict[str, Any]:
+        """Register a companion-owned capture without acquiring an emulator lease."""
+        timestamp = now_iso()
+        with self.connect() as conn:
+            row = conn.execute(
+                """INSERT INTO capture_sessions
+                (platform, device_id, device_name, adb_serial, app_name, package_name, mode, outdir,
+                 status, started_at, created_at, updated_at)
+                VALUES ('android', ?, 'Android 真机', ?, ?, ?, 'android-physical-wireguard', ?, 'starting', ?, ?, ?)
+                RETURNING *""",
+                ('physical-' + serial, serial, package, package, outdir, timestamp, timestamp, timestamp),
+            ).fetchone()
+        return dict(row)
+
     def update_session_status(
         self,
         session_id: int,

@@ -332,6 +332,10 @@ class NativeAppPackagingTests(unittest.TestCase):
         with zipfile.ZipFile(archive) as desktop_bundle:
             portable_install_copy = desktop_bundle.read("INSTALL.md").decode("utf-8")
             breakpoint_copy = desktop_bundle.read("BREAKPOINTS.md").decode("utf-8")
+            self.assertEqual(
+                (ROOT / "docs/desktop-user-guide.md").read_text(encoding="utf-8"),
+                desktop_bundle.read("USER_GUIDE.md").decode("utf-8"),
+            )
         self.assertEqual(
             (ROOT / "docs" / "breakpoint-user-guide.md").read_text(encoding="utf-8"),
             breakpoint_copy,
