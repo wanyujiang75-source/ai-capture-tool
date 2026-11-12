@@ -27,6 +27,7 @@ struct AndroidPhysicalView: View {
                     }
                     Text(AppCopy.AndroidPhysical.boundary).foregroundStyle(.secondary)
                     Text(AppCopy.AndroidPhysical.network).foregroundStyle(.secondary)
+                    Text(AppCopy.AndroidPhysical.googleLogin).font(.callout)
                     Toggle(AppCopy.AndroidPhysical.consent, isOn: $controller.consent).disabled(!controller.status.canStart)
                 }.padding(20).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
                 VStack(alignment: .leading, spacing: 12) {

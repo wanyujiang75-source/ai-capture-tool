@@ -18,6 +18,7 @@ extension AppCopy {
         static let consent = "我已了解适用范围和网络影响，同意临时替换手机 VPN，仅转发目标应用。"
         static let boundary = "不需要 Root，不修改原应用。仅部分应用和版本支持 HTTPS 解密，兼容性可能随更新变化。每次抓包最长 15 分钟，到期自动停止。"
         static let network = "请保持电脑现有 HTTP 代理开启，目标应用将通过 Mac 访问外网，不需要手机原 VPN 同时运行。原节点和配置不会修改；其他应用不被抓取，但不再由原 VPN 保护。请勿操作无关敏感应用。"
+        static let googleLogin = "使用 Google 登录的应用：请先通过手机原 VPN 完成 Google 登录，进入首页后再开始抓包。Google Play 服务不在当前单应用转发范围内；抓包期间需要重新登录时，请先点击“停止并恢复网络”，确认原 VPN 已连接后登录，再重新开始抓包。此流程不记录 Google 登录阶段的请求。"
         static let instructions = "操作步骤"
         static let steps = [
             "连接并解锁手机，确保手机与 Mac 在同一 Wi-Fi。在手机中打开需要分析的应用。",

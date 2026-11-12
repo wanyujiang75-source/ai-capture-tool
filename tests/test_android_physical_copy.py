@@ -8,6 +8,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhysicalCopyTests(unittest.TestCase):
+    def test_google_login_guidance_is_visible_and_documents_scope(self):
+        source = ROOT / 'macos-native/Sources/AICaptureNativeApp'
+        self.assertIn('Text(AppCopy.AndroidPhysical.googleLogin)', (source / 'AndroidPhysicalView.swift').read_text())
+        for relative in ('macos-native/Sources/AICaptureNativeApp/AndroidPhysicalCopy.swift', 'docs/desktop-user-guide.md'):
+            text = (ROOT / relative).read_text()
+            self.assertIn('先通过手机原 VPN 完成 Google 登录', text)
+            self.assertIn('Google Play 服务', text)
+            self.assertIn('停止并恢复网络', text)
+
     def test_current_guides_match_entry_and_finish_action(self):
         for relative in ('docs/desktop-user-guide.md', 'release/安装说明.md'):
             with self.subTest(file=relative):

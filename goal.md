@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-12 StickerHub Google 登录链路修复
+
+STICKER-LOGIN-NETWORK：区分原版 StickerHub 登录的客户端证书拒绝与 Google 服务跨进程出网缺口，依据有界诊断和对照实验做最小修复并从桌面验收。保留原 APK、账号数据、VPN 节点和配置，不 Root、不关闭上游或客户端 TLS 校验，不获取账号凭据；仅用户授权的首个 Google 账号登录，额外密码/安全确认由本人处理。测试前记录网络基线，测试后恢复；不将分析/统计 TLS 错误等同于登录根因。范围、验收和停止条件见 specs/sticker-login-network-20261112.md；不推送、不发布。
+
 ## 2026-11-12 真机外网链路与真实连接状态
 
 ANDROID-NETWORK-READY：按用户确认实施“手机单应用助手 → Mac 抓包 → 电脑已有 HTTP 代理 → 外网”。启动前验证手机 Wi-Fi、局域网往返与电脑代理 HTTPS；助手只在真实 WireGuard 握手后上报 connected。运行中检查断线/代理变更，失败即停止自有转发并保留归档、沿用原 VPN 恢复及待恢复记录；不静默回退直连、不修改节点/订阅/DNS/原配置。不改解密实现，不影响模拟器/iPhone。范围与验收见 specs/android-network-readiness-20261112.md。先隔离回归/构建，不中断用户现有任务；用户另授权使用 StickerHub Google 登录并选择第一个账号验收，安全确认由本人处理。本轮不自动发布或推送。

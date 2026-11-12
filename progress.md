@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-12 StickerHub Google 登录
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| STICKER-LOGIN-NETWORK | DOING | 定位并修复原版 StickerHub Google 登录的证书或出网问题 | goal.md、progress.md、specs/sticker-login-network-20261112.md；capture_console/android_physical_*.py、对应 tests；必要的 Android 助手/原生状态文案和测试；docs/desktop-user-guide.md；本地隔离诊断/构建 | 有界登录日志与 TLS/路由对照，区分目标进程/Google 服务；修复 RED/GREEN、既有抓包回归；桌面真实首账号登录及业务 Request/Response 或明确不可修复边界；恢复基线并保留旧机提醒 | 无抓包且无 VPN 也失败；原 Clash 不改配置开启后首账号登录成功。桌面 #102 得到7请求/7响应，两个业务200 JSON完整；82 TLS失败仍在。电脑代理探针随后失败自动停止，恢复验证完成。流程提示RED/GREEN、28 Python与11 Swift、构建验签通过；不等同抓包中登录修复 | 已交付先登录后抓包的提示与验证，原节点/配置保留并恢复整体基线；无缝登录仍需独立跨进程加密转发设计，不扩大采集或关闭证书校验，未推送 |
+
 ## 2026-11-12 真机外网链路与真实连接状态
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
