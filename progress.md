@@ -771,6 +771,10 @@ W1 续验：r5 内嵌 Python + 包内后端通过隔离生命周期测试，清�
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-PHYSICAL-MERGE | DOING | 合并 main 并更新启动本机桌面 | goal.md、progress.md、specs/android-physical-desktop-v1.md；Git main；/Applications/抓包工具.app 与旧版备份 | 快进关系与远端一致；回归；无活动抓包；ZIP SHA/签名与安装版本匹配；原生窗口显示真机入口，服务 idle | 用户明确要求；保留无关未提交文件和原 VPN，不自动抓包 | 验证后快进主分支、备份替换、启动核对 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | ANDROID-PHYSICAL-RELEASE | DONE | 推送真机实验入口并发布含完整说明的新预览包 | 当前 ANDROID-PHYSICAL-V1 功能文件；goal.md、progress.md、specs/android-physical-desktop-v1.md、release/package.sh、release/安装说明.md、release/notes-20261112.md、tests/test_native_app_packaging.py | 打包回归；ZIP 包内指南、运行时与版本；严格签名、隔离启动；远端提交/标签/资产 SHA 一致 | 637a133 已推送 codex/android-nr0-admission；预发布 desktop-preview-20261112-637a133 指向同提交，匿名下载 HTTP 200。ZIP 249875143 B，SHA-256 4973eeff8ea59f212f0a887fe7d50338692dee597318025f873e4ca4f9c70a46，远端 digest/大小相同。补齐 USER_GUIDE 缺失的 RED/GREEN，打包及迁移运行 2 项通过；最终 release 解压严格签名、版本、三份指南、助手和两个运行时版本核验通过，隔离后端 status=200、真机 idle。Web 生产依赖 audit=0，开发依赖仍 8 告警未扩展升级。保留功能 DOING 与硬件缺口，未动原 VPN 或 /Applications，未合并 main | 本次预览发布完成；功能剩余实机验收按原任务继续 |
 
 2026-11-12 文档子项已完成：使用指南第 14 节改为首次准备、四步操作、恢复、故障及换机说明；新增入口跳转，明确 1.2 节只适用于模拟器。已对照实际 Swift 文案/后端状态核对 9 个操作名称、7 个小节、4 步主流程和内部锚点，`git diff --check` 通过。没有修改运行代码或设备，不重跑构建、不发布；ANDROID-PHYSICAL-V1 的硬件验收缺口及 DOING 状态保持不变。
