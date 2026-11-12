@@ -1,5 +1,9 @@
 # 进度记录
 
+2026-11-12 继续本人 ANDROID-PHYSICAL-V1（DOING）：新增终止当前任务并重新检测、旧机待恢复记录隔离及按设备恢复；范围补充 `android_physical_recovery.py`、`tests/test_android_physical_switch.py`、原生换机测试。验收为停止/重启/新旧设备隔离的 TDD、Swift/Python 回归与隔离桌面验收；真实旧手机仍离线，不能宣告其 VPN 已恢复。本轮不推送、不发布、不改手机网络。
+
+换机补修子项 DONE：最终后端 228 项、Swift 200 项（另 1 opt-in 跳过）通过；9 项 Swift 包含迟到轮询不覆盖终止，7 项 Python 换机测试包含旧线程退出/记录持久化/按机恢复/停止互斥。隔离原生桌面实际点击终止并重新检测通过，新机可开始但未启动，旧机提醒及退出警告保留。已补使用指南并构建验签；此前缺失接口与停止互斥 RED 均已修复。ANDROID-PHYSICAL-V1 整体保持 DOING，真实手机恢复及先前未覆盖的硬件竞态不算通过。
+
 ## 2026-11-11 扩展应用验证与 Android 真机入口评估
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

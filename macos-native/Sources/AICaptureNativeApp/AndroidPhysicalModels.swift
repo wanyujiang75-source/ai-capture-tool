@@ -6,7 +6,7 @@ enum AndroidCaptureTarget: String, CaseIterable, Identifiable {
 }
 
 enum AndroidPhysicalPhase: String, Decodable, Sendable {
-    case idle, preparing, capturing, stopping, stopped, failed, unknown
+    case idle, preparing, capturing, stopping, terminating, stopped, failed, unknown
     case waitingInstall = "waiting_install", waitingVPN = "waiting_vpn", recoveryRequired = "recovery_required"
     init(from decoder: any Decoder) throws {
         self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
@@ -17,7 +17,10 @@ enum AndroidPhysicalAction { case start, stop, recover, none }
 
 enum AndroidPhysicalQuitSafety {
     static func requiresWarning(runtimeDirectory: URL) -> Bool {
-        FileManager.default.fileExists(atPath: runtimeDirectory.appendingPathComponent("android-physical/recovery.json").path)
+        let root = runtimeDirectory.appendingPathComponent("android-physical")
+        if FileManager.default.fileExists(atPath: root.appendingPathComponent("recovery.json").path) { return true }
+        let pending = try? FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("pending-recovery").path)
+        return pending?.contains(where: { $0.hasSuffix(".json") }) == true
     }
 }
 
@@ -32,10 +35,13 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
     var tlsFailures: Int?
     var originalVPN: String?
     var upstream: String?
+    var deviceName: String?
+    var pendingRecoveries: [AndroidPhysicalRecovery]?
     enum CodingKeys: String, CodingKey {
         case phase, serial, package, message, upstream
         case sessionID = "session_id", flowCount = "flow_count", responseCount = "response_count"
         case tlsFailures = "tls_failures", originalVPN = "original_vpn"
+        case deviceName = "device_name", pendingRecoveries = "pending_recoveries"
     }
     var canStart: Bool { [.idle, .stopped, .failed].contains(phase) }
     var action: AndroidPhysicalAction {
@@ -43,10 +49,17 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
         case .idle, .stopped, .failed: .start
         case .preparing, .waitingInstall, .waitingVPN, .capturing: .stop
         case .recoveryRequired: .recover
-        case .stopping, .unknown: .none
+        case .stopping, .terminating, .unknown: .none
         }
     }
     var title: String { AppCopy.AndroidPhysical.title(phase) }
+}
+
+struct AndroidPhysicalRecovery: Decodable, Identifiable, Sendable {
+    let serial: String
+    let name: String
+    var id: String { serial }
+    var label: String { AppCopy.AndroidPhysical.phoneLabel(name: name, serial: serial) }
 }
 
 struct AndroidPhysicalDevice: Decodable, Identifiable, Sendable {
@@ -62,6 +75,7 @@ protocol AndroidPhysicalAPI: Sendable {
     func discoverAndroidPhysical() async throws -> [AndroidPhysicalDevice]
     func startAndroidPhysical(serial: String, consent: Bool) async throws -> AndroidPhysicalStatus
     func actAndroidPhysical(_ action: String) async throws -> AndroidPhysicalStatus
+    func recoverAndroidPhysical(serial: String) async throws -> AndroidPhysicalStatus
 }
 
 @MainActor
@@ -74,27 +88,56 @@ final class AndroidPhysicalController: ObservableObject {
     @Published var consent = false
     private let api: any AndroidPhysicalAPI
     private var revision = 0
+    private var refreshing = false
     init(api: any AndroidPhysicalAPI = APIClient()) { self.api = api }
+    var canTerminate: Bool { !busy && ![.idle, .terminating, .unknown].contains(status.phase) }
+    var canPerform: Bool {
+        guard !busy else { return false }
+        switch status.action {
+        case .start:
+            return consent && isConnected(serial) && !(status.pendingRecoveries ?? []).contains(where: { $0.serial == serial })
+        case .recover: return isConnected(status.serial ?? "")
+        case .stop: return true
+        case .none: return false
+        }
+    }
+    var currentDeviceLabel: String? {
+        guard !status.canStart, let serial = status.serial else { return nil }
+        return AppCopy.AndroidPhysical.phoneLabel(name: status.deviceName ?? "", serial: serial)
+    }
+    func isConnected(_ serial: String) -> Bool {
+        devices.contains(where: { $0.serial == serial && $0.status == "device" })
+    }
+    func canRecover(_ serial: String) -> Bool {
+        !busy && status.canStart && isConnected(serial) && (status.pendingRecoveries ?? []).contains(where: { $0.serial == serial })
+    }
     func refresh() async {
-        guard !busy else { return }
+        guard !busy, !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
         let version = revision
         do {
             let value = try await api.readAndroidPhysical()
+            let connected = try await api.discoverAndroidPhysical()
             guard !Task.isCancelled, revision == version else { return }
             status = value
+            devices = connected
+            if !value.canStart, let active = value.serial { serial = active }
+            else if !connected.contains(where: { $0.serial == serial && $0.status == "device" }) {
+                serial = connected.first(where: { $0.status == "device" })?.serial ?? connected.first?.serial ?? ""
+                consent = false
+            }
+            issue = nil
         } catch {
             guard !Task.isCancelled, revision == version else { return }
             issue = AppCopy.AndroidPhysical.connectionFailed
         }
     }
     func discover() async {
-        do {
-            devices = try await api.discoverAndroidPhysical()
-            if !devices.contains(where: { $0.serial == serial }) { serial = devices.first?.serial ?? "" }
-        } catch { issue = AppCopy.AndroidPhysical.discoveryFailed }
+        await refresh()
     }
     func perform() async {
-        guard !busy else { return }
+        guard canPerform else { return }
         let action = status.action
         guard action != .none else { return }
         if action == .start && (!consent || serial.isEmpty) { return }
@@ -108,5 +151,29 @@ final class AndroidPhysicalController: ObservableObject {
         } catch {
             issue = (error as? APIClientError)?.userFacingIssue.message ?? AppCopy.AndroidPhysical.connectionFailed
         }
+    }
+
+    func terminate() async {
+        guard canTerminate else { return }
+        busy = true
+        revision += 1
+        issue = nil
+        defer { busy = false }
+        do {
+            status = try await api.actAndroidPhysical("terminate")
+            consent = false
+        } catch {
+            issue = (error as? APIClientError)?.userFacingIssue.message ?? AppCopy.AndroidPhysical.connectionFailed
+        }
+    }
+
+    func recover(_ serial: String) async {
+        guard canRecover(serial) else { return }
+        busy = true
+        revision += 1
+        issue = nil
+        defer { busy = false }
+        do { status = try await api.recoverAndroidPhysical(serial: serial) }
+        catch { issue = (error as? APIClientError)?.userFacingIssue.message ?? AppCopy.AndroidPhysical.connectionFailed }
     }
 }

@@ -55,4 +55,19 @@ def physical_router(service):
         desktop(request)
         return service.recover()
 
+    @router.post('/terminate')
+    def terminate(request: Request):
+        desktop(request)
+        return service.terminate()
+
+    @router.post('/recover/{serial}')
+    def recover_device(request: Request, serial: str):
+        desktop(request)
+        try:
+            return service.recover(serial)
+        except ValueError as exc:
+            raise HTTPException(409, detail={'user_message': str(exc)}) from exc
+        except (OSError, subprocess.TimeoutExpired):
+            raise HTTPException(503, detail={'user_message': '无法检测原手机，请检查 USB 连接后重试。'}) from None
+
     return router

@@ -13,7 +13,8 @@ import threading
 import time
 import uuid
 
-from .android_physical_device import BRIDGE, PhysicalDevice
+from .android_physical_device import BRIDGE, PhysicalDevice, devices
+from .android_physical_recovery import PendingRecoveries
 from .ios_setup import local_wifi_address, process_identity
 from .ios_results import IOSCaptureArchive
 
@@ -43,6 +44,8 @@ class PhysicalCaptureService:
         self.root, self.store, self.adb = Path(root), store, str(adb)
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.marker = self.root / 'recovery.json'
+        self.pending = PendingRecoveries(self.root)
+        self.terminating = False
         self.lock = threading.RLock()
         self.cancel = threading.Event()
         self.thread = self.process = self.device = self.directory = None
@@ -50,13 +53,16 @@ class PhysicalCaptureService:
         self.last = {'phase': 'idle', 'flow_count': 0, 'response_count': 0, 'tls_failures': 0}
         if self.marker.exists():
             self.info = json.loads(self.marker.read_text())
-            self.last.update(phase='recovery_required', serial=self.info['serial'],
+            self.last.update(phase='recovery_required', serial=self.info['serial'], device_name=self.info.get('name'),
                              original_vpn=self.info.get('original_vpn'),
                              message='上次连接未完成恢复。请连接原手机，点击恢复网络。')
 
     def status(self):
         with self.lock:
-            return dict(self.last)
+            result = {**self.last, 'pending_recoveries': self.pending.summaries()}
+            if self.terminating:
+                result.update(phase='terminating', message='正在终止当前任务…完成后将重新检测手机，抓包记录会保留。')
+            return result
 
     def update(self, **values):
         with self.lock:
@@ -72,12 +78,16 @@ class PhysicalCaptureService:
         with self.lock:
             if not experimental_consent:
                 raise ValueError('请先确认实验能力边界和临时 VPN 接管。')
-            if self.marker.exists() or self.thread and self.thread.is_alive():
+            if self.terminating or self.marker.exists() or self.thread and self.thread.is_alive():
                 raise ValueError('已有连接尚未结束，请先停止抓包并恢复原网络。')
+            if self.pending.path(serial).exists():
+                raise ValueError('这台手机的原网络尚未确认恢复，请先点击对应的“检查网络恢复”。')
             owner = process_identity(desktop_pid)
             if not owner:
                 raise ValueError('桌面端进程已退出，请重新打开桌面端。')
             self.device = PhysicalDevice(self.adb, serial)
+            self.info = {}
+            self.process = self.directory = None
             self.cancel.clear()
             self.last = {'phase': 'preparing', 'flow_count': 0, 'response_count': 0, 'tls_failures': 0, 'serial': serial}
             self.thread = threading.Thread(target=self._run, args=(desktop_pid, owner), daemon=True)
@@ -90,7 +100,7 @@ class PhysicalCaptureService:
             self.info = self.device.inspect()
             if self.info['original_vpn'] == BRIDGE:
                 raise ValueError('手机已有临时抓包连接，请先在连接助手中停止。')
-            self.update(package=self.info['package'], original_vpn=self.info['original_vpn'])
+            self.update(package=self.info['package'], original_vpn=self.info['original_vpn'], device_name=self.info.get('name'))
             resources = ROOT.parent
             python = resources / 'physical-runtime/bin/python3'
             apk = resources / 'android-bridge.apk'
@@ -194,6 +204,14 @@ class PhysicalCaptureService:
                     self.device.cleanup()
         except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired):
             restored = False
+        self._close_local_capture()
+        if restored:
+            self.marker.unlink(missing_ok=True)
+            self.update(phase='stopped', message='抓包已停止，原网络连接已恢复。')
+        else:
+            self.update(phase='recovery_required', message='抓包已停止。请连接原手机，打开原 VPN 并恢复连接，再点击“检查网络恢复”。')
+
+    def _close_local_capture(self):
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:
@@ -206,29 +224,68 @@ class PhysicalCaptureService:
         directory = self.directory or (self.root / self.info['directory'] if self.info.get('directory') else None)
         if directory and directory.parent == self.root and directory.name.startswith('connection-'):
             shutil.rmtree(directory, ignore_errors=True)
-        if restored:
-            self.marker.unlink(missing_ok=True)
-            self.update(phase='stopped', message='抓包已停止，原网络连接已恢复。')
-        else:
-            self.update(phase='recovery_required', message='抓包已停止。请连接原手机，打开原 VPN 并恢复连接，再点击“检查网络恢复”。')
 
     def stop(self):
-        self.cancel.set()
-        if self.thread and self.thread.is_alive():
-            self.update(phase='stopping', message='正在停止抓包并恢复原网络…')
-        return self.status()
-
-    def recover(self):
         with self.lock:
+            self.cancel.set()
             if self.thread and self.thread.is_alive():
+                self.update(phase='stopping', message='正在停止抓包并恢复原网络…')
+            return self.status()
+
+    def recover(self, serial=None):
+        with self.lock:
+            if self.terminating or self.thread and self.thread.is_alive():
+                if serial:
+                    raise ValueError('请先结束当前任务，再检查其他手机的网络恢复。')
                 return self.status()
+            if serial:
+                path = self.pending.path(serial)
+                if self.marker.exists() or not path.exists():
+                    raise ValueError('该手机没有可检查的待恢复记录，或当前任务尚未结束。')
+                if not any(item['serial'] == serial and item['status'] == 'device' for item in devices(self.adb)):
+                    raise ValueError('请连接这条恢复记录对应的原手机，并允许 USB 调试；不会操作其他手机。')
+                device = PhysicalDevice(self.adb, serial)
+                info = json.loads(path.read_text())
+                path.replace(self.marker)
+                self.info, self.device = info, device
+                self.process = self.directory = None
+                self.last = {'phase': 'recovery_required', 'serial': serial, 'device_name': info.get('name')}
             if not self.marker.exists():
                 return self.status()
-            self.device = PhysicalDevice(self.adb, self.info['serial'])
+            if serial is None:
+                self.device = PhysicalDevice(self.adb, self.info['serial'])
             self.update(phase='stopping', message='正在检查原网络连接…')
             self.thread = threading.Thread(target=self._finish_recovery, daemon=True)
             self.thread.start()
             return self.status()
+
+    def terminate(self):
+        with self.lock:
+            if self.terminating:
+                return self.status()
+            self.cancel.set()
+            self.terminating = True
+            previous = self.thread
+            self.thread = threading.Thread(target=self._terminate, args=(previous,), daemon=True)
+            self.thread.start()
+            return self.status()
+
+    def _terminate(self, previous):
+        try:
+            # Never let a late completion from the old task modify a new one.
+            if previous:
+                previous.join()
+            self._close_local_capture()
+            with self.lock:
+                self.pending.defer(self.marker)
+                self.info = {}
+                self.device = self.process = self.directory = None
+                self.last = {'phase': 'idle', 'message': '任务已终止，抓包记录已保留。请选择已连接的手机重新开始。'}
+        except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired):
+            self.update(phase='recovery_required', message='当前任务未能完全终止，已保留恢复记录，请重试终止任务。')
+        finally:
+            with self.lock:
+                self.terminating = False
 
     def shutdown(self):
         self.stop()

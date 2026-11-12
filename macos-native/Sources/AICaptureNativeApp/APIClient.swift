@@ -109,8 +109,14 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
     }
 
     func actAndroidPhysical(_ action: String) async throws -> AndroidPhysicalStatus {
-        guard ["stop", "recover"].contains(action) else { throw APIClientError.invalidResponse }
+        guard ["stop", "recover", "terminate"].contains(action) else { throw APIClientError.invalidResponse }
         return try await physicalRequest("/" + action, body: Data("{}".utf8))
+    }
+
+    func recoverAndroidPhysical(serial: String) async throws -> AndroidPhysicalStatus {
+        guard !serial.isEmpty, serial.count <= 128,
+              serial.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { throw APIClientError.invalidResponse }
+        return try await physicalRequest("/recover/" + serial, body: Data("{}".utf8))
     }
 
     private func physicalRequest<Response: Decodable>(_ suffix: String, body: Data? = nil) async throws -> Response {

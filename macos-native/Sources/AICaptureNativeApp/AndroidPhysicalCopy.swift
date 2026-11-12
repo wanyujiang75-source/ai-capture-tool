@@ -7,6 +7,12 @@ extension AppCopy {
         static let device = "Android 真机"
         static let chooseDevice = "使用手机"
         static let discover = "检测手机"
+        static let terminate = "终止任务并重新检测"
+        static let terminateHelp = "结束当前任务，保留抓包记录并重新检测 USB 手机；未确认的旧手机网络恢复会单独保留提醒，不会自动开始新抓包。"
+        static let pendingTitle = "待恢复的手机"
+        static let pendingHelp = "这些手机的抓包已终止，但原网络尚未确认恢复。请重新连接对应手机，打开原 VPN 恢复连接，再检查网络恢复；不影响其他手机开始新任务。"
+        static let originalDisconnected = "原手机已断开或未授权。可终止当前任务并重新检测，稍后再连接原手机检查网络恢复。"
+        static let currentDevice = "当前任务手机"
         static let noDevices = "未检测到 USB 真机。请连接手机、开启 USB 调试并允许此电脑调试。"
         static let unauthorized = "请解锁手机，并在 USB 调试提示中选择允许。"
         static let consent = "我了解实验能力限制，并允许临时接管所选应用的 VPN 转发。"
@@ -34,6 +40,9 @@ extension AppCopy {
         static func count(_ status: AndroidPhysicalStatus) -> String {
             "已记录 \(status.flowCount ?? 0) 个请求，收到 \(status.responseCount ?? 0) 个响应"
         }
+        static func phoneLabel(name: String, serial: String) -> String {
+            "\(name.isEmpty ? device : name) · \(serial.suffix(4))"
+        }
         static func title(_ phase: AndroidPhysicalPhase) -> String {
             switch phase {
             case .idle: "准备连接手机"
@@ -42,6 +51,7 @@ extension AppCopy {
             case .waitingVPN: "等待手机授权"
             case .capturing: "正在抓取手机应用"
             case .stopping: "正在恢复原网络…"
+            case .terminating: "正在终止任务…"
             case .recoveryRequired: "原网络尚未恢复"
             case .stopped: "抓包已停止"
             case .failed: "真机抓包未启动"

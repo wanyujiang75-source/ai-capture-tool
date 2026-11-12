@@ -44,6 +44,21 @@ class PhysicalAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.service.status.assert_not_called()
 
+    def test_terminate_and_targeted_recovery_require_desktop_and_explicit_target(self):
+        self.service.terminate.return_value = {'phase': 'terminating'}
+        self.service.recover.return_value = {'phase': 'stopping'}
+        for path in ('terminate', 'recover/old-phone'):
+            self.assertEqual(self.request('POST', '/api/android-physical/' + path, headers={}).status_code, 403)
+        self.service.terminate.assert_not_called()
+        self.service.recover.assert_not_called()
+        response = self.request('POST', '/api/android-physical/terminate', headers=self.headers)
+        self.assertEqual(response.body, {'phase': 'terminating'})
+        response = self.request('POST', '/api/android-physical/recover/old-phone', headers=self.headers)
+        self.assertEqual(response.body, {'phase': 'stopping'})
+        self.service.recover.assert_called_once_with('old-phone')
+        self.service.recover.side_effect = ValueError('请连接原手机。')
+        self.assertEqual(self.request('POST', '/api/android-physical/recover/old-phone', headers=self.headers).status_code, 409)
+
     def test_start_passes_only_explicit_consent_and_selected_device(self):
         payload = {'serial': 'test', 'desktop_pid': 42, 'experimental_consent': True}
         response = self.request('POST', '/api/android-physical/start', headers=self.headers, payload=payload)
