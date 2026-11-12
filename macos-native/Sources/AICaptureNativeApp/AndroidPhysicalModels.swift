@@ -8,6 +8,7 @@ enum AndroidCaptureTarget: String, CaseIterable, Identifiable {
 enum AndroidPhysicalPhase: String, Decodable, Sendable {
     case idle, preparing, capturing, stopping, terminating, stopped, failed, unknown
     case waitingInstall = "waiting_install", waitingVPN = "waiting_vpn", recoveryRequired = "recovery_required"
+    case checkingNetwork = "checking_network", waitingTunnel = "waiting_tunnel"
     init(from decoder: any Decoder) throws {
         self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
     }
@@ -36,18 +37,21 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
     var originalVPN: String?
     var upstream: String?
     var deviceName: String?
+    var phoneNetwork: String?
+    var upstreamNetwork: String?
     var pendingRecoveries: [AndroidPhysicalRecovery]?
     enum CodingKeys: String, CodingKey {
         case phase, serial, package, message, upstream
         case sessionID = "session_id", flowCount = "flow_count", responseCount = "response_count"
         case tlsFailures = "tls_failures", originalVPN = "original_vpn"
         case deviceName = "device_name", pendingRecoveries = "pending_recoveries"
+        case phoneNetwork = "phone_network", upstreamNetwork = "upstream_network"
     }
     var canStart: Bool { [.idle, .stopped, .failed].contains(phase) }
     var action: AndroidPhysicalAction {
         switch phase {
         case .idle, .stopped, .failed: .start
-        case .preparing, .waitingInstall, .waitingVPN, .capturing: .stop
+        case .preparing, .checkingNetwork, .waitingTunnel, .waitingInstall, .waitingVPN, .capturing: .stop
         case .recoveryRequired: .recover
         case .stopping, .terminating, .unknown: .none
         }

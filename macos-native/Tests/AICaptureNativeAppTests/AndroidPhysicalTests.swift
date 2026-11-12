@@ -4,6 +4,15 @@ import Testing
 
 @MainActor
 struct AndroidPhysicalTests {
+    @Test func networkAndTunnelWaitNeverAdvertiseCaptureSuccess() throws {
+        for (raw, title) in [("checking_network", "正在检查网络…"), ("waiting_tunnel", "正在连接手机…")] {
+            let data = Data("{\"phase\":\"\(raw)\",\"phone_network\":\"ready\",\"upstream_network\":\"ready\"}".utf8)
+            let status = try JSONDecoder().decode(AndroidPhysicalStatus.self, from: data)
+            #expect(status.title == title)
+            #expect(status.action == .stop)
+            #expect(!status.canStart)
+        }
+    }
     @Test func deviceEntryAndLifecycleCopyExplainScopeAndNextAction() {
         #expect(AndroidCaptureTarget.allCases.map(\.rawValue) == ["模拟器", "真机"])
         let phases: [AndroidPhysicalPhase] = [.waitingInstall, .waitingVPN, .failed, .terminating]

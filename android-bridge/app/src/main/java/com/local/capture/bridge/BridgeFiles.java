@@ -17,9 +17,12 @@ final class BridgeFiles {
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
     static void state(Context context, String phase) {
+        state(context, phase, 0);
+    }
+    static void state(Context context, String phase, long sequence) {
         try {
             File file = new File(context.getFilesDir(), "status.tmp");
-            Files.write(file.toPath(), ("{\"phase\":\"" + phase + "\"}").getBytes(StandardCharsets.UTF_8));
+            Files.write(file.toPath(), ("{\"phase\":\"" + phase + "\",\"sequence\":" + sequence + "}").getBytes(StandardCharsets.UTF_8));
             Files.move(file.toPath(), new File(context.getFilesDir(), "status.json").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception ignored) { }
     }

@@ -1,5 +1,11 @@
 # 进度记录
 
+## 2026-11-12 真机外网链路与真实连接状态
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| ANDROID-NETWORK-READY | BLOCKED | 补齐真机代理出网准入、握手状态和断线保护 | goal.md、progress.md、specs/android-network-readiness-20261112.md；capture_console/android_physical_network.py、android_physical_service.py、android_physical_worker.py、android_physical_device.py；android-bridge 助手及 Java 测试；AndroidPhysicalModels/Copy/View.swift 及 Swift 测试；tests/test_android_physical_*.py；docs/desktop-user-guide.md、release/安装说明.md；本地构建/隔离验收产物 | RED/GREEN 覆盖 Wi-Fi 关闭、局域网不通、代理仅开端口、无代理、旧握手/无握手、端点变更/失联及恢复保护；Python/Swift/Java 回归、完整构建验签；空闲后原生 UI 与用户授权 StickerHub 登录/请求响应验收或准确记录外部阻塞 | 实现及独立复核修复完成；最终 Python 134、Swift 202、Java/完整构建验签通过，真实隔离 worker/keepalive/超时退出通过。误写测试模块的失败已纠正重跑。PKG110 #101 网络检查与真实握手通过，选择首个 Google 账号后 StickerHub 3.18.14 提示登录服务问题，0 请求/响应、39 TLS 失败；至少一处系统拒绝证书，未证明全部登录根因。桌面停止恢复测试前状态，旧 PHK110 恢复记录未变 | 网络改造已完成，业务登录/正文验收未通过；保留兼容限制，后续独立定位该版本登录与 HTTPS，不扩展本轮 TLS/原包/VPN 配置，不推送发布 |
+
 ## 2026-11-12 换机修复合并与发布
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

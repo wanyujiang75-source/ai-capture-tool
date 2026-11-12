@@ -8,9 +8,28 @@ import subprocess
 from mitmproxy import connection, http
 from capture_console.android_physical_worker import PhysicalRecorder, single_app_config
 from capture_console.android_physical_device import BRIDGE, PhysicalDevice, parse_vpn, foreground_package
+from capture_console.android_physical_network import PreparationCancelled
 
 
 class PhysicalContractTests(unittest.TestCase):
+    def test_cancel_during_activity_resolution_prevents_am_start(self):
+        device = PhysicalDevice('adb', 'phone')
+        checkpoint = Mock(side_effect=[None, PreparationCancelled()])
+        with patch.object(device, 'shell', return_value='com.example.app/.MainActivity') as shell:
+            with self.assertRaises(PreparationCancelled):
+                device.launch('com.example.app', checkpoint)
+        shell.assert_called_once_with('cmd', 'package', 'resolve-activity', '--brief', 'com.example.app', timeout=3)
+
+    def test_launch_renews_between_resolution_and_start(self):
+        device = PhysicalDevice('adb', 'phone')
+        events = []
+        def shell(*args, **kwargs):
+            events.append(args[0])
+            return 'com.example.app/.MainActivity'
+        with patch.object(device, 'shell', side_effect=shell):
+            device.launch('com.example.app', lambda: events.append('renew'))
+        self.assertEqual(events, ['renew', 'cmd', 'renew', 'am', 'renew'])
+
     def test_shared_uid_target_is_rejected_before_takeover(self):
         device = PhysicalDevice('adb', 'phone')
         for packages, allowed in (

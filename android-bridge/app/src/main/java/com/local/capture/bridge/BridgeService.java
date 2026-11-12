@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.os.*;
 import com.wireguard.android.backend.GoBackend;
 import com.wireguard.android.backend.Tunnel;
+import com.wireguard.android.backend.Statistics;
+import com.wireguard.crypto.Key;
 import com.wireguard.config.Config;
 import java.io.File;
 import java.util.concurrent.Executors;
@@ -16,10 +18,11 @@ public final class BridgeService extends Service {
     private GoBackend backend;
     private Lease lease;
     private boolean started;
+    private long sequence;
     private final Tunnel tunnel = new Tunnel() {
         public String getName() { return "CaptureDesktop"; }
         public void onStateChange(State state) {
-            BridgeFiles.state(BridgeService.this, state == State.UP ? "connected" : "stopped");
+            BridgeFiles.state(BridgeService.this, state == State.UP ? "connecting" : "stopped");
         }
     };
     @Override public void onCreate() {
@@ -29,7 +32,7 @@ public final class BridgeService extends Service {
         Intent open = new Intent(this, MainActivity.class);
         Notification notification = new Notification.Builder(this, "capture")
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("正在转发测试应用")
+            .setContentTitle("测试应用临时连接")
             .setContentText("结束后请确认原 VPN 已恢复")
             .setContentIntent(PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE))
             .setOngoing(true).build();
@@ -53,7 +56,13 @@ public final class BridgeService extends Service {
     private void checkLease() {
         try {
             if (!lease.renew(BridgeFiles.lease(this), SystemClock.elapsedRealtime())
-                    || backend.getState(tunnel) != Tunnel.State.UP) stopSelf();
+                    || backend.getState(tunnel) != Tunnel.State.UP) { stopSelf(); return; }
+            Statistics statistics = backend.getStatistics(tunnel);
+            long handshake = 0;
+            for (Key key : statistics.peers()) {
+                handshake = Math.max(handshake, statistics.peer(key).latestHandshakeEpochMillis());
+            }
+            BridgeFiles.state(this, TunnelHealth.phase(true, handshake, System.currentTimeMillis()), ++sequence);
         } catch (Exception exception) { stopSelf(); }
     }
     @Override public void onDestroy() {

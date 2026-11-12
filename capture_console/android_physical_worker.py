@@ -18,7 +18,9 @@ from .ios_setup import process_identity
 def single_app_config(config, package):
     if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+', package):
         raise ValueError('invalid target package')
-    return config.replace('[Interface]\n', '[Interface]\nIncludedApplications = ' + package + '\n', 1).replace(
+    config = re.sub(r'(?m)^PersistentKeepalive\s*=.*\n?', '', config)
+    return config.replace('[Peer]\n', '[Peer]\nPersistentKeepalive = 5\n', 1).replace(
+        '[Interface]\n', '[Interface]\nIncludedApplications = ' + package + '\n', 1).replace(
         'AllowedIPs = 0.0.0.0/0', 'AllowedIPs = 0.0.0.0/0, ::/0')
 
 

@@ -32,7 +32,7 @@ struct AndroidPhysicalView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text(controller.status.title).font(.title2.bold())
-                        if controller.busy || [.preparing, .stopping, .terminating].contains(controller.status.phase) { ProgressView().controlSize(.small) }
+                        if controller.busy || [.preparing, .checkingNetwork, .waitingTunnel, .stopping, .terminating].contains(controller.status.phase) { ProgressView().controlSize(.small) }
                     }
                     if let label = controller.currentDeviceLabel {
                         Text(AppCopy.AndroidPhysical.currentDevice + "：" + label)
@@ -41,6 +41,10 @@ struct AndroidPhysicalView: View {
                         }
                     }
                     if let message = controller.status.message { Text(message) }
+                    if controller.status.phoneNetwork != nil || controller.status.upstreamNetwork != nil {
+                        Text(AppCopy.AndroidPhysical.phoneNetwork + "：" + AppCopy.AndroidPhysical.networkResult(controller.status.phoneNetwork))
+                        Text(AppCopy.AndroidPhysical.upstreamNetwork + "：" + AppCopy.AndroidPhysical.networkResult(controller.status.upstreamNetwork))
+                    }
                     if controller.status.phase == .capturing { Text(AppCopy.AndroidPhysical.count(controller.status)) }
                     if (controller.status.tlsFailures ?? 0) > 0 { Text(AppCopy.AndroidPhysical.tlsFailure).foregroundStyle(.orange) }
                     if let issue = controller.issue { Text(issue).foregroundStyle(.red) }

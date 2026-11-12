@@ -15,6 +15,7 @@ import uuid
 
 from .android_physical_device import BRIDGE, PhysicalDevice, devices
 from .android_physical_recovery import PendingRecoveries
+from .android_physical_network import NetworkIssue, NetworkReadiness, PreparationCancelled, TunnelReadiness
 from .ios_setup import local_wifi_address, process_identity
 from .ios_results import IOSCaptureArchive
 
@@ -23,7 +24,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def existing_upstream():
-    result = subprocess.run(['/usr/sbin/scutil', '--proxy'], capture_output=True, text=True, timeout=5)
+    result = subprocess.run(['/usr/sbin/scutil', '--proxy'], capture_output=True, text=True, timeout=2)
+    if result.returncode:
+        raise ValueError('无法读取电脑代理，请检查已有代理。')
     text = result.stdout
     for prefix in ('HTTPS', 'HTTP'):
         if re.search(rf'\b{prefix}Enable\s*:\s*1\b', text):
@@ -31,8 +34,6 @@ def existing_upstream():
             port = re.search(rf'\b{prefix}Port\s*:\s*(\d+)', text)
             if not host or not port or not 0 < int(port[1]) < 65536:
                 raise ValueError('当前电脑代理参数无效，请检查已有代理。')
-            with socket.create_connection((host[1], int(port[1])), timeout=3):
-                pass
             return [host[1], int(port[1])]
     if re.search(r'\b(?:SOCKSEnable|ProxyAutoConfigEnable)\s*:\s*1\b', text):
         raise ValueError('当前电脑仅有 SOCKS/PAC 代理，无法用于真机抓包。请检查是否有可用的 HTTP 代理；工具不会修改原配置。')
@@ -96,6 +97,7 @@ class PhysicalCaptureService:
 
     def _run(self, owner_pid, owner_identity):
         failed = None
+        network = None
         try:
             self.info = self.device.inspect()
             if self.info['original_vpn'] == BRIDGE:
@@ -113,6 +115,12 @@ class PhysicalCaptureService:
             host = local_wifi_address()
             if not ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback:
                 raise ValueError('未找到可用局域网，请将手机与 Mac 连接同一 Wi-Fi。')
+            self.update(phase='checking_network', message='正在检查手机与 Mac 的连接，以及电脑代理的外网访问能力…')
+            network = NetworkReadiness(self.device, host, upstream, existing_upstream)
+            network.check(self._check_cancelled, self.cancel.is_set)
+            self.update(**network.summary())
+            if self.cancel.is_set():
+                return
             self.journal(self.info)
             self.update(phase='waiting_install', message='正在检查或安装“抓包连接助手”…仅在手机出现系统安装提示时确认，不会覆盖目标应用。')
             # PackageManager verifies the existing helper signer before we send keys.
@@ -130,7 +138,7 @@ class PhysicalCaptureService:
             session = self.store.create_physical_session(serial=self.info['serial'], package=self.info['package'], outdir=str(outdir))
             self.info.update(session_id=session['id'], directory=self.directory.name)
             self.journal(self.info)
-            self.update(session_id=session['id'], upstream='电脑现有代理' if upstream else '电脑直连')
+            self.update(session_id=session['id'], upstream='电脑现有代理')
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 probe.bind((host, 0))
                 port = probe.getsockname()[1]
@@ -153,34 +161,75 @@ class PhysicalCaptureService:
                     break
             else:
                 raise ValueError('真机抓包组件启动超时，请检查电脑网络后重试。')
+            network.check(self._renew_connection, self.cancel.is_set)
+            self._check_cancelled()
             self.device.write('tunnel.conf', (self.directory / 'tunnel.conf').read_text())
             self.device.renew()
             self.update(phase='waiting_vpn', message='请在手机允许“抓包连接助手”创建 VPN 连接；原节点和配置不会更改。')
-            self.device.launch(BRIDGE)
+            self._check_cancelled()
+            self.device.launch(BRIDGE, checkpoint=self._renew_connection)
             activated = False
+            launched = False
+            checked_at = None
+            tunnel = TunnelReadiness()
             while not self.cancel.wait(2):
                 if process_identity(owner_pid) != owner_identity:
                     break
                 if self.process.poll() is not None:
                     raise ValueError('真机抓包组件已停止，请先恢复网络再重试。')
-                phase = self.device.state()
+                snapshot = self.device.state()
+                phase = snapshot.get('phase')
                 if phase in {'denied', 'failed', 'stopped', 'cancelled'}:
                     raise ValueError('手机未授权或已停止临时连接，请检查手机提示。')
-                (self.directory / 'lease').touch()
-                self.device.renew()
-                if phase == 'connected' and not activated:
+                self._renew_connection()
+                connected = tunnel.observe(snapshot, time.monotonic())
+                if phase in {'connecting', 'connected'}:
                     if self.device.vpn() != BRIDGE:
                         raise ValueError('手机转发未接入连接助手，请检查 VPN 授权。')
+                    self._check_cancelled()
+                    if not launched:
+                        self.update(phase='waiting_tunnel', message='正在验证手机转发连接；连接成功后才会开始抓包。')
+                    if checked_at is None or time.monotonic() - checked_at >= 10:
+                        network.check(self._renew_connection, self.cancel.is_set)
+                        self.update(**network.summary())
+                        checked_at = time.monotonic()
+                        snapshot = self.device.state()
+                        if snapshot.get('phase') not in {'connecting', 'connected'}:
+                            raise NetworkIssue('tunnel_lost', '网络检查期间手机连接已停止，请确认原网络恢复后重试。')
+                        connected = tunnel.observe(snapshot, time.monotonic())
+                    if activated and not connected:
+                        raise NetworkIssue('tunnel_lost', '手机转发连接已中断，请确认原网络恢复后重试。')
+                    self._renew_connection()
+                    if not launched:
+                        self.device.launch(self.info['package'], checkpoint=self._renew_connection)
+                        self._renew_connection()
+                        launched = True
+                elif activated:
+                    raise NetworkIssue('tunnel_lost', '手机转发状态发生变化，已停止抓包。请检查手机连接后重试。')
+                if self.cancel.is_set():
+                    break
+                if not activated and launched:
+                    # Launching can block while the phone tears down its VPN.
+                    snapshot = self.device.state()
+                    if snapshot.get('phase') not in {'connecting', 'connected'}:
+                        raise NetworkIssue('tunnel_lost', '打开应用时手机连接已停止，请确认原网络恢复后重试。')
+                    connected = tunnel.observe(snapshot, time.monotonic())
+                    self._renew_connection()
+                if connected and not activated:
                     activated = True
                     self.store.update_session_status(session['id'], 'running')
                     self.update(phase='capturing', message='请操作手机应用以触发接口请求。')
-                    self.device.launch(self.info['package'])
                 state_path = self.directory / 'state.json'
                 if state_path.exists():
                     state = json.loads(state_path.read_text())
                     self.update(**{key: state[key] for key in ('flow_count', 'response_count', 'tls_failures')})
                     if state.get('limit'):
                         raise ValueError('本次记录已达到安全容量上限，请恢复网络后开始新的抓包。')
+        except PreparationCancelled:
+            pass
+        except NetworkIssue as exc:
+            failed = str(exc)
+            self.update(code=exc.code, **(network.summary() if network else {}))
         except ValueError as exc:
             failed = str(exc)
         except (OSError, RuntimeError, KeyError, subprocess.TimeoutExpired):
@@ -192,6 +241,12 @@ class PhysicalCaptureService:
                 self.update(message=failed, phase='recovery_required' if self.marker.exists() else 'failed')
 
     def _finish_recovery(self, wait_seconds=22):
+        # Stop our egress immediately; USB recovery may wait for an absent phone.
+        local_closed = True
+        try:
+            self._close_local_capture()
+        except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired):
+            local_closed = False
         restored = not self.marker.exists()
         try:
             if self.device and self.marker.exists():
@@ -204,12 +259,25 @@ class PhysicalCaptureService:
                     self.device.cleanup()
         except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired):
             restored = False
-        self._close_local_capture()
-        if restored:
+        if restored and local_closed:
             self.marker.unlink(missing_ok=True)
             self.update(phase='stopped', message='抓包已停止，原网络连接已恢复。')
         else:
             self.update(phase='recovery_required', message='抓包已停止。请连接原手机，打开原 VPN 并恢复连接，再点击“检查网络恢复”。')
+            if not local_closed:
+                self.update(message='本机转发组件尚未确认退出。已尝试停止手机连接，请重试“结束流程并重新检测”；恢复记录已保留。')
+
+    def _check_cancelled(self):
+        if self.cancel.is_set():
+            raise PreparationCancelled()
+
+    def _renew_connection(self):
+        self._check_cancelled()
+        if self.process.poll() is not None:
+            raise NetworkIssue('worker_stopped', '本机转发组件已停止，请确认原网络恢复后重试。')
+        (self.directory / 'lease').touch()
+        self.device.renew()
+        self._check_cancelled()
 
     def _close_local_capture(self):
         if self.process and self.process.poll() is None:

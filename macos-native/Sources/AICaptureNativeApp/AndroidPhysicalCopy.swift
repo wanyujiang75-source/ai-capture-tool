@@ -17,12 +17,12 @@ extension AppCopy {
         static let unauthorized = "请解锁手机，并在 USB 调试提示中选择允许。"
         static let consent = "我已了解适用范围和网络影响，同意临时替换手机 VPN，仅转发目标应用。"
         static let boundary = "不需要 Root，不修改原应用。仅部分应用和版本支持 HTTPS 解密，兼容性可能随更新变化。每次抓包最长 15 分钟，到期自动停止。"
-        static let network = "原 VPN 节点和配置不会修改。抓包期间，目标应用经电脑出网；其他应用不被抓取，但不再由原 VPN 保护。请勿操作无关敏感应用。"
+        static let network = "请保持电脑现有 HTTP 代理开启，目标应用将通过 Mac 访问外网，不需要手机原 VPN 同时运行。原节点和配置不会修改；其他应用不被抓取，但不再由原 VPN 保护。请勿操作无关敏感应用。"
         static let instructions = "操作步骤"
         static let steps = [
             "连接并解锁手机，确保手机与 Mac 在同一 Wi-Fi。在手机中打开需要分析的应用。",
-            "点击“开始抓包”。工具自动安装独立连接助手、生成参数并配置单应用转发，无需填写 IP、端口或业务域名。",
-            "首次使用时，仅在手机确认连接助手安装和 VPN 授权。准备完成后会自动返回测试应用。",
+            "保持电脑现有 HTTP 代理开启，点击“开始抓包”。工具先验证局域网和外网，再安装独立连接助手，无需填写 IP、端口或业务域名。",
+            "首次使用时，仅在手机确认连接助手安装和 VPN 授权。工具会返回测试应用，并在手机与 Mac 建立连接后显示正在抓包。",
             "操作应用后点击“查看接口”。结束时点击“停止并恢复网络”，确认原 VPN 已连接。"
         ]
         static let automatic = "工具自动检查设备、识别前台应用、准备连接并保存接口。每轮仅抓取开始时识别的应用；切换应用后需停止并重新开始。"
@@ -38,6 +38,15 @@ extension AppCopy {
         static let connectionFailed = "无法连接真机抓包服务，请检查本机服务后重试。"
         static let discoveryFailed = "无法检测手机，请检查 USB 连接和 Android 连接组件。"
         static let tlsFailure = "部分连接未通过 HTTPS 校验，可能无法显示对应的请求或响应。当前应用或版本可能不支持此抓包方式，重复安装证书不保证能够解决。"
+        static let phoneNetwork = "手机到电脑"
+        static let upstreamNetwork = "电脑代理与外网"
+        static func networkResult(_ value: String?) -> String {
+            switch value {
+            case "ready": "检查通过"
+            case "failed": "连接失败"
+            default: "等待检查"
+            }
+        }
         static func count(_ status: AndroidPhysicalStatus) -> String {
             "已记录 \(status.flowCount ?? 0) 个请求，收到 \(status.responseCount ?? 0) 个响应"
         }
@@ -48,6 +57,8 @@ extension AppCopy {
             switch phase {
             case .idle: "准备连接手机"
             case .preparing: "正在准备真机连接…"
+            case .checkingNetwork: "正在检查网络…"
+            case .waitingTunnel: "正在连接手机…"
             case .waitingInstall: "正在准备连接助手…"
             case .waitingVPN: "等待 VPN 授权"
             case .capturing: "正在抓取手机应用"

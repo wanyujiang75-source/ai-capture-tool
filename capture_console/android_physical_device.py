@@ -93,7 +93,7 @@ class PhysicalDevice:
             raise ValueError('该应用与其他应用共享系统身份，无法保证仅采集当前应用，暂不支持抓包。')
 
     def vpn(self):
-        return parse_vpn(self.shell('dumpsys', 'vpn_management'))
+        return parse_vpn(self.shell('dumpsys', 'vpn_management', timeout=3))
 
     def installed(self):
         # Unlike `pm path`, an empty package list is a successful absence check.
@@ -109,23 +109,26 @@ class PhysicalDevice:
             raise ValueError('invalid bridge file')
         # Only our own debuggable companion is used for private USB configuration.
         script = f'umask 077; mkdir -p files; cat > files/{name}.tmp && mv files/{name}.tmp files/{name}'
-        self.call('shell', f'run-as {BRIDGE} sh -c {shlex.quote(script)}', data=value.encode())
+        self.call('shell', f'run-as {BRIDGE} sh -c {shlex.quote(script)}', data=value.encode(), timeout=3)
 
     def renew(self):
         self.write('lease', uuid.uuid4().hex)
 
     def state(self):
         script = 'if [ -f files/status.json ]; then cat files/status.json; else printf \'{"phase":"absent"}\'; fi'
-        return json.loads(self.shell('run-as', BRIDGE, 'sh', '-c', script))['phase']
+        return json.loads(self.shell('run-as', BRIDGE, 'sh', '-c', script, timeout=3))
 
-    def launch(self, package):
+    def launch(self, package, checkpoint=lambda: None):
         if not PACKAGE.fullmatch(package):
             raise ValueError('invalid package')
-        result = self.shell('cmd', 'package', 'resolve-activity', '--brief', package)
+        checkpoint()
+        result = self.shell('cmd', 'package', 'resolve-activity', '--brief', package, timeout=3)
         component = next((line.strip() for line in result.splitlines() if re.fullmatch(r'[\w.]+/[\w.$]+', line.strip())), None)
         if not component:
             raise ValueError("无法打开手机应用，请在手机手动打开。")
+        checkpoint()
         self.shell('am', 'start', '-W', '-n', component)
+        checkpoint()
 
     def stop(self):
         if self.installed():

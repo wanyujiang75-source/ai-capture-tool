@@ -1,5 +1,9 @@
 # 桌面端完整功能验收目标
 
+## 2026-11-12 真机外网链路与真实连接状态
+
+ANDROID-NETWORK-READY：按用户确认实施“手机单应用助手 → Mac 抓包 → 电脑已有 HTTP 代理 → 外网”。启动前验证手机 Wi-Fi、局域网往返与电脑代理 HTTPS；助手只在真实 WireGuard 握手后上报 connected。运行中检查断线/代理变更，失败即停止自有转发并保留归档、沿用原 VPN 恢复及待恢复记录；不静默回退直连、不修改节点/订阅/DNS/原配置。不改解密实现，不影响模拟器/iPhone。范围与验收见 specs/android-network-readiness-20261112.md。先隔离回归/构建，不中断用户现有任务；用户另授权使用 StickerHub Google 登录并选择第一个账号验收，安全确认由本人处理。本轮不自动发布或推送。
+
 ## 2026-11-12 换机修复合并与发布
 
 DELIVERY-SWITCH-1112：合并已提交的真机终止/换机修复和文案优化到 main，推送并发布同提交的 macOS Apple Silicon 预览 ZIP，更新本机 /Applications/抓包工具.app。包内包含使用/安装说明，明确 Android 真机临时接管 VPN 及兼容限制；不包含已取消的 iPhone USB 安装改造。不提交无关脏文件，不覆盖旧 Release，不清理手机或运行数据、不修改 VPN。确认无活动录制后正常退出并备份旧 App 再替换；旧机待恢复记录完整保留。验收见 specs/desktop-switch-release-20261112.md。

@@ -41,6 +41,7 @@ class PhysicalWorkerTests(unittest.TestCase):
                 self.assertIsNone(process.poll(), (work / 'worker.log').read_text()[-2000:])
                 tunnel = work / 'tunnel.conf'
                 self.assertIn('IncludedApplications = com.example.test', tunnel.read_text())
+                self.assertEqual(tunnel.read_text().count('PersistentKeepalive = 5'), 1)
                 self.assertEqual(tunnel.stat().st_mode & 0o777, 0o600)
                 page = IOSCaptureArchive(config['outdir'], read_only=True).page()
                 self.assertEqual(page['total'], 0)
