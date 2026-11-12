@@ -4,6 +4,8 @@
 
 换机补修子项 DONE：最终后端 228 项、Swift 200 项（另 1 opt-in 跳过）通过；9 项 Swift 包含迟到轮询不覆盖终止，7 项 Python 换机测试包含旧线程退出/记录持久化/按机恢复/停止互斥。隔离原生桌面实际点击终止并重新检测通过，新机可开始但未启动，旧机提醒及退出警告保留。已补使用指南并构建验签；此前缺失接口与停止互斥 RED 均已修复。ANDROID-PHYSICAL-V1 整体保持 DOING，真实手机恢复及先前未覆盖的硬件竞态不算通过。
 
+本机更新子项 DONE：d4d7c6c 已本地提交，最终 build=d4d7c6cc6bb2 验签并更新 /Applications；旧版已备份，运行数据未清理。新按钮已在原生窗口确认，用户自行开始 PHK110 抓包后不再操作。未推送 GitHub 或更新下载包。
+
 ## 2026-11-11 扩展应用验证与 Android 真机入口评估
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
