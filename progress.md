@@ -4,7 +4,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| DELIVERY-SWITCH-1112 | DOING | 合并 main、更新 GitHub 下载包与本机桌面 | goal.md、progress.md、specs/desktop-switch-release-20261112.md、release/notes-20261112-switch.md；已有构建脚本/产物、main 与预发布标签、/Applications/抓包工具.app 及可恢复备份 | Python/Swift 回归；最终 ZIP 解压验签与包内源码/指南校验、隔离生命周期；远端 main/标签/公开下载 SHA 一致；本机版本及 UI 入口、旧恢复记录保留 | 待合并 a5aa0fa 等 3 提交；原工作区另有无关脏文件保留。Android 真机 idle，PHK110 待恢复；iPhone waiting_phone/idle，不操作手机 | 完成回归、固定提交打包验收后合并发布及本机更新 |
+| DELIVERY-SWITCH-1112 | DONE | 合并 main、更新 GitHub 下载包与本机桌面 | goal.md、progress.md、specs/desktop-switch-release-20261112.md、release/notes-20261112-switch.md；已有构建脚本/产物、main 与预发布标签、/Applications/抓包工具.app 及可恢复备份 | Python/Swift 回归；最终 ZIP 解压验签与包内源码/指南校验、隔离生命周期；远端 main/标签/公开下载 SHA 一致；本机版本及 UI 入口、旧恢复记录保留 | Python 118、Swift 201、包内 77 项通过；48a2b81 已快进 main 并发布同提交 ZIP，匿名下载 cmp/SHA 通过；干净解压包验签安装，本机 build=48a2b81e20e6/UI 真机确认，旧 App 可恢复备份、PHK110 记录摘要未变。测试副本产生 console.db 的验签失败已定位，未用于安装。用户自行抓包后不再干预；Wi-Fi 关闭导致 #98 无流量，用户恢复 Wi-Fi 后 #99 收到 24 条并确认可用；状态误判缺口记录于规格，未修复 | 发布与本机更新完成；后续纯证据提交不改变固定包体，现有兼容限制和硬件验收缺口保留 |
 
 2026-11-12 继续本人 ANDROID-PHYSICAL-V1（DOING）：真机文案子项。范围：goal.md、progress.md、specs/android-physical-desktop-v1.md；AndroidPhysicalModels/Copy/View.swift、AndroidPhysicalTests.swift；android_physical_service.py；tests/test_android_physical_copy.py；docs/desktop-user-guide.md、release/安装说明.md。验收：入口/状态/授权/终止/恢复与文档一致，兼容限制不丢失；文案契约、Swift/Python 回归、完整构建验签和 diff 检查。只本地改文案，不重启现用桌面，不操作手机/VPN，不推送发包。
 
