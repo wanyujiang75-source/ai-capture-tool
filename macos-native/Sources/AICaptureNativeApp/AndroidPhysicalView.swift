@@ -46,7 +46,16 @@ struct AndroidPhysicalView: View {
                         Text(AppCopy.AndroidPhysical.phoneNetwork + "：" + AppCopy.AndroidPhysical.networkResult(controller.status.phoneNetwork))
                         Text(AppCopy.AndroidPhysical.upstreamNetwork + "：" + AppCopy.AndroidPhysical.networkResult(controller.status.upstreamNetwork))
                     }
-                    if controller.status.phase == .capturing { Text(AppCopy.AndroidPhysical.count(controller.status)) }
+                    if controller.status.phase == .capturing {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(controller.status.applicationNetworkTitle,
+                                  systemImage: controller.status.applicationNetworkConfirmed ? "checkmark.circle" : "info.circle")
+                                .font(.headline)
+                                .foregroundStyle(controller.status.applicationNetworkConfirmed ? Color.green : Color.secondary)
+                            Text(controller.status.applicationNetworkMessage).font(.callout)
+                            Text(AppCopy.AndroidPhysical.count(controller.status))
+                        }
+                    }
                     if (controller.status.tlsFailures ?? 0) > 0 { Text(AppCopy.AndroidPhysical.tlsFailure).foregroundStyle(.orange) }
                     if let issue = controller.issue { Text(issue).foregroundStyle(.red) }
                     HStack {
@@ -90,6 +99,7 @@ struct AndroidPhysicalView: View {
                     Text(AppCopy.AndroidPhysical.instructions).font(.headline)
                     ForEach(Array(AppCopy.AndroidPhysical.steps.enumerated()), id: \.offset) { index, step in Text("\(index + 1). \(step)") }
                     Text(AppCopy.AndroidPhysical.automatic).foregroundStyle(.secondary)
+                    Text(AppCopy.AndroidPhysical.bannerHelp).foregroundStyle(.secondary)
                     Text(AppCopy.AndroidPhysical.recovery).foregroundStyle(.secondary)
                     DisclosureGroup(AppCopy.AndroidPhysical.details) {
                         Text(AppCopy.AndroidPhysical.compatibility).foregroundStyle(.secondary)

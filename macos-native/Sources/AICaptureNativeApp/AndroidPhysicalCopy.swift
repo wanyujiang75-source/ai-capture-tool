@@ -39,8 +39,31 @@ extension AppCopy {
         static let connectionFailed = "无法连接真机抓包服务，请检查本机服务后重试。"
         static let discoveryFailed = "无法检测手机，请检查 USB 连接和 Android 连接组件。"
         static let tlsFailure = "部分连接未通过 HTTPS 校验，可能无法显示对应的请求或响应。当前应用或版本可能不支持此抓包方式，重复安装证书不保证能够解决。"
-        static let phoneNetwork = "手机到电脑"
-        static let upstreamNetwork = "电脑代理与外网"
+        static let phoneNetwork = "手机到电脑检查"
+        static let upstreamNetwork = "电脑代理出网检查"
+        static let bannerHelp = "广告 Banner 仅作辅助观察：缓存广告不能证明当前联网，未显示广告也不等于断网。请刷新应用内容，并在接口页核对新请求和响应；无需点击广告。"
+        static func applicationTitle(_ state: String?) -> String {
+            switch state {
+            case "waiting": "等待应用响应"
+            case "responded": "已收到应用 HTTPS 响应"
+            case "partial": "应用部分连接异常"
+            case "server_error": "应用服务返回错误"
+            case "connection_failed": "应用连接出现异常"
+            case "quiet": "近期未收到新响应"
+            default: "应用联网尚未验证"
+            }
+        }
+        static func applicationMessage(_ state: String?) -> String {
+            switch state {
+            case "waiting": "转发连接已建立，但尚未收到应用的 HTTPS 响应。请在手机中刷新内容，再查看接口。"
+            case "responded": "最近 30 秒已收到应用的 HTTPS 响应。请查看具体接口确认业务结果；这不代表登录、广告或所有连接均正常。"
+            case "partial": "最近 30 秒有 HTTPS 响应，也有握手或连接失败。请核对失败接口；不能据此认定 Google 登录或广告加载成功。"
+            case "server_error": "应用已收到 HTTPS 响应，但最近一次响应为服务错误。请在接口页查看状态码和正文，不必仅因此更换 VPN。"
+            case "connection_failed": "最近 30 秒出现握手或连接失败，且没有新的 HTTPS 响应。请检查电脑代理，并在运行检查中查看错误；暂不能认定为证书问题。"
+            case "quiet": "最近 30 秒没有新的 HTTPS 响应，不代表断网。请在应用中刷新内容或切换页面后观察。"
+            default: "尚无有效的应用响应检测结果。电脑代理检查通过或 VPN 已连接，均不代表目标应用联网成功。"
+            }
+        }
         static func networkResult(_ value: String?) -> String {
             switch value {
             case "ready": "检查通过"

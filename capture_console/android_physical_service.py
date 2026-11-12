@@ -16,6 +16,7 @@ import uuid
 from .android_physical_device import BRIDGE, PhysicalDevice, devices
 from .android_physical_recovery import PendingRecoveries
 from .android_physical_network import NetworkIssue, NetworkReadiness, PreparationCancelled, TunnelReadiness
+from .android_physical_evidence import current_evidence
 from .ios_setup import local_wifi_address, process_identity
 from .ios_results import IOSCaptureArchive
 
@@ -63,6 +64,8 @@ class PhysicalCaptureService:
             result = {**self.last, 'pending_recoveries': self.pending.summaries()}
             if self.terminating:
                 result.update(phase='terminating', message='正在结束当前流程…完成后将重新检测手机，抓包记录会保留。')
+            result['application_network'] = (current_evidence(self.last.get('application_network'), now=time.monotonic())
+                                             if result['phase'] == 'capturing' else None)
             return result
 
     def update(self, **values):
@@ -223,6 +226,7 @@ class PhysicalCaptureService:
                 if state_path.exists():
                     state = json.loads(state_path.read_text())
                     self.update(**{key: state[key] for key in ('flow_count', 'response_count', 'tls_failures')})
+                    self.update(application_network=state.get('application_network'))
                     if state.get('limit'):
                         raise ValueError('本次记录已达到安全容量上限，请恢复网络后开始新的抓包。')
         except PreparationCancelled:

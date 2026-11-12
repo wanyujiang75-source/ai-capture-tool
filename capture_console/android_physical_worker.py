@@ -13,6 +13,7 @@ from mitmproxy import options
 from mitmproxy.tools.dump import DumpMaster
 from .ios_recording import IOSRecording
 from .ios_setup import process_identity
+from .android_physical_evidence import ApplicationNetworkEvidence
 
 
 def single_app_config(config, package):
@@ -27,6 +28,7 @@ def single_app_config(config, package):
 class PhysicalRecorder:
     def __init__(self, config):
         self.config = config
+        self.application_network = ApplicationNetworkEvidence()
         self.state = {'phase': 'preparing', 'flow_count': 0, 'response_count': 0, 'tls_failures': 0,
                       'connection_state': 'ready'}
         self.recording = IOSRecording({'capture_root': str(Path(config['outdir']).parent),
@@ -63,12 +65,18 @@ class PhysicalRecorder:
     def response(self, flow):
         self.recording.finish(flow)
         self.state['response_count'] += 1
+        # A proxy-generated/replayed response is not evidence of phone-to-server HTTPS.
+        if (flow.request.scheme == 'https' and not flow.is_replay and not flow.error
+                and flow.server_conn.timestamp_tcp_setup is not None):
+            self.application_network.response(flow.response.status_code)
 
     def error(self, flow):
         self.recording.finish(flow)
+        self.application_network.failure()
 
     def tls_failed_client(self, data):
         self.state['tls_failures'] += 1
+        self.application_network.failure()
 
     def tcp_message(self, flow):
         flow.messages.clear()
@@ -103,6 +111,7 @@ async def run(config):
                             exported = True
                 recorder.recording.check_limit(lambda hosts: None)
                 state = {key: recorder.state[key] for key in ('flow_count', 'response_count', 'tls_failures')}
+                state['application_network'] = recorder.application_network.summary()
                 state['ready'] = exported
                 state['limit'] = recorder.recording.archive.limit_reason
                 temporary = root / 'state.tmp'

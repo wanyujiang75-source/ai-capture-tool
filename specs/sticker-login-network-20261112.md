@@ -8,6 +8,18 @@
 
 ## 定位顺序
 
+### 本轮真实应用联网证据
+
+- 当前仅检查手机到 Mac 与 Mac 代理到 Google，不能推导目标应用的完整链路。保留这些准入保护，不增加 GMS 转发或 TLS 绕过。
+- worker 只对实际上游完成的 HTTPS 响应记录时间及状态码；排除 HTTP、重放、本地合成响应和 101。4xx/5xx 是服务有响应但请求失败，不标业务成功。错误及响应同时存在时显示部分连接异常。
+- 最近 30 秒响应为近期证据，超过窗口为近期无新响应，不判为断网。仅握手/计数/图片显示不产生成功状态；每次任务从空证据开始。
+- worker 快照超过 15 秒、停止、重连及读取失败不展示实时成功。数据结构固定大小，无 URL、账号、正文或广告标识。
+- Banner 仅人工观察是否新加载，不自动识别广告域名、不点击广告，不据此判断 VPN。
+- 范围：android_physical_evidence.py、android_physical_worker.py、android_physical_service.py；AndroidPhysicalModels/Copy/View.swift；对应 Python/Swift 测试、隔离 UI 夹具；docs/desktop-user-guide.md。
+- 验收：Python 单元/worker钩子与服务回归、Swift 状态测试、完整构建验签、隔离原生 UI。手机无缝 Google 登录不属于此子项完成声明。
+
+验收结果：真实应用联网判定子项完成。Python 聚焦 87 通过/1 跳过，独立真实 worker 1 通过；Swift 205 项（另1项 opt-in跳过）；完整构建与严格验签通过。隔离 UI 验证等待、近期响应、部分异常、静默和503清除，均为合成数据而非新增真机抓包证据。APK、手机 VPN、节点及配置未修改；原安装应用未覆盖，构建位于 macos-native/build/抓包工具.app。真实登录和 Banner 是否加载仍不可从本轮结果推导。
+
 1. 记录安装版本、原 APK 身份、USB/网络/VPN/代理基线，检查真实 Google 登录错误（不要用统计组件 TLS 错误代替）。
 2. 有界元数据定位：目标 app 发起连接与客户端 TLS 失败域名；GMS 是否进入单应用隧道。检查现有代理在 TLS 前后生效的差异，不默认使用 requestheaders 能覆盖 TLS 透传。
 3. 一次只改变一项：先验证登录安全端点加密透传，再判断跨进程 Google 服务出网是否必要。透传必须通过已有电脑代理、不能回退直连；不能将仍为密文的流量记为已解密。

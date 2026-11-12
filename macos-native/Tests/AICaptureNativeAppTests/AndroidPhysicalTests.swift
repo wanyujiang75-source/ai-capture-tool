@@ -4,6 +4,42 @@ import Testing
 
 @MainActor
 struct AndroidPhysicalTests {
+    @Test func applicationEvidenceDoesNotInferSuccessFromTunnelOrCounters() throws {
+        let data = Data(#"{"phase":"capturing","phone_network":"ready","upstream_network":"ready","response_count":20}"#.utf8)
+        let status = try JSONDecoder().decode(AndroidPhysicalStatus.self, from: data)
+        #expect(status.applicationNetworkTitle == "应用联网尚未验证")
+        #expect(!status.applicationNetworkConfirmed)
+    }
+    @Test func applicationEvidencePresentationSeparatesFailureAndSilence() throws {
+        let cases = [
+            ("waiting", "等待应用响应", false), ("responded", "已收到应用 HTTPS 响应", true),
+            ("partial", "应用部分连接异常", false), ("server_error", "应用服务返回错误", false),
+            ("connection_failed", "应用连接出现异常", false), ("quiet", "近期未收到新响应", false),
+            ("future", "应用联网尚未验证", false)
+        ]
+        for (state, title, confirmed) in cases {
+            let data = Data("{\"phase\":\"capturing\",\"application_network\":{\"state\":\"\(state)\"}}".utf8)
+            var status = try JSONDecoder().decode(AndroidPhysicalStatus.self, from: data)
+            #expect(status.applicationNetworkTitle == title)
+            #expect(status.applicationNetworkConfirmed == confirmed)
+            status.phase = .stopped
+            #expect(!status.applicationNetworkConfirmed)
+            #expect(status.applicationNetworkTitle == "应用联网尚未验证")
+        }
+    }
+    @Test func failedRefreshClearsApplicationSuccess() async throws {
+        let api = PhysicalSwitchAPI()
+        let status = try JSONDecoder().decode(AndroidPhysicalStatus.self, from: Data(
+            #"{"phase":"capturing","application_network":{"state":"responded"}}"#.utf8))
+        await api.set(status: status, devices: [])
+        let controller = AndroidPhysicalController(api: api)
+        await controller.refresh()
+        #expect(controller.status.applicationNetworkConfirmed)
+        await api.failReads()
+        await controller.refresh()
+        #expect(!controller.status.applicationNetworkConfirmed)
+        #expect(controller.issue != nil)
+    }
     @Test func networkAndTunnelWaitNeverAdvertiseCaptureSuccess() throws {
         for (raw, title) in [("checking_network", "正在检查网络…"), ("waiting_tunnel", "正在连接手机…")] {
             let data = Data("{\"phase\":\"\(raw)\",\"phone_network\":\"ready\",\"upstream_network\":\"ready\"}".utf8)
@@ -133,6 +169,8 @@ struct AndroidPhysicalTests {
 }
 
 private actor PhysicalSwitchAPI: AndroidPhysicalAPI {
+    var failing = false
+    func failReads() { failing = true }
     var value = AndroidPhysicalStatus(phase: .idle)
     var devices: [AndroidPhysicalDevice] = []
     var actions: [String] = []
@@ -144,6 +182,7 @@ private actor PhysicalSwitchAPI: AndroidPhysicalAPI {
     func pauseNextRead() { paused = true }
     func resumeRead() { continuation?.resume(); continuation = nil }
     func readAndroidPhysical() async throws -> AndroidPhysicalStatus {
+        if failing { throw URLError(.cannotConnectToHost) }
         let snapshot = value
         if paused { paused = false; await withCheckedContinuation { continuation = $0 } }
         return snapshot

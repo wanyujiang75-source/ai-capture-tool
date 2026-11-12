@@ -2,6 +2,10 @@
 
 ## 2026-11-12 StickerHub Google 登录
 
+本轮恢复同一 DOING：新增真实应用响应与有时效的联网证据，不扩大采集。Scope 补充 `capture_console/android_physical_evidence.py`、worker/service、AndroidPhysicalModels/Copy/View、对应 Python/Swift 测试及隔离 UI 夹具。验收按 `specs/sticker-login-network-20261112.md` 本轮条目；先 RED/GREEN，再回归/构建/隔离 UI。原有跨进程 Google 登录缺口不因状态修复而标完成；不改手机 VPN/原配置，不推送。
+
+联网判定子项 DONE：RED 复现服务保留过期成功、缓存延长30秒窗口及缺失桌面状态；实现固定大小的单应用 HTTPS 证据、窗口过期/错误/停止/旧版本降级和断开清除。Python 88 项（87通过、1 opt-in跳过）及独立真实 worker 1项通过；Swift 205项、1项 opt-in跳过；完整应用构建与严格验签通过。隔离原生 UI 观察等待、响应、部分异常、近期无响应及服务503清除；读屏未更新经截图证实为观测差异，未误改缓存逻辑。隔离进程已退出，无手机/VPN更改。构建 `macos-native/build/抓包工具.app`，build=application-network-20261112；未覆盖 /Applications、未推送/发包。STICKER-LOGIN-NETWORK 总体仍 DOING，无缝登录及真实 Banner 对照未验收。
+
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | STICKER-LOGIN-NETWORK | DOING | 定位并修复原版 StickerHub Google 登录的证书或出网问题 | goal.md、progress.md、specs/sticker-login-network-20261112.md；capture_console/android_physical_*.py、对应 tests；必要的 Android 助手/原生状态文案和测试；docs/desktop-user-guide.md；本地隔离诊断/构建 | 有界登录日志与 TLS/路由对照，区分目标进程/Google 服务；修复 RED/GREEN、既有抓包回归；桌面真实首账号登录及业务 Request/Response 或明确不可修复边界；恢复基线并保留旧机提醒 | 无抓包且无 VPN 也失败；原 Clash 不改配置开启后首账号登录成功。桌面 #102 得到7请求/7响应，两个业务200 JSON完整；82 TLS失败仍在。电脑代理探针随后失败自动停止，恢复验证完成。流程提示RED/GREEN、28 Python与11 Swift、构建验签通过；不等同抓包中登录修复 | 已交付先登录后抓包的提示与验证，原节点/配置保留并恢复整体基线；无缝登录仍需独立跨进程加密转发设计，不扩大采集或关闭证书校验，未推送 |

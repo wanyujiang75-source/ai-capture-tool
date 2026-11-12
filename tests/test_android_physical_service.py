@@ -27,6 +27,17 @@ class PhysicalServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.service.start('serial', 42, False)
         self.assertEqual(self.service.status()['phase'], 'idle')
 
+    def test_stale_or_stopped_app_evidence_never_claims_current_success(self):
+        evidence = {'state': 'responded', 'observed_at': 100.0,
+                    'https_response_count': 1, 'last_status_code': 200, 'response_age_seconds': 0}
+        self.service.update(phase='capturing', application_network=evidence)
+        with patch('capture_console.android_physical_service.time.monotonic', return_value=110):
+            self.assertEqual(self.service.status()['application_network']['state'], 'responded')
+        with patch('capture_console.android_physical_service.time.monotonic', return_value=116):
+            self.assertEqual(self.service.status()['application_network'], {'state': 'unverified'})
+        self.service.update(phase='stopped')
+        self.assertIsNone(self.service.status()['application_network'])
+
     def test_restart_does_not_silently_resume_or_discard_recovery(self):
         self.service.journal({'serial': 'phone', 'original_vpn': 'com.example.vpn'})
         restarted = PhysicalCaptureService(self.service.root, self.store, 'adb')

@@ -26,6 +26,7 @@ enum AndroidPhysicalQuitSafety {
 }
 
 struct AndroidPhysicalStatus: Decodable, Sendable {
+    struct ApplicationNetwork: Decodable, Sendable { var state: String? }
     var phase: AndroidPhysicalPhase
     var serial: String?
     var package: String?
@@ -39,6 +40,7 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
     var deviceName: String?
     var phoneNetwork: String?
     var upstreamNetwork: String?
+    var applicationNetwork: ApplicationNetwork?
     var pendingRecoveries: [AndroidPhysicalRecovery]?
     enum CodingKeys: String, CodingKey {
         case phase, serial, package, message, upstream
@@ -46,6 +48,7 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
         case tlsFailures = "tls_failures", originalVPN = "original_vpn"
         case deviceName = "device_name", pendingRecoveries = "pending_recoveries"
         case phoneNetwork = "phone_network", upstreamNetwork = "upstream_network"
+        case applicationNetwork = "application_network"
     }
     var canStart: Bool { [.idle, .stopped, .failed].contains(phase) }
     var action: AndroidPhysicalAction {
@@ -57,6 +60,10 @@ struct AndroidPhysicalStatus: Decodable, Sendable {
         }
     }
     var title: String { AppCopy.AndroidPhysical.title(phase) }
+    private var applicationNetworkState: String? { phase == .capturing ? applicationNetwork?.state : nil }
+    var applicationNetworkConfirmed: Bool { applicationNetworkState == "responded" }
+    var applicationNetworkTitle: String { AppCopy.AndroidPhysical.applicationTitle(applicationNetworkState) }
+    var applicationNetworkMessage: String { AppCopy.AndroidPhysical.applicationMessage(applicationNetworkState) }
 }
 
 struct AndroidPhysicalRecovery: Decodable, Identifiable, Sendable {
@@ -134,6 +141,7 @@ final class AndroidPhysicalController: ObservableObject {
             issue = nil
         } catch {
             guard !Task.isCancelled, revision == version else { return }
+            status.applicationNetwork = nil
             issue = AppCopy.AndroidPhysical.connectionFailed
         }
     }
