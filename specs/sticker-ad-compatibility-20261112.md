@@ -2,6 +2,28 @@
 
 ## 11-13 广告尝试关联诊断
 
+### 18:20 暂停后续验与第128轮证据收尾
+
+- 诊断字段补充先取得3项RED，再12项GREEN；恢复后同一代码重跑 `macos-native/build/physical-runtime/bin/python3 -m unittest discover -s tests -p 'test_ad_network_trace.py'`，12项通过（1.522秒）。既有Android回归131项130通过/1可选跳过，生产源码与该次回归一致；本轮不新增生产路由或透传主机。
+- #128既有六主机探针的150秒目标UID窗口覆盖卡片点击。记录时间范围1794562398519至1794562539750，卡片动作前手机时间1794562444秒；点击后有25请求、12响应、4正文可用性事件。总计127记录：73请求、44响应、10正文事件；39个同network请求/响应配对。5个invalid_json、0未闭合，输入676082字节；不能将丢失记录解释为不存在请求，也未保存畸形原文。
+- 公共gma_js_loader同network:9d794bde33eb3714在1794562400165发请求、1794562400862收到200，相差697ms。没有video_file_hint/video_manifest_hint；这只表示当前SDK入口没有输出匹配的路径，不能证明所有中介没有视频请求。正文事件6条digest_only、4条inline，均未保存/解码正文。另一100秒固定状态采集输出0匹配，不能用它排除播放错误。
+- 卡片操作后观察到PokeHub卡片详情页，未观察到视频播放；未点击广告素材或落地页面。不能用上轮静态插屏或本轮脚本200当视频成功。此前诊断的失败主机仅为候选，没有新的逐请求素材/TLS因果证据，不扩大范围。
+- #128为stopped，51条归档，其中42条业务RPC请求与响应均complete=true、truncated=false。独立读取42组落盘文件，全部长度匹配；38个gzip正文有界解压、所有非空正文JSON解析通过，4个零长度正文按约定无文件。101记录仅是升级握手，不宣称后续帧已完整采集。
+- 暂停时已停止并启动原Clash；恢复后实际发现Clash停止、广告调试开关已关闭。没有据此推断用户做过何种操作；重新启动既有Clash，确认规则模式/新配置、系统parse_vpn为com.github.metacubex.clash.meta，桌面检查显示原网络已恢复。未改原节点或配置；广告调试既已关闭，不再触碰。log.tag.Ads为空、http_proxy=null、recovery.json不存在；原APK和旧PHK110恢复提醒SHA256与17:18一致。连接目录随停止清理，首次读取旧state.json不存在，改以只读归档和恢复检查核验，不重建或修改运行状态。
+- 补查系统media.metrics仅有界读取，不落盘；当前匹配规则未找到目标UID11077行，不能将其解释为没有播放器或TLS错误。没有获取其他应用的正文、URL或媒体信息。此入口暂不能补齐所需素材关联。
+- 私有探针正常退出，旧PHK110提醒保留；/Applications/抓包工具.app稳定版已重新打开，未替换安装包。临时mobilecli转发收尾移除，原19387/46619转发保留。未推送或发布。
+- 诊断增强已通过；AD-1视频修复仍BLOCKED：当前可用GMA事件和系统播放器摘要不足以把某个具体视频素材绑定到失败连接。下一步须先找到原包现成的播放器/中介错误与连接关联出口，或取得可重复且明确的视频素材失败证据；不重复同条件采集、不把时间相邻作强关联、不放行全部广告域名。没有此证据前不实施新的TLS策略，也不宣称已满足视频验收。
+
+### 视频素材关联续做契约
+
+继续同一AD-1 DOING，仅修改scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py及规划证据。原包zzl.zzf明确bodylength<10000才输出base64正文，否则bodydigest；上一轮63KB至88KB正文无法从该日志恢复素材URL，不尝试绕过门控或解码摘要。Google官方network-tracing说明同样将正文与摘要分开；InMobi官方CreativeID获取方式依赖应用回调，不在本轮改包约束下强行注入。
+
+新增诊断字段仅为固定枚举：请求路径以.mp4/.webm结束标video_file_hint，以.m3u8/.mpd结束标video_manifest_hint；仅合法HTTP(S)、无userinfo、正常端口的URI，不因查询参数出现.mp4误判。扩展名不是内容格式或视频成功证明。响应正文仅报告inline/digest_only/absent，仍不保留或解码正文与摘要。固定丢弃原因计数区分block_limit/buffer_limit/invalid_json/unsupported_event/record_limit及输入行截断；总量上限不变。单测覆盖秘密字段、假后缀、格式错误、容量及子进程收尾，先RED再GREEN。
+
+真机仅复用既有六主机私有探针，采集必须覆盖一次只读卡片动作；先记录手机时钟与窗口，点击后再结束。禁止广告创意/评分/落地页点击。结果分为请求类型线索、TLS主机重叠、实际视频三个层级，不能由前两者自动新增透传或宣告第三者成功。结束恢复原Clash、调试开关、稳定桌面及自有转发；保留原包和原配置。若SDK未输出视频请求则如实记为观察入口不足，不继续重复同条件采集。
+
+参考：https://developers.google.com/admob/android/network-tracing ；https://support.inmobi.com/monetize/sdk-documentation/android-guidelines/android-testing-and-troubleshooting 。
+
 ### 17:18 同范围对照结果：脚本已响应，视频未通过
 
 - USB恢复后仅运行已验签的既有六主机私有探针，桌面启动#127，再冷启动原版PokeHub；没有新增主机、改SDK开关或修改生产路由。广告调试短时开启，log.tag.Ads保持原空值。

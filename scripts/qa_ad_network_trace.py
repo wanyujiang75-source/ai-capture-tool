@@ -19,14 +19,21 @@ class TraceParser:
         self.buffers = {}
         self.records = 0
         self.dropped = 0
+        self.drop_reasons = {}
         self.salt = os.urandom(32)
+
+    def drop(self, reason):
+        self.dropped += 1
+        self.drop_reasons[reason] = self.drop_reasons.get(reason, 0) + 1
 
     def feed(self, thread, message):
         if message == "GMA Debug BEGIN":
             if thread in self.buffers or len(self.buffers) < self.max_buffers:
+                if thread in self.buffers:
+                    self.drop("restarted_block")
                 self.buffers[thread] = ""
             else:
-                self.dropped += 1
+                self.drop("buffer_limit")
             return None
         if thread not in self.buffers:
             return None
@@ -34,7 +41,7 @@ class TraceParser:
             chunk = message.removeprefix("GMA Debug CONTENT ")
             if len(self.buffers[thread].encode()) + len(chunk.encode()) > self.max_block:
                 del self.buffers[thread]
-                self.dropped += 1
+                self.drop("block_limit")
             else:
                 self.buffers[thread] += chunk
             return None
@@ -42,18 +49,18 @@ class TraceParser:
             return None
         raw = self.buffers.pop(thread)
         if self.records >= self.max_records:
-            self.dropped += 1
+            self.drop("record_limit")
             return None
         try:
             data = json.loads(raw)
         except (ValueError, RecursionError):
-            self.dropped += 1
+            self.drop("invalid_json")
             return None
         if not isinstance(data, dict) or data.get("event") not in (
             "onNetworkRequest", "onNetworkResponse", "onNetworkResponseBody", "onNetworkError",
             "onNetworkRequestError",
         ):
-            self.dropped += 1
+            self.drop("unsupported_event")
             return None
         result = {"event": data["event"]}
         timestamp = data.get("timestamp")
@@ -75,6 +82,15 @@ class TraceParser:
                     parsed = urlsplit(uri) if isinstance(uri, str) else None
                     host = parsed.hostname if parsed else None
                     if (data["event"] == "onNetworkRequest" and parsed is not None
+                            and parsed.scheme in ("http", "https") and parsed.username is None
+                            and host and re.fullmatch(r"[a-zA-Z0-9.-]+", host)
+                            and parsed.port in (None, 80, 443)):
+                        # A suffix is only a resource hint, not proof of media content or playback.
+                        if parsed.path.lower().endswith((".mp4", ".webm")):
+                            result["resource"] = "video_file_hint"
+                        elif parsed.path.lower().endswith((".m3u8", ".mpd")):
+                            result["resource"] = "video_manifest_hint"
+                    if (data["event"] == "onNetworkRequest" and parsed is not None
                             and parsed.scheme == "https" and host == "googleads.g.doubleclick.net"
                             and parsed.port in (None, 443) and parsed.username is None
                             and parsed.path == "/mads/static/mad/sdk/native/sdk-core-v40-loader.html"):
@@ -89,6 +105,9 @@ class TraceParser:
                     result["status"] = first["code"]
             if type(params.get("bodylength")) is int and 0 <= params["bodylength"] < 2**63:
                 result["body_length"] = params["bodylength"]
+            if data["event"] == "onNetworkResponseBody":
+                result["body_visibility"] = ("inline" if isinstance(params.get("body"), str)
+                    else "digest_only" if isinstance(params.get("bodydigest"), str) else "absent")
         self.records += 1
         return result
 
@@ -133,7 +152,7 @@ def main():
                     line, pending = pending.split(b"\n", 1)
                     if len(line) > 16384:
                         parser.buffers.clear()
-                        parser.dropped += 1
+                        parser.drop("line_limit")
                         continue
                     match = line_pattern.match(line.decode("utf-8", errors="replace"))
                     if match:
@@ -143,7 +162,7 @@ def main():
                 if len(pending) > 16384:
                     pending = b""
                     parser.buffers.clear()
-                    parser.dropped += 1
+                    parser.drop("line_limit")
     finally:
         if process is not None:
             process.terminate()
@@ -153,7 +172,7 @@ def main():
                 process.kill()
                 process.wait()
             process.stdout.close()
-        report = {"records": records, "dropped": parser.dropped,
+        report = {"records": records, "dropped": parser.dropped, "drop_reasons": parser.drop_reasons,
                   "incomplete_blocks": len(parser.buffers), "input_bytes": total,
                   "logcat_exit": process.returncode if process else None}
         with os.fdopen(fd, "w") as output:

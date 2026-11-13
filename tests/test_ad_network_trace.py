@@ -67,6 +67,50 @@ class TraceParserTests(unittest.TestCase):
                 self.assertNotIn("resource", result)
                 self.assertNotIn("PRIVATE", json.dumps(result))
 
+    def test_video_hint_requires_url_path_not_query_or_host(self):
+        parser = TraceParser()
+        for uri, kind in (
+            ("https://cdn.example.org/private.MP4?token=SECRET", "video_file_hint"),
+            ("https://cdn.example.org/private.webm", "video_file_hint"),
+            ("https://cdn.example.org/private.m3u8", "video_manifest_hint"),
+            ("https://cdn.example.org/private.mpd", "video_manifest_hint"),
+        ):
+            result = self.emit(parser, {"event": "onNetworkRequest",
+                "params": {"firstline": {"uri": uri}}})
+            self.assertEqual(result, {"event": "onNetworkRequest", "host": "cdn.example.org",
+                                      "resource": kind})
+        for uri in ("https://cdn.example.org/x?file=private.mp4", "https://cdn.example.org/x.mp4/more",
+                    "file://cdn.example.org/x.mp4", "https://user:SECRET@cdn.example.org/x.mp4",
+                    "https://cdn.example.org:999999/x.mp4", "https://cdn.example.org/x%2emp4"):
+            result = self.emit(parser, {"event": "onNetworkRequest",
+                "params": {"firstline": {"uri": uri}}})
+            self.assertNotIn("resource", result)
+            self.assertNotIn("SECRET", json.dumps(result))
+
+    def test_body_visibility_never_retains_or_decodes_payload(self):
+        for params, expected in (({"body": "PRIVATE", "bodylength": 7}, "inline"),
+                                 ({"bodydigest": "PRIVATE", "bodylength": 12000}, "digest_only"),
+                                 ({"bodylength": 0}, "absent")):
+            result = self.emit(TraceParser(), {"event": "onNetworkResponseBody", "params": params})
+            self.assertEqual(result, {"event": "onNetworkResponseBody", "body_length": params["bodylength"],
+                                      "body_visibility": expected})
+
+    def test_dropped_reason_counts_are_fixed_and_bounded(self):
+        parser = TraceParser(max_block=100, max_buffers=1, max_records=1)
+        parser.feed(1, "GMA Debug BEGIN")
+        parser.feed(2, "GMA Debug BEGIN")
+        parser.feed(1, "GMA Debug CONTENT " + "x" * 101)
+        parser.feed(1, "GMA Debug BEGIN")
+        parser.feed(1, "GMA Debug CONTENT invalid")
+        parser.feed(1, "GMA Debug FINISH")
+        self.emit(parser, {"event": "SECRET"})
+        self.emit(parser, {"event": "onNetworkRequest"})
+        self.emit(parser, {"event": "onNetworkRequest"})
+        self.assertEqual(getattr(parser, "drop_reasons", {}), {
+            "buffer_limit": 1, "block_limit": 1, "invalid_json": 1,
+            "unsupported_event": 1, "record_limit": 1})
+        self.assertEqual(parser.dropped, 5)
+
     def test_bounds_and_malformed(self):
         parser = TraceParser(max_block=120, max_buffers=2, max_records=2)
         for tid in range(3):
