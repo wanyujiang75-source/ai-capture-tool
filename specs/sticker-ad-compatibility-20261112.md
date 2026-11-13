@@ -2,6 +2,33 @@
 
 ## 目标与边界
 
+### 11-13用户切换PokeHub验证目标
+
+#### 15:31 本轮最终验收：未通过视频标准
+
+- 原Clash冷启动后15:03:10观察到interstitial loaded，点卡片后显示真实视频，前台为Google AdActivity；截图poke-vpn-google-video.png。视频内容未点击，没有交易、清数据或登录态变更。
+- 桌面#122仅两个入口，#123四个精确入口/渲染主机，#124六个精确主机；每轮在抓包建立后重启目标进程，打开只读卡片。三轮均未复现视频，#124卡片触发15:27:47开始interstitial加载、15:28:14报错误0。并非单凭缺少Banner判失败。
+- #124新增的googleads4.g.doubleclick.net及s0.2mdn.net均经原上游CONNECT收到源站数据；另出现lh3.googleadsserving.cn、pagead2.googleadservices.com等target/capture TLS失败。没有继续扩大范围，也没有将这些错误直接认定为同一个插屏的唯一根因。固定几项主机不能覆盖动态素材/中介依赖，缺少具体加载尝试与适配器/素材的关联证据。
+- 三轮分别50（43x200/4x204/3x101）、49（42x200/4x204/3x101）、58（51x200/4x204/3x101）条归档。所有已归档/rest/v1/rpc/请求及响应complete=true；get_app_config各4/3/4条，80B请求/2621B响应，无截断。#124桌面Request/Response切换实际检查通过；101仅握手，不宣称WebSocket后续正文完整，也不宣称所有SDK请求均捕获。
+- 两次依赖边界扩充均先RED再GREEN；最终Android回归131项、130通过/1可选跳过，日志/tmp/ad1-poke-final-tests.log；27项路由/原TLS/无HTTP归档/无直连回退专项通过。诊断私有App验签通过；未作最终发布构建，因为真实视频标准未通过。
+- 三轮均通过桌面停止，打开原Clash启动后点击检查网络恢复并确认成功；当前VPN为com.github.metacubex.clash.meta，系统http_proxy=null，原19387/46619 ADB映射保留，临时worker通道清理。原APK SHA256仍为255614ea1252bd69a8cc7f8cd9b6af6af646af7744c8cfc426915773ecf83e39；历史PHK110恢复记录SHA256仍为3a2bb229461addc57d3c15775ac9ccf5f40b94a56f53b326dbbce69259dacb27。没有编辑节点/订阅/配置或修改原包。
+- /Applications/抓包工具.app已由reconnected-original.app稳定备份恢复并启动，严格签名校验通过；最后诊断版移存poke-final-probe.app，原始证据仅存/tmp/capture-ad1-gms-20261113.lzL0nf。未推送或发布；仓库普通worker未强制开启探针。
+- AD-1为BLOCKED而非DONE：三次限定修订均未满足完整视频验收，停止当前固定主机试错。后续先设计有界的广告尝试/适配器关联诊断或可明确区分业务与广告的策略，再恢复真机验证；不以自动扩大所有TLS失败主机、关闭校验或修改原包代替定位。
+
+15:22第二轮修订后两个渲染主机均原TLS返回数据，jsLoaded出现，但卡片触发的新interstitial仍报加载错误0；有界诊断新增googleads4.g.doubleclick.net五次及s0.2mdn.net两次target/capture TLS失败。这暴露入口轮换/独立素材域而非上游拒绝。最后一次精确对照仅加入这两个观察到的主机，不使用整个doubleclick/2mdn通配，不增加其余中介。此修订替代上方“一项依赖修订”的试验停止条件：第三轮仍失败就停止扩域、恢复稳定桌面与原Clash并记录未通过，不默认启用或发布。测试前原Clash基线再次恢复。
+
+15:16第二阶段对照：两入口透传下点击卡片无视频，目标WebView证书公钥拒绝/-202，static.googleadsserving.cn两次、www.googletagservices.com一次target/capture TLS失败。下一次唯一依赖修订仅这两个精确Google渲染主机，不扩域、不透传其他SDK或业务。新边界测试先RED（缺少CONNECT），再修订；仍私有探针，默认关闭。首次两入口对照业务50请求/50响应，尚不计广告成功。
+
+15:06最小对照假设：原Clash冷启动后目标日志commonInterstitial loaded，点击卡片出现真实视频，前台为com.google.android.gms.ads.AdActivity；#121同应用pagead2.googlesyndication.com目标连接两次TLS失败。先只对PokeHub精确googleads.g.doubleclick.net/pagead2.googlesyndication.com保留原始TLS CONNECT，独立于StickerHub清单；仍显式probe才启用，其他包/业务/子域/未知角色保持原行为。先路由和真实TLS回归，再桌面实测；最多依据新证据扩一项明确渲染依赖，不做全部SDK兜底。不把Error3无填充误当证书根因。
+
+14:40用户明确修订广告验收：不要求底部Banner，点击卡片后视频广告正常出现即可。原Clash下已点击只读卡片并观察到视频广告，作为基线；后续需在桌面抓包开启时复现相同视频广告并验证业务正文，不能因无Banner判失败。只关闭视频广告，不点击落地内容。
+
+14:50对照结果：桌面#121仅PokeHub原版2.2.0(99)，冷启动和卡片只读操作后132条归档（117个200、5个204、7个304、3个101握手）。get_app_config五次均请求80B/响应2621B，双向complete=true/truncated=false，桌面Request/Response实际显示格式化JSON。广告配置enable=true、trigger_interval=240；本轮未复现视频，目标日志三次Ad failed to load : 3，同时多个广告中介连接TLS失败。不能将错误3、投放间隔或全部中介TLS失败直接归为视频根因；尚未满足抓包与视频同时成功。没有套用StickerHub透传域或关闭证书校验。
+
+停止前出现连接中断自动停止，#121最终stopped；ADB随后仍在线，具体中断来源未确认，不虚报手动停止按钮成功。打开原Clash点启动，桌面“检查网络恢复”确认原网络已恢复，旧PHK110提醒保留。原包SHA-256 255614ea1252bd69a8cc7f8cd9b6af6af646af7744c8cfc426915773ecf83e39前后一致。未编辑VPN节点/配置、未改包/Root/清数据。私有截图poke-original-vpn-video.png与poke-capture-card-no-video.png存于既有临时证据目录；原始身份/正文不提交。下一步必须定位实际视频中介及失败阶段，不能按所有TLS错误扩域；AD-1未完成。
+
+当前子轮仅PKG110上的com.mi.poketrade正式版2.2.0(99)。原Clash保持原节点和规则配置，先观察Banner与只读卡片触发的广告，再临时通过桌面助手进行相同操作及业务正文对照，结束恢复Clash。无广告不能直接归因TLS；不套用StickerHub专用透传范围。不得点击广告落地内容、购买、交易或改变账号数据；允许打开卡片详情及关闭广告。证据需区分Banner、开屏与插屏，不以一种广告代替另一种。验收沿既有AD-1，不新增任务；StickerHub既有未完成结论保留为历史。
+
 抓包开启时保留 StickerHub 的 Google 登录、业务完整请求/响应及广告联网能力。广告出现是附加证据，不等于网络健康，也不能保证投放。仅 PKG110 上原版 StickerHub；不 Root、不改源码/原 APK、不清账号或数据、不点击广告或高频刷新。原节点/订阅/配置/系统代理不编辑。测试临时切换原 VPN 与本工具助手，结束恢复实际起始状态。敏感日志和截图仅存私有临时目录，仓库只记脱敏计数/状态。不得归档 Google 依赖的认证正文。
 
 ## 分阶段设计
@@ -15,6 +42,12 @@
 AD-0历史轮只处理基线。2026-11-12用户新授权从AD-1继续定位并做最小修复、自验收：当前只领取AD-1，将已明确要求的最小修复纳入本任务；不并行领取其他任务，不额外实现AD-3全套UI改造。
 
 ## AD-1 实施契约
+
+14:15 #119仍无Banner，Google target/login CONNECT均接受且无拒绝，GMS仍报Software caused connection abort，不能将上游接受等同于TLS成功。下一步仅在既有opaque路径记录有界收发字节总数、收到服务端数据的连接数、首个关闭方向；不读取/持久化TLS正文，不新增主机/降级验证/改变转发。范围新增android_physical_opaque_probe.py及对应测试，先验证真实TLS仍原样、无HTTP flow，随后一次手机对照。#119已桌面停止并确认原Clash恢复。
+
+#120显示完整开屏广告，但底部Banner未出现；Google login四个连接均返回数据，汇总148886B，观察到首关方向均为client，不等同于四个错误。业务39请求/响应。额外核对固定target/login/unknown归属计数，排除查询失败拒绝的隐蔽路径；只在显式探针统计，不开放未知身份或写原始UID/IP。不再添加广告域名。
+
+重连续做：确认同一PKG110/d265cb0a，21个原APK摘要cmp一致，系统HTTP代理null、原19387/46619映射保留。Clash显示已停止，connectivity无活动VPN，已完成上轮初始无VPN状态恢复。继续既有CONNECT诊断候选，仅查看是否上游接受/拒绝，不增加域名；测试结束恢复本轮相同基线。
 
 ### 11-13续查：先排除跨进程转发时序
 

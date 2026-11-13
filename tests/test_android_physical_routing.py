@@ -49,6 +49,7 @@ class RoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.context.server.via, ('http', ('127.0.0.1', 7897)))
         self.assertTrue(item.layer.send_connect)
         self.assertIsInstance(item.layer.child_layer, tcp.TCPLayer)
+        self.assertIs(type(item.layer.child_layer), tcp.TCPLayer)
         self.assertIsNone(item.layer.child_layer.flow)
         route.client_disconnected(item.context.client)
         self.assertFalse(route.roles)

@@ -19,6 +19,55 @@ def client_hello(host):
 
 
 class AdRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_poke_observed_google_render_dependencies_are_exact(self):
+        for host in ('static.googleadsserving.cn', 'www.googletagservices.com',
+                     'googleads4.g.doubleclick.net', 's0.2mdn.net'):
+            item = self.item(client_hello(host))
+            await self.route(package='com.mi.poketrade').next_layer(item)
+            self.assertTrue(hasattr(item.layer, 'send_connect'))
+            self.assertIsNone(item.layer.child_layer.flow)
+            for unrelated in ('sub.' + host, host + '.evil.example'):
+                item = self.item(client_hello(unrelated))
+                original = item.layer
+                await self.route(package='com.mi.poketrade').next_layer(item)
+                self.assertIs(item.layer, original)
+
+    async def test_poke_video_probe_is_exact_and_keeps_business_capture(self):
+        for host in ('googleads.g.doubleclick.net', 'pagead2.googlesyndication.com'):
+            item = self.item(client_hello(host))
+            await self.route(package='com.mi.poketrade').next_layer(item)
+            self.assertTrue(hasattr(item.layer, 'send_connect'))
+            self.assertIsNone(item.layer.child_layer.flow)
+        for host in ('yqctnvcripabohfhzgya.supabase.co', 'middle.blockdance.ai',
+                     'supply.inmobicdn.net', 'ms.applovin.com', 'www.gstatic.com',
+                     'sub.pagead2.googlesyndication.com',
+                     'pagead2.googlesyndication.com.evil.example'):
+            item = self.item(client_hello(host))
+            original = item.layer
+            await self.route(package='com.mi.poketrade').next_layer(item)
+            self.assertIs(item.layer, original)
+
+    async def test_poke_probe_disabled_by_default_and_unknown_owner_rejected(self):
+        item = self.item(client_hello('pagead2.googlesyndication.com'))
+        original = item.layer
+        route = ConnectionRouting(SimpleNamespace(role=AsyncMock(return_value='target')),
+                                  ('127.0.0.1', 7897), package='com.mi.poketrade')
+        await route.next_layer(item)
+        self.assertIs(item.layer, original)
+        item = self.item(client_hello('pagead2.googlesyndication.com'))
+        await self.route(role='unknown', package='com.mi.poketrade').next_layer(item)
+        self.assertIsInstance(item.layer, RejectLayer)
+
+    async def test_unknown_owner_is_counted_once_without_allowing_the_connection(self):
+        route = self.route(role='unknown')
+        item = self.item(client_hello('googleads.g.doubleclick.net'))
+        for _ in range(2):
+            await route.next_layer(item)
+            self.assertIsInstance(item.layer, RejectLayer)
+        self.assertEqual(route.diagnostics.summary().get('owner_roles'),
+                         {'target': 0, 'login': 0, 'unknown': 1})
+        self.assertEqual(route.diagnostics.summary()['entries'], [])
+
     async def test_inmobi_render_assets_do_not_bypass_identity_or_telemetry(self):
         item = self.item(client_hello('supply.inmobicdn.net'))
         await self.route().next_layer(item)
@@ -200,8 +249,11 @@ class AdDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route.diagnostics.summary(), {
             'entries': [{'host': client.sni, 'role': 'target', 'route': 'capture',
                          'connections': 1, 'tls_failures': 1,
-                         'connect_accepted': 0, 'connect_rejected': 0}], 'overflow': 0,
-            'empty_client_waits': {'target': 0, 'login': 0}})
+                         'connect_accepted': 0, 'connect_rejected': 0,
+                         'client_bytes': 0, 'server_bytes': 0, 'server_replied': 0,
+                         'client_closed_first': 0, 'server_closed_first': 0}], 'overflow': 0,
+            'empty_client_waits': {'target': 0, 'login': 0},
+            'owner_roles': {'target': 0, 'login': 0, 'unknown': 0}})
 
     async def test_diagnostics_are_bounded_and_reject_non_host_content(self):
         route = ConnectionRouting(None, None)

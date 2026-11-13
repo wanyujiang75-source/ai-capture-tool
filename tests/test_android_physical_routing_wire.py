@@ -32,7 +32,15 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
     async def test_target_ad_upstream_refusal_has_no_direct_fallback(self):
         await self.exercise('target', False, host='pagead2.googlesyndication.com')
 
-    async def exercise(self, role, upstream_accepts, host='localhost'):
+    async def test_poke_video_keeps_origin_tls_and_no_http_archive(self):
+        await self.exercise('target', True, host='pagead2.googlesyndication.com',
+                            package='com.mi.poketrade')
+
+    async def test_poke_video_proxy_refusal_cannot_fallback_to_direct(self):
+        await self.exercise('target', False, host='pagead2.googlesyndication.com',
+                            package='com.mi.poketrade')
+
+    async def exercise(self, role, upstream_accepts, host='localhost', package='com.meta.inno.sticker'):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -86,7 +94,7 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
             master.options.update(connection_strategy='lazy')
             owner = type('Owner', (), {'role': AsyncMock(return_value=role)})()
             routing = ConnectionRouting(owner, ['127.0.0.1', proxy_port],
-                                        package='com.meta.inno.sticker', ad_compatibility_probe=True)
+                                        package=package, ad_compatibility_probe=True)
             master.addons.add(routing)
             class Spy:
                 def request(self, flow): http_flows.append(flow)
@@ -126,6 +134,9 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(http_flows, [])
                 entry = routing.diagnostics.summary()['entries'][0]
                 self.assertEqual((entry['connect_accepted'], entry['connect_rejected']), (1, 0))
+                self.assertGreater(entry['client_bytes'], 0)
+                self.assertGreater(entry['server_bytes'], 0)
+                self.assertEqual(entry['server_replied'], 1)
             finally:
                 await master.addons.get('proxyserver').servers.update([])
                 master.shutdown()

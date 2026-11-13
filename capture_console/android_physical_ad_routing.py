@@ -3,6 +3,14 @@
 import ipaddress
 import re
 
+# PokeHub's Google video entry points, isolated from StickerHub's render probe.
+POKE_VIDEO_HOSTS = frozenset({
+    'googleads.g.doubleclick.net', 'pagead2.googlesyndication.com',
+    # Target-UID render dependencies observed after the entry points connected.
+    'static.googleadsserving.cn', 'www.googletagservices.com',
+    'googleads4.g.doubleclick.net', 's0.2mdn.net',
+})
+
 # Confirmed target-UID dependencies in AD-1; never learn bypasses from TLS failures.
 STICKER_AD_DOMAINS = ('doubleclick.net', 'googlesyndication.com', 'googleadservices.com', '2mdn.net')
 STICKER_AD_HOSTS = frozenset({
@@ -26,6 +34,7 @@ class RoutingDiagnostics:
         self.entries = {}
         self.overflow = 0
         self.empty_client_waits = {'target': 0, 'login': 0}
+        self.owner_roles = {'target': 0, 'login': 0, 'unknown': 0}
 
     def record(self, host, role, route, failure=False):
         if not isinstance(host, str) or len(host) > 253:
@@ -50,6 +59,8 @@ class RoutingDiagnostics:
                 return
             self.entries[key] = dict(host=host, role=role, route=route, connections=0, tls_failures=0)
             self.entries[key].update(connect_accepted=0, connect_rejected=0)
+            self.entries[key].update(client_bytes=0, server_bytes=0, server_replied=0,
+                                     client_closed_first=0, server_closed_first=0)
         entry = self.entries[key]
         entry['tls_failures' if failure else 'connections'] += 1
 
@@ -61,4 +72,4 @@ class RoutingDiagnostics:
 
     def summary(self):
         return {'entries': [dict(entry) for entry in self.entries.values()], 'overflow': self.overflow,
-                'empty_client_waits': dict(self.empty_client_waits)}
+                'empty_client_waits': dict(self.empty_client_waits), 'owner_roles': dict(self.owner_roles)}

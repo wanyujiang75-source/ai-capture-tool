@@ -11,7 +11,10 @@ from mitmproxy.proxy import commands, events, layer, mode_specs
 from mitmproxy.proxy.layers import tcp
 from mitmproxy.proxy.layers.http._upstream_proxy import HttpUpstreamProxy
 from mitmproxy.proxy.layers.tls import parse_client_hello
-from .android_physical_ad_routing import RoutingDiagnostics, STICKER_AD_HOSTS, STICKER_AD_DOMAINS
+from .android_physical_ad_routing import (
+    POKE_VIDEO_HOSTS, RoutingDiagnostics, STICKER_AD_DOMAINS, STICKER_AD_HOSTS,
+)
+from .android_physical_opaque_probe import ObservedOpaqueTCP
 
 
 class OwnerClient:
@@ -72,10 +75,15 @@ class ObservedUpstreamProxy(HttpUpstreamProxy):
 class ConnectionRouting:
     def __init__(self, owner, upstream, *, package='', ad_compatibility_probe=False):
         self.owner, self.upstream = owner, upstream
-        # AD-1 has not passed real Banner acceptance; ordinary captures stay unchanged.
-        probing_ads = ad_compatibility_probe is True and package == 'com.meta.inno.sticker'
-        self.ad_hosts = STICKER_AD_HOSTS if probing_ads else frozenset()
-        self.ad_domains = STICKER_AD_DOMAINS if probing_ads else ()
+        # Unaccepted probes stay opt-in and package-scoped; never inherit another app's hosts.
+        probing_ads = ad_compatibility_probe is True and package in (
+            'com.meta.inno.sticker', 'com.mi.poketrade',
+        )
+        self.ad_hosts = frozenset()
+        if probing_ads:
+            self.ad_hosts = STICKER_AD_HOSTS if package == 'com.meta.inno.sticker' else POKE_VIDEO_HOSTS
+        self.ad_domains = STICKER_AD_DOMAINS if probing_ads and package == 'com.meta.inno.sticker' else ()
+        self.probing_ads = probing_ads
         self.roles = {}
         self.diagnostics = RoutingDiagnostics()
 
@@ -103,6 +111,8 @@ class ConnectionRouting:
                 data.layer = RejectLayer(ctx)
                 return
             self.roles[key] = role
+            if self.probing_ads:
+                self.diagnostics.owner_roles[role if role in ('target', 'login') else 'unknown'] += 1
         role = self.roles[key]
         # Constructing the default TLS layer sets client.tls before this hook.
         # Only a completed handshake means these are already decrypted bytes.
@@ -148,7 +158,8 @@ class ConnectionRouting:
         ctx.server.via = ('http', tuple(self.upstream))
         stack = ObservedUpstreamProxy.make(ctx, True)
         stack[-1].observer = (self.diagnostics, host, role)
-        stack /= tcp.TCPLayer(ctx, ignore=True)
+        stack /= (ObservedOpaqueTCP(ctx, self.diagnostics, host, role) if self.probing_ads
+                  else tcp.TCPLayer(ctx, ignore=True))
         data.layer = stack[0]
 
     def client_disconnected(self, client):
