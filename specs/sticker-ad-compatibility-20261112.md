@@ -1,5 +1,22 @@
 # Android 真机广告兼容计划与 AD-0 验收
 
+## 11-13 广告尝试关联诊断
+
+### 16:09 对照结果：定位缩小，仍未修复
+
+- 手机原开关关闭；用户明确同意短时开启。PokeHub UID11077，正式版APK不变。新脚本独立运行，不导入worker，不改路由策略/透传主机；生产桌面仍原稳定包。
+- 原Clash下冷启动后点击首张卡片，真实视频播放（poke-gma-baseline-video.png）；120秒日志解析64条：26请求、30响应、8正文长度事件、2条丢弃、0未闭合。会话内匿名network_request可以配对，但没有ad_request ID；不能宣称已取得视频位/中介对应关系。响应比请求多，存在缺口，不能将此次日志当完整网络归档。
+- 桌面原默认抓包#125建立后冷启动：120秒得到5条googleads.g.doubleclick.net GET事件，0响应，0丢弃/未闭合；只有network_request标识。静态SDK资源单独只读核查发现/mads/static/mad/sdk/native/sdk-core-v40-loader.html请求；未保存原始URL参数/headers/body。该公共JavaScript加载资源是具体阻塞线索，尚不等于某个视频广告的唯一根因。
+- 为提取SDK失败栈，将log.tag.Ads从空临时设VERBOSE；75秒目标UID过滤输出16条固定类型事件。16:03:16.761出现interstitial加载，前后WebView net_error=-202；16:03:25.135-.147三次错误0，25.152为loadFailed。没有得到nonagon适配器堆栈，时间邻近不作强关联。参考工程admob_ad失败回调丢弃LoadAdError信息，但其与生产版本对应未证实，不修改源工程或原包。
+- #125最终84条归档，74条/rest/v1/rpc/均请求/响应complete=true且无截断。桌面停止并检查恢复成功；原Clash已连接、HTTP proxy=null、自有recovery.json不存在，原19387/46619 ADB映射及mobilecli映射保留。APK与历史PHK110恢复记录SHA256均与15:31一致。Google广告调试开关已关闭，log.tag.Ads恢复空值；两个120秒采集及75秒过滤进程均结束。未清系统日志（避免删除他人诊断资料），未修改原VPN节点/配置，未发布。
+- 新脚本7项测试通过，含Unicode字节上限RED-GREEN、秘密字段过滤、线程分片、格式错误、容量、UID限定、0600私有输出与超时终止；原Android回归131项130通过/1可选跳过。私有脱敏JSON保存在既有临时目录poke-gma-{baseline,capture}.json。AD-1保持DOING，不标广告修复完成；下一步需获取可靠的插屏尝试/SDK资源关联，或设计无需扩域的连接分类诊断，不能把这次公共资源失败直接扩展为新主机策略。
+
+暂停固定主机试错，沿同一AD-1。官方入口：https://developers.google.com/admob/android/network-tracing 。手机Google服务/广告中“启用广告调试日志记录功能”当前关闭。仅临时开启，按PokeHub UID和短时间窗口采集；恢复原关闭状态。不重置广告ID，不改变任何VPN节点/配置、应用/账号数据。
+
+新增独立诊断脚本与单元测试（scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py），不导入生产worker。解析GMA BEGIN/CONTENT/FINISH，按线程隔离分片；每块最多256KiB、最多8个并发缓冲、512条记录、输入最多32MiB、最长180秒。只输出会话内匿名关联编号、时间、事件、主机、方法、状态码及长度；忽略原始headers/body/URL参数、异常文本、广告/用户标识。默认拒绝无法解析或超限记录，明确丢弃计数；不得使用时间邻近伪称同一请求关联。UID过滤由logcat负责，退出必须终止自身子进程。
+
+验收：synthetic secret/分片并发/超限/畸形/缺边界测试RED-GREEN，真实目标日志是否提供关联记录分开报告；短时原VPN与抓包对照，仅点击只读卡片、不点击广告落地内容，全部临时状态恢复。若只得到网络关联、未得到插屏格式或适配器，明确保留该缺口，不加域名也不声称根因。普通业务完整正文仍以桌面归档为证。
+
 ## 目标与边界
 
 ### 11-13用户切换PokeHub验证目标
