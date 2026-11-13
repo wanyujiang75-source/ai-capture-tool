@@ -50,7 +50,8 @@ class TraceParser:
             self.dropped += 1
             return None
         if not isinstance(data, dict) or data.get("event") not in (
-            "onNetworkRequest", "onNetworkResponse", "onNetworkResponseBody", "onNetworkError"
+            "onNetworkRequest", "onNetworkResponse", "onNetworkResponseBody", "onNetworkError",
+            "onNetworkRequestError",
         ):
             self.dropped += 1
             return None
@@ -71,7 +72,13 @@ class TraceParser:
             if isinstance(first, dict):
                 uri = first.get("uri")
                 try:
-                    host = urlsplit(uri).hostname if isinstance(uri, str) else None
+                    parsed = urlsplit(uri) if isinstance(uri, str) else None
+                    host = parsed.hostname if parsed else None
+                    if (data["event"] == "onNetworkRequest" and parsed is not None
+                            and parsed.scheme == "https" and host == "googleads.g.doubleclick.net"
+                            and parsed.port in (None, 443) and parsed.username is None
+                            and parsed.path == "/mads/static/mad/sdk/native/sdk-core-v40-loader.html"):
+                        result["resource"] = "gma_js_loader"
                 except ValueError:
                     host = None
                 if host and len(host) <= 253 and re.fullmatch(r"[a-zA-Z0-9.-]+", host):

@@ -2,6 +2,20 @@
 
 ## 11-13 广告尝试关联诊断
 
+### 原包SDK契约核对与诊断修订
+
+16:32复验结果：新增2项测试先失败（错误事件被丢弃、缺少固定资源分类），修复后共9项通过；现有Android回归131项130通过/1可选跳过，diff检查通过。SDK实际错误事件已补收，原错误正文仍不落盘；没有修改生产worker或透传范围。
+
+用户解锁后短时开启广告调试与Ads VERBOSE，通过稳定桌面开启#126。120秒目标UID采集6条onNetworkRequest，0响应/错误事件，0丢弃、0未闭合；其中2条精确公共gma_js_loader请求，分别在冷启动和卡片操作后出现。固定日志类型观察到16:28:10.985 interstitial，16:28:19.544错误0；点击首卡后16:29:22.197 interstitial、16:29:23.403公共加载脚本请求、16:29:30.760错误0，期间WebView -202。没有出现视频，也未取得插屏ID/中介响应信息；这是重复的初始化资源阻塞线索，不是唯一中介根因证明，不再重复以ad_request为采集目标。
+
+本次47条归档，其中40条业务RPC全部双向complete=true且无截断；3条get_app_config均200，请求80B、响应2621B。桌面停止后原Clash规则模式/新配置恢复，桌面检查确认原网络已恢复；广告调试Switch无checked，log.tag.Ads空，http_proxy=null，原ADB映射及既有mobilecli映射保留。活动recovery.json不存在，历史PHK110提醒摘要及原版APK摘要均未变。两个采集进程已退出。未改原节点、配置、APK或广告ID，未发布。
+
+AD-1仍DOING。已排除诊断解析遗漏解释本轮全部无响应；仍缺SDK加载失败到具体视频适配器的强关联。后续应从连接级TLS失败证据及SDK调用链建立因果对照，不能把固定主机扩充、时间相邻或HTTP CONNECT接受当作广告修复成功。
+
+只读原版2.2.0(99)的classes5.dex中com.google.android.gms.ads.internal.util.client.zzl：构造器只产生network_request UUID，没有ad_request。错误事件实际为onNetworkRequestError，params.error_description仅在非2xx响应分支输出；因此修正事件名只能补齐HTTP错误关联，不能宣称捕获所有TLS异常。原异常文本继续丢弃。SDK静态加载地址由classes6.dex的zzbmc声明，与上轮运行时观察一致。
+
+独立采集脚本增加固定resource=gma_js_loader，仅精确https、googleads.g.doubleclick.net、默认443及/mads/static/mad/sdk/native/sdk-core-v40-loader.html匹配时输出；不保存其他路径或任何查询参数，不改变采集或透传路由。先验证真实事件与匿名network ID关联、秘密字段不泄露、近似域名/路径不匹配。仍不能用网络ID代替插屏ID，避免重复索取本SDK根本不输出的关联字段。
+
 ### 16:09 对照结果：定位缩小，仍未修复
 
 - 手机原开关关闭；用户明确同意短时开启。PokeHub UID11077，正式版APK不变。新脚本独立运行，不导入worker，不改路由策略/透传主机；生产桌面仍原稳定包。

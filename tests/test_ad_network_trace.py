@@ -43,6 +43,30 @@ class TraceParserTests(unittest.TestCase):
         self.assertEqual(parser.feed(2, "GMA Debug FINISH")["timestamp"], 2)
         self.assertEqual(parser.feed(1, "GMA Debug FINISH")["timestamp"], 1)
 
+    def test_sdk_request_error_retains_correlation_not_description(self):
+        parser = TraceParser()
+        components = ["network_request_private-id"]
+        request = self.emit(parser, {"event": "onNetworkRequest", "components": components})
+        error = self.emit(parser, {"event": "onNetworkRequestError", "components": components,
+            "params": {"error_description": "SECRET https://example.com/?token=PRIVATE"}})
+        self.assertEqual(error, {"event": "onNetworkRequestError", "components": request["components"]})
+        self.assertEqual(parser.dropped, 0)
+
+    def test_known_public_loader_classification_drops_url_details(self):
+        uri = "https://googleads.g.doubleclick.net/mads/static/mad/sdk/native/sdk-core-v40-loader.html?secret=PRIVATE"
+        result = self.emit(TraceParser(), {"event": "onNetworkRequest",
+            "params": {"firstline": {"uri": uri, "verb": "GET"}}})
+        self.assertEqual(result, {"event": "onNetworkRequest", "host": "googleads.g.doubleclick.net",
+                                 "method": "GET", "resource": "gma_js_loader"})
+        for candidate in (uri.replace("https:", "http:"), uri.replace(".net/", ".net:8443/"),
+                          uri.replace(".net/", ".net.evil/"), uri.replace("-v40-", "-v41-"),
+                          uri.replace(".html?", ".html/extra?")):
+            with self.subTest(uri=candidate):
+                result = self.emit(TraceParser(), {"event": "onNetworkRequest",
+                    "params": {"firstline": {"uri": candidate}}})
+                self.assertNotIn("resource", result)
+                self.assertNotIn("PRIVATE", json.dumps(result))
+
     def test_bounds_and_malformed(self):
         parser = TraceParser(max_block=120, max_buffers=2, max_records=2)
         for tid in range(3):

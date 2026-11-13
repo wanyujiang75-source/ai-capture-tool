@@ -1,5 +1,9 @@
 # 进度记录
 
+11-13 16:32 AD-1续验未完成：修正GMA错误事件并增加公共加载脚本固定分类，2项RED后9项测试GREEN；Android131项130通过/1可选跳过。#126点击卡片仍无视频，6条网络请求中2条明确SDK加载脚本请求，0响应且0丢弃；原包不输出ad_request，停止沿此缺失字段重复排查。47条归档/40条完整RPC；已停止、原Clash恢复、广告调试关闭、Ads级别恢复，原APK和历史恢复记录摘要一致。仍DOING，不发布为已修复；详见规格16:32。
+
+AD-1继续DOING：只读生产APK确认GMA错误事件名与采集器不一致，且SDK只发network_request、不发ad_request。沿现有scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py范围补错误事件和已确认公共加载脚本分类；验收为事件关联、未知字段/URL/错误文本不落盘、精确域名路径匹配RED-GREEN。普通抓包路由保持不变。
+
 11-13 16:09 AD-1诊断子轮已取A/B证据，修复仍未完成：原VPN视频成功，GMA日志64条；默认抓包#125五条Google请求无响应，公共sdk-core-v40-loader.html与WebView -202为阻塞线索，但没有ad_request/适配器关联ID，不能断言唯一根因。不新增透传主机。84条归档/74条完整RPC；桌面停止恢复原Clash，广告调试开关与临时Ads日志级别恢复，原APK/历史恢复记录摘要一致。新诊断7测试、既有131回归130通过/1跳过。保持DOING，下一步补明确广告尝试关联，不发布未验收修复；详见spec16:09。
 
 11-13 15:46恢复AD-1 DOING诊断子轮：新证据是手机存在关闭状态的官方广告调试开关，可提供广告/网络请求关联ID。本轮范围补充scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py；先脱敏/有界/错包/分片测试，再目标UID短时A/B诊断，恢复调试开关和原Clash。没有新增域名或发布授权，AD-1既有三次修复失败结论保留，不能仅因采集到日志标完成。
