@@ -16,6 +16,26 @@ AD-0历史轮只处理基线。2026-11-12用户新授权从AD-1继续定位并�
 
 ## AD-1 实施契约
 
+### 11-13续查：先排除跨进程转发时序
+
+#118单变量观察仍无Banner，未产生新的supply主机连接，不能据此证明新增端点有效。补充有界CONNECT接受/拒绝计数，仅在现有主机条目内累计，不保留HTTP头、错误文本、正文或凭据；接受不等于端到端TLS成功。真实loopback的200/403对照先RED（缺少计数字段），再GREEN。沿已有Google广告中断定位上游层，不继续新增主机。
+
+11:36普通构建#117复测未显示Banner，空首包计数target/login均为0；不得把#116的单次成功归因于该修复。撤回默认启用，继续显式诊断探针。原APK只读反编译确认InMobi适配器11.4.0.0；Ads的首页Banner广告位末尾2327864214包含accountid/placementid。安装包的AdConfig明确supply.inmobicdn.net承载MRAID脚本和OMSDK资源，#117该精确主机target/capture两次TLS失败。下一次唯一扩充是此渲染主机，不放行unif-id身份、et-eus统计、i.l或整个inmobi/inmobicdn域；不能把其他SDK错误算成该Banner根因。新增精确主机/其他包/子域/身份统计保持采集回归先RED。手机APK不修改，测试副本只存私有目录。
+
+11:26候选#116首次显示完整Banner，桌面业务get_app_config请求null/响应200完整JSON已核对。随后尝试默认启用同一依赖边界并增加固定target/login空首包等待计数；#117复测失败，已撤销默认启用，保留原ad_compatibility_probe显式开关。单次出现广告不证明空首包就是根因；新增范围为既有ad_routing聚合及对应测试，其他功能不改。
+
+### 11-13 本轮收尾与待恢复事项
+
+- #116共40组请求/响应且有Banner；#117冷启动再次无Banner，排除“已稳定修复”的结论。#118仅新增精确InMobi渲染资源主机后仍无Banner，且本轮没有该主机的新连接，无法给这一修订记成功。该原APK的适配器版本11.4.0.0与本地测试依赖不一致；不能从测试源码直接认定全部生产行为。
+- #118保留36组请求/响应（30个200、4个204、2个101握手）。get_app_config为200，请求4B、响应405B，双向complete=true、truncated=false。其他中介、身份、统计、客服等仍有TLS失败，不能声称所有流量完整；业务代表接口未回归。
+- 新CONNECT分层诊断不新增透传范围，真实loopback200/403 RED-GREEN通过；只累计现有64条主机项的接受/拒绝，不读正文/凭据，不把CONNECT成功说成端到端TLS成功。最终Android回归123项（122通过、1可选worker跳过）；显式开启worker验收另1项通过，日志/tmp/ad1-final-tests.log及/tmp/ad1-final-worker-test.log。构建ad1-connect-probe-20261113退出0，签名通过；git diff --check通过。
+- Mac原HTTP代理127.0.0.1:7897对Google广告根路径返回301、InMobi mraid.js返回200，均CONNECT200/证书校验0；只证明电脑侧当前可达，不代表手机SDK的实际连接已正常。
+- #116/#117/#118均桌面停止并确认原Clash恢复，未编辑节点/订阅/规则配置。最后一轮CONNECT实机诊断尚未启动时USB断开（adb devices为空），因此不能补齐实机CONNECT结果和最终APK复核。本轮初始无VPN，目前最后确认Clash已恢复；尚未撤销本轮临时启用以回到初始无VPN。待重连后完成，不虚报完整恢复。
+- 候选桌面已退出并恢复本轮原版备份google-routing-auth-20261112；未发布。无本轮worker/logcat残留，历史PHK110恢复记录SHA-256仍为3a2bb229461addc57d3c15775ac9ccf5f40b94a56f53b326dbbce69259dacb27。原APK只读提取用于SDK端点核对，没有重装、改包、Root或清数据。USB断开前没有任何APK写入操作，最终21个摘要一致性仍待重连检查。
+- 私有证据/tmp/capture-ad1-gms-20261113.lzL0nf包括三个状态、Banner/失败截图、有界日志、原APK只读副本、原/诊断桌面备份；不提交含标识符的原始证据。AD-1因USB不可用暂标BLOCKED，不进入AD-2，不盲目追加全部广告SDK或发布。
+
+继续已有AD-1 DOING，文件范围沿用routing/worker/对应测试。旧#115日志显示Google广告请求在GMS进程报Software caused connection abort，目标进程随后Ad failed to load : 0；不能直接归因AppLovin等中介。先检验login角色在空首包时过早按IP CONNECT的时序缺口：完整ClientHello/SNI到达前不发起上游连接；分片仍等待，原TLS不解密、无直接回退、不新增透传域。隔离测试再做桌面实机单变量对照。若仍失败，依据新连接证据定位，不用主机清单盲试。当前同一PKG110已连接且解锁、无活动VPN，用户原节点/配置不变；测试后恢复该实际基线。
+
 - 加入每任务最多64项的聚合诊断，只记录规范化SNI、owner角色、capture/opaque/reject路由和TLS失败计数；不存IP、URL参数、正文/账号、连接原始字节。溢出合并计数，不无界存储；活动连接映射沿用1024上限并断开释放。
 - 先在现有解密路由下确认目标UID广告连接及失败主机。最初仅精确主机；11-13发现广告节点轮换后修订为四个广告服务域名边界及少量已观察精确依赖（详见下文），仅限定StickerHub的target角色。不得使用Google/共享CDN全域通配，不因一次错误动态放行所有主机。TLS透传意味着对应主机所有路径均不归档，并非按URL区分广告。
 - 未通过真实Banner验收的策略默认关闭。仅worker私有配置显式布尔`ad_compatibility_probe=true`才能启用，构造器也默认关闭；普通API/桌面流程不提供或写入该标志。默认抓包路径维持原逻辑，诊断聚合不包含正文。不能将探针开关视为已交付兼容功能。

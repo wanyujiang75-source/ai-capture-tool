@@ -19,6 +19,41 @@ def client_hello(host):
 
 
 class AdRoutingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_inmobi_render_assets_do_not_bypass_identity_or_telemetry(self):
+        item = self.item(client_hello('supply.inmobicdn.net'))
+        await self.route().next_layer(item)
+        self.assertTrue(hasattr(item.layer, 'send_connect'))
+        self.assertIsNone(item.layer.child_layer.flow)
+        for host in ('unif-id.ssp.inmobi.com', 'et-eus.w.inmobi.com',
+                     'i.l.inmobicdn.net', 'sub.supply.inmobicdn.net',
+                     'supply.inmobicdn.net.evil.example'):
+            item = self.item(client_hello(host))
+            original = item.layer
+            await self.route().next_layer(item)
+            self.assertIs(item.layer, original)
+        item = self.item(client_hello('supply.inmobicdn.net'))
+        original = item.layer
+        await self.route(package='other.package').next_layer(item)
+        self.assertIs(item.layer, original)
+
+    async def test_login_waits_for_clienthello_before_selecting_connect_destination(self):
+        route = self.route(role='login')
+        item = self.item(b'')
+        await route.next_layer(item)
+        self.assertIsNone(item.layer)
+        self.assertIsNone(item.context.server.via)
+        payload = client_hello('googleads.g.doubleclick.net')
+        item.data_client = lambda: payload[:5]
+        await route.next_layer(item)
+        self.assertIsNone(item.layer)
+        item.data_client = lambda: payload
+        await route.next_layer(item)
+        self.assertEqual(item.context.server.address, ('googleads.g.doubleclick.net', 443))
+        self.assertTrue(item.layer.send_connect)
+        self.assertIsNone(item.layer.child_layer.flow)
+        route.owner.role.assert_awaited_once()
+        self.assertEqual(route.diagnostics.summary()['empty_client_waits'], {'target': 0, 'login': 1})
+
     def item(self, payload):
         client = connection.Client(peername=('10.0.0.2', 45000), sockname=('1.2.3.4', 443))
         ctx = context.Context(client, options.Options())
@@ -164,7 +199,9 @@ class AdDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         route.tls_failed_client(data)
         self.assertEqual(route.diagnostics.summary(), {
             'entries': [{'host': client.sni, 'role': 'target', 'route': 'capture',
-                         'connections': 1, 'tls_failures': 1}], 'overflow': 0})
+                         'connections': 1, 'tls_failures': 1,
+                         'connect_accepted': 0, 'connect_rejected': 0}], 'overflow': 0,
+            'empty_client_waits': {'target': 0, 'login': 0}})
 
     async def test_diagnostics_are_bounded_and_reject_non_host_content(self):
         route = ConnectionRouting(None, None)
@@ -176,6 +213,20 @@ class AdDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary['overflow'], 36)
         route.diagnostics.record('host.example/path?token=secret', 'target', 'capture')
         self.assertNotIn('secret', str(route.diagnostics.summary()))
+
+    async def test_connect_outcomes_cannot_create_unbounded_or_nonopaque_entries(self):
+        route = ConnectionRouting(None, None)
+        route.diagnostics.record('ad.example', 'target', 'opaque')
+        route.diagnostics.record('business.example', 'target', 'capture')
+        for index in range(100):
+            route.diagnostics.record_connect(f'unknown{index}.example', 'target', True)
+        route.diagnostics.record_connect('business.example', 'target', True)
+        route.diagnostics.record_connect('ad.example', 'target', True)
+        route.diagnostics.record_connect('ad.example', 'target', False)
+        entries = route.diagnostics.summary()['entries']
+        self.assertEqual(len(entries), 2)
+        self.assertEqual((entries[0]['connect_accepted'], entries[0]['connect_rejected']), (1, 1))
+        self.assertEqual((entries[1]['connect_accepted'], entries[1]['connect_rejected']), (0, 0))
 
 
 if __name__ == '__main__':

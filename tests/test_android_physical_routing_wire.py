@@ -85,8 +85,9 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                                mode=[f'reverse:tcp://127.0.0.1:{origin_port}']), with_termlog=False, with_dumper=False)
             master.options.update(connection_strategy='lazy')
             owner = type('Owner', (), {'role': AsyncMock(return_value=role)})()
-            master.addons.add(ConnectionRouting(owner, ['127.0.0.1', proxy_port],
-                                               package='com.meta.inno.sticker', ad_compatibility_probe=True))
+            routing = ConnectionRouting(owner, ['127.0.0.1', proxy_port],
+                                        package='com.meta.inno.sticker', ad_compatibility_probe=True)
+            master.addons.add(routing)
             class Spy:
                 def request(self, flow): http_flows.append(flow)
                 def response(self, flow): http_flows.append(flow)
@@ -106,6 +107,10 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(received, [])
                     self.assertEqual(http_flows, [])
                     self.assertEqual(len(connects), 0 if role == 'unknown' else 1)
+                    entries = routing.diagnostics.summary()['entries']
+                    if role != 'unknown':
+                        self.assertEqual(entries[0]['connect_rejected'], 1)
+                        self.assertEqual(entries[0]['connect_accepted'], 0)
                     return
                 async with asyncio.timeout(5):
                     reader, writer = await asyncio.open_connection('127.0.0.1', listen_port, ssl=trust, server_hostname=host)
@@ -119,6 +124,8 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(received), 1)
                 self.assertIn(f'CONNECT {host}:{origin_port} HTTP/1.1'.encode(), connects[0])
                 self.assertEqual(http_flows, [])
+                entry = routing.diagnostics.summary()['entries'][0]
+                self.assertEqual((entry['connect_accepted'], entry['connect_rejected']), (1, 0))
             finally:
                 await master.addons.get('proxyserver').servers.update([])
                 master.shutdown()

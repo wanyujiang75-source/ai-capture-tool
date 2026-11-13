@@ -13,6 +13,8 @@ STICKER_AD_HOSTS = frozenset({
     # Shared font endpoints observed in the ad WebView dependency chain.
     # Their payloads are opaque for StickerHub, not classified by URL path.
     'fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com',
+    # Installed InMobi SDK's MRAID/OMSDK assets; not its identity or telemetry hosts.
+    'supply.inmobicdn.net',
     # Ads SDK dependency observed in the target UID's certificate-failure stack.
     # This CDN node is not globally ad-exclusive: do not broaden to *.gvt1.com.
     'rr1---sn-i3belnls.gvt1.com',
@@ -23,6 +25,7 @@ class RoutingDiagnostics:
     def __init__(self):
         self.entries = {}
         self.overflow = 0
+        self.empty_client_waits = {'target': 0, 'login': 0}
 
     def record(self, host, role, route, failure=False):
         if not isinstance(host, str) or len(host) > 253:
@@ -46,8 +49,16 @@ class RoutingDiagnostics:
                 self.overflow += 1
                 return
             self.entries[key] = dict(host=host, role=role, route=route, connections=0, tls_failures=0)
+            self.entries[key].update(connect_accepted=0, connect_rejected=0)
         entry = self.entries[key]
         entry['tls_failures' if failure else 'connections'] += 1
 
+    def record_connect(self, host, role, accepted):
+        # Only a previously bounded opaque entry may receive transport outcomes.
+        entry = self.entries.get((host, role, 'opaque'))
+        if entry is not None:
+            entry['connect_accepted' if accepted else 'connect_rejected'] += 1
+
     def summary(self):
-        return {'entries': [dict(entry) for entry in self.entries.values()], 'overflow': self.overflow}
+        return {'entries': [dict(entry) for entry in self.entries.values()], 'overflow': self.overflow,
+                'empty_client_waits': dict(self.empty_client_waits)}

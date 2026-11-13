@@ -57,6 +57,18 @@ class RejectLayer(layer.Layer):
             yield commands.CloseConnection(self.context.client)
 
 
+class ObservedUpstreamProxy(HttpUpstreamProxy):
+    observer = None
+
+    def receive_handshake_data(self, data):
+        done, error = yield from super().receive_handshake_data(data)
+        if self.observer is not None and (done or error):
+            diagnostics, host, role = self.observer
+            diagnostics.record_connect(host, role, done and not error)
+            self.observer = None
+        return done, error
+
+
 class ConnectionRouting:
     def __init__(self, owner, upstream, *, package='', ad_compatibility_probe=False):
         self.owner, self.upstream = owner, upstream
@@ -103,7 +115,9 @@ class ConnectionRouting:
         # A TLS ClientHello provides the destination for VPN fake-IP cache entries.
         # Never terminate TLS: the original bytes go through CONNECT unchanged.
         payload = data.data_client()
-        if role == 'target' and not payload:
+        # Wait for client bytes before choosing an IP or SNI CONNECT destination.
+        if not payload:
+            self.diagnostics.empty_client_waits[role] += 1
             return
         host = None
         if payload[:1] == b'\x16':
@@ -132,7 +146,8 @@ class ConnectionRouting:
             ctx.server.address = (host, ctx.server.address[1])
             self.diagnostics.record(host, role, 'opaque')
         ctx.server.via = ('http', tuple(self.upstream))
-        stack = HttpUpstreamProxy.make(ctx, True)
+        stack = ObservedUpstreamProxy.make(ctx, True)
+        stack[-1].observer = (self.diagnostics, host, role)
         stack /= tcp.TCPLayer(ctx, ignore=True)
         data.layer = stack[0]
 
