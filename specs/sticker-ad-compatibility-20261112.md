@@ -12,7 +12,74 @@
 - AD-3：桌面自动诊断/恢复，用户只做必要系统授权；清楚区分流量转发、TLS、业务响应与广告实际投放，技术细节折叠。
 - AD-4：真机对照及相关后端/助手/Swift回归、构建验签、停止/退出/断线/换机恢复、有界缓存/超时验证；已知兼容缺口如实保留。远端发布不在此授权内。
 
-本轮只处理 AD-0；后续任务在本阶段证据明确后补足具体修改范围和验收再领取，不并行改产品逻辑。
+AD-0历史轮只处理基线。2026-11-12用户新授权从AD-1继续定位并做最小修复、自验收：当前只领取AD-1，将已明确要求的最小修复纳入本任务；不并行领取其他任务，不额外实现AD-3全套UI改造。
+
+## AD-1 实施契约
+
+- 加入每任务最多64项的聚合诊断，只记录规范化SNI、owner角色、capture/opaque/reject路由和TLS失败计数；不存IP、URL参数、正文/账号、连接原始字节。溢出合并计数，不无界存储；活动连接映射沿用1024上限并断开释放。
+- 先在现有解密路由下确认目标UID广告连接及失败主机。最初仅精确主机；11-13发现广告节点轮换后修订为四个广告服务域名边界及少量已观察精确依赖（详见下文），仅限定StickerHub的target角色。不得使用Google/共享CDN全域通配，不因一次错误动态放行所有主机。TLS透传意味着对应主机所有路径均不归档，并非按URL区分广告。
+- 未通过真实Banner验收的策略默认关闭。仅worker私有配置显式布尔`ad_compatibility_probe=true`才能启用，构造器也默认关闭；普通API/桌面流程不提供或写入该标志。默认抓包路径维持原逻辑，诊断聚合不包含正文。不能将探针开关视为已交付兼容功能。
+- 目标业务继续采集，未知身份拒绝。混合业务域名、缺失SNI、畸形/过大ClientHello、分片和并发上限均有回归；透传不生成HTTP flow，不做断点修改、不重放失败请求，不回落直连。
+- 原始TLS保留客户端到源站验证，不降低TLS/证书检查。不修改已有Google服务转发和UDP规则；诊断不证明Google全部连接可用。
+- 验收命令：physical-runtime python unittest目标routing/ads/worker及test_android_physical*.py；真实loopback原证书/零HTTP钩子；Swift回归（如修改文案）；build-app.sh与codesign严格验签；桌面真机抓包中冷启动观察Banner、归档业务完整Request/Response；停止恢复与APK/USB/代理比对；git diff --check。广告未出现或外部条件不满足不能标DONE。
+
+### AD-1 中间证据与范围修订
+
+诊断版#108确认googleads.g.doubleclick.net和pagead2.googlesyndication.com属于target且进入capture，每次握手失败；业务Supabase零TLS失败，32条响应中26条200、3条204、3条101。首次#107电脑外网预检失败，独立HTTPS204后重试成功，未修改代理。
+
+第一版只透传上述两个入口：#109广告脚本已输出jsLoaded，但冷启动无Banner，目标Ads日志进一步明确rr1---sn-i3belnls.gvt1.com证书公钥拒绝；lh3.googleadsserving.cn也有target/capture失败。当前最小兼容范围增加这两个精确依赖地址。GVT节点不是全局广告专用，故这是明确的取舍：仅StickerHub到这个节点的所有TLS连接不归档，不能声称按URL区分广告。不会扩大*.gvt1.com、所有Google、动态失败放行或其他包；未知/混合业务主机默认仍采集。依赖节点迁移可能再次不兼容，后续需重新验证，不能将本轮结果推广所有网络与广告供应商。
+
+RED已记录缺少diagnostics、package策略及新增依赖测试；真实loopback曾发现TLS层构造时提前设置client.tls，改为timestamp_tls_setup判断完成握手后23项路由测试通过。第一版116项Android回归115通过/1跳过；Banner未通过时仍DOING，不算已完成。
+
+## AD-1 实机复验与未完成结论（2026-11-13）
+
+### 本轮结果
+
+| 抓包记录 | 候选范围 | 结果 |
+| --- | --- | --- |
+| #112 | 追加已观察渲染脚本/字体精确主机 | 出现空白广告位，没有素材；新增轮换广告主机TLS失败；停止前26请求/26响应 |
+| #113 | 四个广告服务域名边界及子域 | 无Banner；发现www.gstatic.com仍在capture失败；停止前34请求/34响应 |
+| #114 | 追加精确www.gstatic.com | 无Banner；发现static.googleadsserving.cn仍在capture失败；停止前35请求/35响应 |
+| #115 | 追加精确static.googleadsserving.cn | 冷启动后观察约2分钟仍无Banner；40请求/40响应，最终本地TLS失败181次（不是181个主机，也不是181次Banner错误） |
+
+#115的目标Supabase连接23条、TLS失败0，归档34条200/4条204/2条101；桌面Request/Response核对`get_app_config`：请求4B、响应405B，双方complete=true、truncated=false。101仅表示WebSocket握手，不证明消息内容完整。只证明已检查的业务请求完整，不声称所有第三方SDK或广告正文都采集成功。
+
+剩余失败涉及AppLovin、Unity、Moloco、Pangle等广告中介服务，也混有客服、统计和Facebook业务；不能将这些错误一概归因于Banner或全部转为透传。Google广告脚本jsLoaded及opaque计数也不等于广告加载成功。当前最小修复候选不足，AD-1保持DOING。下一轮应先将Banner广告格式/加载错误与具体中介连接关联，重新审查可保留业务的最小原TLS边界；不继续仅凭TLS失败堆叠主机。
+
+### 验证与保护现有行为
+
+- 候选相关边界测试先RED后GREEN；最后新增“默认不启用未验收广告策略”测试先失败，再增加双层显式诊断开关。最终`macos-native/build/physical-runtime/bin/python3 -m unittest discover -s tests -p 'test_android_physical*.py'`：120项，119通过、1跳过。包含真实TLS证书相同、零HTTP正文钩子、上游失败无直连、未知角色失败关闭、域名边界和业务保留；未改Swift页面。
+- 四轮实机候选均完成构建/严格验签；最终默认关闭版本`ad1-disabled-20261113`单独重建退出0，严格验签通过，日志`/tmp/capture-ad1-20261113-guard-build.log`。最终`git diff --check`通过。未验收候选不安装为日常使用版、不推送、不发包。
+- 本轮从无活动VPN开始。原Clash对照时10:28出现Banner；#115停止后使用原Clash启动按钮恢复，桌面确认stopped，再冷启动StickerHub于10:57出现铃声广告Banner。未点击广告、清缓存/数据或更改应用；磁盘广告缓存未清，故截图与TLS证据共同支持路径差异，不独立证明每张素材均为网络新下载。
+- 测试结束撤销本轮临时启用的Clash：VPN type=-1、HTTP proxy=null，恢复起始无VPN基线。原Clash规则模式/新配置未编辑；21个原APK摘要cmp一致；原ADB tcp19387->10156、tcp46619->10157保持，只有移动工具自己的localabstract映射；capture-owner映射已清理。自有logcat子进程已显式停止，旧PHK110待恢复记录SHA-256仍为`3a2bb229461addc57d3c15775ac9ccf5f40b94a56f53b326dbbce69259dacb27`。
+- `/Applications/抓包工具.app`已恢复测试前`google-routing-auth-20261112`，严格验签通过且退出；不保留失败候选给用户误用。没有Root、改包、修改手机原节点/配置或电脑代理。
+- 独立缺口仍存在：停止后原Clash未自动重连（本轮手动恢复后桌面确认）；网络摘要在业务已有响应时仍可能显示“没有新的HTTPS响应”。未将这两项混进本轮TLS修复，也不声称全流程自动恢复通过。
+- 私有证据`/tmp/capture-ad1-20261113.pu6ZdZ`：各轮state聚合、有界Ads/Chromium日志、前后APK摘要、原/候选桌面备份、baseline/restored-banner/static-result截图；日志可能有广告标识，不提交。#115业务归档`web-physical-c26ed65d2d60470c9d5bffc197afe702`保留本机。最终回归日志`/tmp/capture-ad1-20261113-guard-tests.log`。
+
+## AD-1 历史暂停交接（2026-11-12，已于11-13恢复）
+
+### 2026-11-13恢复
+
+#114审查：Google广告主体和s0.2mdn已透传，业务32条响应；仍无Banner。可直接核实遗漏static.googleadsserving.cn（target/capture/TLS失败），属于已确认广告素材服务且Google官方RTB域名清单列明；补该精确主机而非继续扩大服务分类。该修订仅纠正素材链具体遗漏，不采用更多中介SDK/整个静态CDN放行。未取得Banner前所有候选仍未完成验收。
+
+#113继续暴露www.gstatic.com目标UID静态资源TLS失败，业务Supabase正常；加入该精确共享静态资源例外，明确其所有路径不归档。仍不使用*.gstatic.com，保留other.gstatic.com及子域伪装回归。此次为今日第三个有界候选，若Banner仍未通过，不继续用新增主机堆叠声称修复。
+
+架构复核（#112）：新增渲染依赖后出现空白广告位，素材未完成；target新增googleads4.g.doubleclick.net、www.googleadservices.com、s0.2mdn.net均TLS失败。固定单主机无法覆盖轮换广告节点。因此限定策略修订为四个广告服务域名边界（doubleclick.net、googlesyndication.com、googleadservices.com、2mdn.net）及其子域，而非逐节点补丁；仍只针对StickerHub、可靠target归属、现有上游CONNECT。保留精确字体等例外，不扩到gvt1.com/gstatic.com/googleapis.com通配或第三方混合业务。域名边界、伪装后缀、其他包/未知身份、业务保留均回归。此规则使这些广告服务内容不归档，不能声称抓取全部广告正文。Google广告域名来源另见 https://developers.google.com/authorized-buyers/rtb/relnotes ，不是依此放行其整张Google域名表。
+
+同一PKG110已连接，初始active VPN type=-1、http_proxy=null。继续现有DOING，不领取AD-2。修正昨日逐个入口思路：按广告渲染依赖链检验，而非把所有失败连接认作广告。#111已观测target的www.googletagservices.com、tpc.googlesyndication.com、fonts.googleapis.com、fonts.gstatic.com全部TLS失败；前两者为广告脚本/素材，后两者为共享字体资源，明确这些精确字体主机上的流量不归档，不能称全部目标流量均解密。不扩大*.gstatic.com、GVT通配、Facebook混合API、应用统计或所有中介SDK域名；其他包保持原逻辑。
+
+验证：新增精确主机、后缀伪装/子域、其他包及业务保留用例先RED后GREEN；复用真实CONNECT证书/零HTTP钩子测试；桌面限定一次冷启动观察，再依据实际证据决定下一步，不连续盲试。证据来源：本地fix3-state及Google官方 https://support.google.com/admanager/answer/10358597 与 https://support.google.com/google-ads/answer/6335679 。抓包中Banner出现、业务正文完整、停止恢复同时满足才完成。
+
+用户要求保存进度，明天继续。AD-1未通过Banner验收，保持DOING，仅表示未完成；当前暂停执行，不进入AD-2、不发布候选包。
+
+- 三轮候选#109/#110/#111均未显示Banner。第二轮新增pagead2.googleadservices.com和fundingchoicesmessages.google.com的精确透传后，第三轮仍存在目标UID下googletagservices、tpc.googlesyndication、字体和动态GVT依赖的TLS失败。不能通过无限补地址或全域旁路宣称解决；下一轮先重新审查依赖分类和混合业务主机边界。
+- 业务采集未失效：#111共33条响应（27条200、4条204、2条101），桌面已核对get_app_config的Request及完整JSON Response；complete=true、truncated=false。101仅表示握手，不能算完整WebSocket消息验收。透传连接的零本地TLS失败也不等于远端握手成功。
+- 最终Android相关回归117项，116通过、1跳过；真实loopback验证源站证书保持、零HTTP正文钩子及上游失败不直连。桌面构建和严格签名通过。候选实现仍是未验收修复，不替代真实Banner证据。
+- #111已通过桌面停止；原Clash经其启动按钮恢复并由桌面确认stopped，原节点/规则/配置未编辑。21个原APK摘要前后一致，系统HTTP代理null，原3条ADB映射保留，旧设备待恢复记录摘要不变。没有Root、改包、清数据或点击广告。
+- 本机应用已恢复至测试前备份，严格签名验证通过；候选版保存在私有临时目录。最后只读检查显示原Clash仍活动；随后USB断开，无法撤销本轮临时启用以回到最初“无活动VPN”基线。保留该恢复差异，不声称完全恢复，也不远程改动其他设备。
+- 已观察到独立问题：应用网络摘要曾显示零响应/失败，但实际归档已有完整200；停止后Clash仍需人工启动。留待独立修复，不混入本轮TLS结论。
+- 私有证据目录：/tmp/capture-ad1-20261112.wr8rQm，包含fix1/fix2/fix3状态、截图、有界日志及原版/候选桌面备份；测试日志/tmp/capture-ad1-tests-final3.log。原始日志/截图/敏感归档不提交仓库。业务#111保存在本机现有归档web-physical-0191a9d0830a43b8a4d81f60978950b1。
+- 恢复工作时先核对手机连接、实际VPN与用户当前状态，再读取本节和候选代码；不自动重放旧任务，不沿用临时连接凭据，不重复已有测试除非代码/环境有变化。
 
 ## AD-0 操作与验收
 

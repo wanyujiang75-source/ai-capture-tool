@@ -26,16 +26,22 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_owner_never_contacts_upstream_or_origin(self):
         await self.exercise('unknown', True)
 
-    async def exercise(self, role, upstream_accepts):
+    async def test_target_ad_preserves_original_certificate_and_skips_http(self):
+        await self.exercise('target', True, host='googleads.g.doubleclick.net')
+
+    async def test_target_ad_upstream_refusal_has_no_direct_fallback(self):
+        await self.exercise('target', False, host='pagead2.googlesyndication.com')
+
+    async def exercise(self, role, upstream_accepts, host='localhost'):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'localhost')])
+            name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
             cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
                     .serial_number(x509.random_serial_number())
                     .not_valid_before(datetime.now(timezone.utc) - timedelta(minutes=1))
                     .not_valid_after(datetime.now(timezone.utc) + timedelta(hours=1))
-                    .add_extension(x509.SubjectAlternativeName([x509.DNSName('localhost')]), False)
+                    .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), False)
                     .sign(key, hashes.SHA256()))
             (root / 'cert').write_bytes(cert.public_bytes(serialization.Encoding.PEM))
             (root / 'key').write_bytes(key.private_bytes(serialization.Encoding.PEM,
@@ -79,7 +85,8 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                                mode=[f'reverse:tcp://127.0.0.1:{origin_port}']), with_termlog=False, with_dumper=False)
             master.options.update(connection_strategy='lazy')
             owner = type('Owner', (), {'role': AsyncMock(return_value=role)})()
-            master.addons.add(ConnectionRouting(owner, ['127.0.0.1', proxy_port]))
+            master.addons.add(ConnectionRouting(owner, ['127.0.0.1', proxy_port],
+                                               package='com.meta.inno.sticker', ad_compatibility_probe=True))
             class Spy:
                 def request(self, flow): http_flows.append(flow)
                 def response(self, flow): http_flows.append(flow)
@@ -95,22 +102,22 @@ class OpaqueWireTests(unittest.IsolatedAsyncioTestCase):
                 if role == 'unknown' or not upstream_accepts:
                     async with asyncio.timeout(5):
                         with self.assertRaises((OSError, ConnectionError)):
-                            await asyncio.open_connection('127.0.0.1', listen_port, ssl=trust, server_hostname='localhost')
+                            await asyncio.open_connection('127.0.0.1', listen_port, ssl=trust, server_hostname=host)
                     self.assertEqual(received, [])
                     self.assertEqual(http_flows, [])
                     self.assertEqual(len(connects), 0 if role == 'unknown' else 1)
                     return
                 async with asyncio.timeout(5):
-                    reader, writer = await asyncio.open_connection('127.0.0.1', listen_port, ssl=trust, server_hostname='localhost')
+                    reader, writer = await asyncio.open_connection('127.0.0.1', listen_port, ssl=trust, server_hostname=host)
                     self.assertEqual(writer.get_extra_info('ssl_object').getpeercert(binary_form=True),
                                      cert.public_bytes(serialization.Encoding.DER))
-                    writer.write(b'GET /synthetic-login HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                    writer.write(f'GET /synthetic HTTP/1.1\r\nHost: {host}\r\n\r\n'.encode())
                     await writer.drain()
                     self.assertTrue((await reader.read()).endswith(b'OK'))
                     writer.close()
                     await writer.wait_closed()
                 self.assertEqual(len(received), 1)
-                self.assertIn(f'CONNECT localhost:{origin_port} HTTP/1.1'.encode(), connects[0])
+                self.assertIn(f'CONNECT {host}:{origin_port} HTTP/1.1'.encode(), connects[0])
                 self.assertEqual(http_flows, [])
             finally:
                 await master.addons.get('proxyserver').servers.update([])

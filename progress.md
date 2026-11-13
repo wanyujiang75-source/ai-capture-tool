@@ -5,7 +5,7 @@
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | AD-0 | DONE | 原 VPN 与桌面抓包广告基线对照 | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；私有有界日志/截图、已授权 PKG110 的临时 VPN 选择 | 两路径页面、广告错误/连接证据、业务结果；测试后实际基线恢复；git diff --check | PKG110 正式版3.18.14(195) A-B-A对照：原Clash有Banner，桌面#106冷启动约75秒无Banner，恢复Clash后再现Banner。29请求/29响应含完整get_app_config200，340次TLS失败；有界目标日志22次公钥拒绝、49次WebView -202、Unity初始化超时。21个APK摘要一致，原3条ADB映射/HTTP proxy=null/无活动VPN基线恢复，旧机提醒摘要不变。未改产品或发布；详见规格 | AD-1精确区分广告端点/连接身份与解密分支；广告修复尚未完成 |
-| AD-1 | TODO | 定位目标进程广告 TLS 路径与最小直通边界 | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py 的只读核查；必要有界元数据探针和隔离测试 | 证明失败连接走的角色/层与上游；隔离原TLS直通和现有解密对照；混合/未知主机不扩大采集；明确最小修复范围、恢复验证 | AD-0已证明广告相关TLS被拒绝与抓包模式相关；尚无逐连接归属/原始TLS直通实机验证，不能把所有340次TLS失败都认定为Banner | 领取后先完善探针/测试文件范围；不重复登录或换证书 |
+| AD-1 | DOING | 定位广告 TLS 路径、最小修复并实机自验收 | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py、android_physical_ad_routing.py；tests/test_android_physical_routing*.py、test_android_physical_ad_routing.py；本地构建/私有有界证据 | 连接角色/主机/解密失败证据；RED-GREEN、真实TLS原证书和零正文归档、业务回归；桌面开启时Banner与完整业务正文；原APK/节点/配置不变与网络恢复 | 11-13四轮候选#112至#115均无正常Banner；最终40响应含34条200、4条204、2条101，桌面核对get_app_config完整JSON，归档complete=true/truncated=false。恢复Clash后Banner再现，21个APK摘要一致、原USB映射及旧机提醒不变，撤销临时Clash回到无活动VPN/HTTP proxy=null；原桌面已还原。默认关闭未验收广告策略，120项回归119通过/1跳过；具体构建/证据见规格。未修复完成、未发布 | 先定位Banner对应广告格式/中介SDK失败与连接的因果关系；不能把所有失败SDK或混合业务主机全部透传。保持AD-1，不进入AD-2，不重复换证书或扩域盲试 |
 
 ## 2026-11-12 StickerHub Google 登录
 

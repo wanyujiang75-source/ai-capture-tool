@@ -11,6 +11,7 @@ from mitmproxy.proxy import commands, events, layer, mode_specs
 from mitmproxy.proxy.layers import tcp
 from mitmproxy.proxy.layers.http._upstream_proxy import HttpUpstreamProxy
 from mitmproxy.proxy.layers.tls import parse_client_hello
+from .android_physical_ad_routing import RoutingDiagnostics, STICKER_AD_HOSTS, STICKER_AD_DOMAINS
 
 
 class OwnerClient:
@@ -57,9 +58,14 @@ class RejectLayer(layer.Layer):
 
 
 class ConnectionRouting:
-    def __init__(self, owner, upstream):
+    def __init__(self, owner, upstream, *, package='', ad_compatibility_probe=False):
         self.owner, self.upstream = owner, upstream
+        # AD-1 has not passed real Banner acceptance; ordinary captures stay unchanged.
+        probing_ads = ad_compatibility_probe is True and package == 'com.meta.inno.sticker'
+        self.ad_hosts = STICKER_AD_HOSTS if probing_ads else frozenset()
+        self.ad_domains = STICKER_AD_DOMAINS if probing_ads else ()
         self.roles = {}
+        self.diagnostics = RoutingDiagnostics()
 
     async def next_layer(self, data):
         ctx = data.context
@@ -86,15 +92,20 @@ class ConnectionRouting:
                 return
             self.roles[key] = role
         role = self.roles[key]
-        if role == 'target':
+        # Constructing the default TLS layer sets client.tls before this hook.
+        # Only a completed handshake means these are already decrypted bytes.
+        if role == 'target' and (not self.ad_hosts or ctx.client.timestamp_tls_setup is not None):
             data.layer = original_layer
             return
-        if role != 'login' or not self.upstream:
+        if role not in ('target', 'login'):
             data.layer = RejectLayer(ctx)
             return
         # A TLS ClientHello provides the destination for VPN fake-IP cache entries.
         # Never terminate TLS: the original bytes go through CONNECT unchanged.
         payload = data.data_client()
+        if role == 'target' and not payload:
+            return
+        host = None
         if payload[:1] == b'\x16':
             if len(payload) > 65536:
                 data.layer = RejectLayer(ctx)
@@ -108,7 +119,18 @@ class ConnectionRouting:
                 data.layer = None
                 return
             if hello.sni:
-                ctx.server.address = (hello.sni, ctx.server.address[1])
+                host = hello.sni.lower().rstrip('.')
+        is_ad_dependency = host in self.ad_hosts or bool(host and any(
+            host == domain or host.endswith('.' + domain) for domain in self.ad_domains))
+        if role == 'target' and not is_ad_dependency:
+            data.layer = original_layer
+            return
+        if not self.upstream:
+            data.layer = RejectLayer(ctx)
+            return
+        if host:
+            ctx.server.address = (host, ctx.server.address[1])
+            self.diagnostics.record(host, role, 'opaque')
         ctx.server.via = ('http', tuple(self.upstream))
         stack = HttpUpstreamProxy.make(ctx, True)
         stack /= tcp.TCPLayer(ctx, ignore=True)
@@ -116,3 +138,10 @@ class ConnectionRouting:
 
     def client_disconnected(self, client):
         self.roles.pop(client.id, None)
+
+    def tls_clienthello(self, data):
+        self.diagnostics.record(data.client_hello.sni, self.roles.get(data.context.client.id, 'unknown'), 'capture')
+
+    def tls_failed_client(self, data):
+        self.diagnostics.record(data.context.client.sni, self.roles.get(data.context.client.id, 'unknown'),
+                                'capture', failure=True)

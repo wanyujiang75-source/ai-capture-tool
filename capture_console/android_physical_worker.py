@@ -95,8 +95,12 @@ async def run(config):
                 stream_large_bodies='256k', websocket=False, rawtcp=True)
     recorder = PhysicalRecorder(config)
     master.addons.add(recorder)
+    routing = None
     if config.get('owner_port'):
-        master.addons.add(ConnectionRouting(OwnerClient(config['owner_port'], config['owner_token']), config['upstream']))
+        routing = ConnectionRouting(OwnerClient(config['owner_port'], config['owner_token']),
+                                    config['upstream'], package=config['package'],
+                                    ad_compatibility_probe=config.get('ad_compatibility_probe') is True)
+        master.addons.add(routing)
     for sig in (signal.SIGTERM, signal.SIGINT):
         asyncio.get_running_loop().add_signal_handler(sig, master.shutdown)
 
@@ -117,6 +121,8 @@ async def run(config):
                 recorder.recording.check_limit(lambda hosts: None)
                 state = {key: recorder.state[key] for key in ('flow_count', 'response_count', 'tls_failures')}
                 state['application_network'] = recorder.application_network.summary()
+                if routing:
+                    state['routing_diagnostics'] = routing.diagnostics.summary()
                 state['ready'] = exported
                 state['limit'] = recorder.recording.archive.limit_reason
                 temporary = root / 'state.tmp'
