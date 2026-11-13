@@ -117,22 +117,40 @@ def main():
     cli.add_argument("--adb", required=True)
     cli.add_argument("--serial", required=True)
     cli.add_argument("--uid", type=int, required=True)
+    cli.add_argument("--pid", type=int, help="Explicit PID fallback; verifies UID before and during collection")
     cli.add_argument("--seconds", type=int, default=120, choices=range(1, 181))
     cli.add_argument("--output", required=True)
     args = cli.parse_args()
     if args.uid < 10000:
         cli.error("An application UID is required; system-wide collection is not allowed")
+    if args.pid is not None:
+        if not 1 <= args.pid <= 4194304:
+            cli.error("PID identity must be a valid process number")
+        try:
+            identity = subprocess.run(
+                [args.adb, "-s", args.serial, "shell", "ps", "-p", str(args.pid), "-o", "UID,PID"],
+                capture_output=True, text=True, timeout=5, check=True,
+            ).stdout.splitlines()
+        except (OSError, subprocess.SubprocessError):
+            cli.error("PID identity could not be verified")
+        if [line.split() for line in identity if line.strip()] != [
+                ["UID", "PID"], [str(args.uid), str(args.pid)]]:
+            cli.error("PID identity does not match the target UID")
     fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     parser = TraceParser()
     records = []
     total = 0
+    scoped_lines = 0
     pending = b""
     line_pattern = re.compile(r"^\s*\S+\s+\S+\s+(\d+)\s+(\d+)\s+[VDIWEF]\s+Ads(?:-cont)?\s*:\s?(.*)$")
+    identity_pattern = re.compile(r"^(\s*\S+\s+\S+\s+)(\d+)\s+(\d+)\s+")
     process = None
     try:
         process = subprocess.Popen(
-            [args.adb, "-s", args.serial, "logcat", "--uid=" + str(args.uid),
-             "-T", "1", "-v", "threadtime", "*:S", "Ads:I", "Ads-cont:I"],
+            [args.adb, "-s", args.serial, "logcat",
+             "--pid=" + str(args.pid) if args.pid is not None else "--uid=" + str(args.uid),
+             "-T", "1", "-v", "threadtime,uid" if args.pid is not None else "threadtime",
+             "*:S", "Ads:I", "Ads-cont:I"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
         deadline = time.monotonic() + args.seconds
@@ -154,8 +172,18 @@ def main():
                         parser.buffers.clear()
                         parser.drop("line_limit")
                         continue
-                    match = line_pattern.match(line.decode("utf-8", errors="replace"))
+                    text = line.decode("utf-8", errors="replace")
+                    if args.pid is not None:
+                        scope = identity_pattern.match(text)
+                        if not scope or scope[2] != str(args.uid) or scope[3] != str(args.pid):
+                            parser.buffers.clear()
+                            parser.drop("scope_mismatch")
+                            continue
+                        # Strip only the verified UID column before parsing the thread identity.
+                        text = scope[1] + scope[3] + " " + text[scope.end():]
+                    match = line_pattern.match(text)
                     if match:
+                        scoped_lines += 1
                         result = parser.feed((match[1], match[2]), match[3])
                         if result is not None:
                             records.append(result)
@@ -174,6 +202,8 @@ def main():
             process.stdout.close()
         report = {"records": records, "dropped": parser.dropped, "drop_reasons": parser.drop_reasons,
                   "incomplete_blocks": len(parser.buffers), "input_bytes": total,
+                  "collection_mode": "verified_pid" if args.pid is not None else "uid",
+                  "scoped_lines": scoped_lines,
                   "logcat_exit": process.returncode if process else None}
         with os.fdopen(fd, "w") as output:
             json.dump(report, output, ensure_ascii=True)

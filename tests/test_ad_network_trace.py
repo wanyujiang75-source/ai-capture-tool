@@ -178,6 +178,52 @@ class TraceParserTests(unittest.TestCase):
             self.assertLess(time.monotonic() - start, 5)
             self.assertEqual(json.loads(output.read_text())["logcat_exit"], -15)
 
+    def test_pid_mode_verifies_identity_and_rejects_foreign_fragments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            adb = Path(directory) / "fake-adb"
+            output = Path(directory) / "trace.json"
+            adb.write_text("#!" + sys.executable + "\n"
+                "import sys\n"
+                "if 'shell' in sys.argv:\n"
+                " print('UID PID\\n11077 1234')\n"
+                "else:\n"
+                " assert '--pid=1234' in sys.argv and '--uid=11077' not in sys.argv\n"
+                " assert 'threadtime,uid' in sys.argv\n"
+                " for uid,pid,text in [\n"
+                "  (11077,1234,'GMA Debug BEGIN'),\n"
+                "  (11078,1234,'GMA Debug CONTENT {\"event\":\"onNetworkResponse\"}'),\n"
+                "  (11077,1234,'GMA Debug FINISH'),\n"
+                "  (11077,5678,'GMA Debug BEGIN'),\n"
+                "  (11077,1234,'GMA Debug BEGIN'),\n"
+                "  (11077,1234,'GMA Debug CONTENT {\"event\":\"onNetworkRequest\",\"params\":{\"body\":\"SECRET\"}}'),\n"
+                "  (11077,1234,'GMA Debug FINISH')]:\n"
+                "  print(f'11-13 18:40:00.123 {uid} {pid} 5678 I Ads : {text}')\n")
+            adb.chmod(0o700)
+            result = subprocess.run([sys.executable, "scripts/qa_ad_network_trace.py",
+                "--adb", str(adb), "--serial", "synthetic", "--uid", "11077", "--pid", "1234",
+                "--seconds", "1", "--output", str(output)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(output.read_text())
+            self.assertEqual(report["records"], [{"event": "onNetworkRequest"}])
+            self.assertEqual(report["drop_reasons"], {"scope_mismatch": 2})
+            self.assertEqual(report["collection_mode"], "verified_pid")
+            self.assertNotIn("SECRET", output.read_text())
+
+    def test_pid_mode_rejects_wrong_or_unavailable_identity_before_collecting(self):
+        for identity in ("11078 1234", "11077 5678", "", "u0_a1077 1234"):
+            with self.subTest(identity=identity), tempfile.TemporaryDirectory() as directory:
+                adb = Path(directory) / "fake-adb"
+                output = Path(directory) / "trace.json"
+                adb.write_text("#!" + sys.executable + "\nimport sys\n"
+                    "assert 'shell' in sys.argv\nprint(" + repr("UID PID\n" + identity) + ")\n")
+                adb.chmod(0o700)
+                result = subprocess.run([sys.executable, "scripts/qa_ad_network_trace.py",
+                    "--adb", str(adb), "--serial", "synthetic", "--uid", "11077", "--pid", "1234",
+                    "--seconds", "1", "--output", str(output)], capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("PID identity", result.stderr)
+                self.assertFalse(output.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
