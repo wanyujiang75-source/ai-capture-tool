@@ -1,5 +1,9 @@
 # 进度记录
 
+11-13 16:40 AD-1实机对照BLOCKED（USB缺席）：连续三次adb设备列表为空，#126/#125为stopped，未启动私有App或变更网络/调试。新增只读证据为原包gads:log:verbose_enabled默认false，解释仅设Ads VERBOSE仍缺内部栈的观测限制；已验既有六主机探针签名/等价路由。待PKG110重连后继续既定单变量诊断，不扩域，不发布。
+
+11-13 16:35继续同一AD-1 DOING：上一轮为有进展（纠正真实事件契约并复验）。现核对SDK内部verbose双重开关，改用原有六主机探针与#126做诊断对照，不增加范围；仅本地已有私有App和目标UID采集。验收脚本同network_request配对、具体广告结果、业务完整性及恢复原Clash/稳定桌面/调试关闭；不发布。
+
 11-13 16:32 AD-1续验未完成：修正GMA错误事件并增加公共加载脚本固定分类，2项RED后9项测试GREEN；Android131项130通过/1可选跳过。#126点击卡片仍无视频，6条网络请求中2条明确SDK加载脚本请求，0响应且0丢弃；原包不输出ad_request，停止沿此缺失字段重复排查。47条归档/40条完整RPC；已停止、原Clash恢复、广告调试关闭、Ads级别恢复，原APK和历史恢复记录摘要一致。仍DOING，不发布为已修复；详见规格16:32。
 
 AD-1继续DOING：只读生产APK确认GMA错误事件名与采集器不一致，且SDK只发network_request、不发ad_request。沿现有scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py范围补错误事件和已确认公共加载脚本分类；验收为事件关联、未知字段/URL/错误文本不落盘、精确域名路径匹配RED-GREEN。普通抓包路由保持不变。
@@ -25,7 +29,7 @@ AD-1本轮范围补充：capture_console/android_physical_opaque_probe.py、test
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | AD-0 | DONE | 原 VPN 与桌面抓包广告基线对照 | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；私有有界日志/截图、已授权 PKG110 的临时 VPN 选择 | 两路径页面、广告错误/连接证据、业务结果；测试后实际基线恢复；git diff --check | PKG110 正式版3.18.14(195) A-B-A对照：原Clash有Banner，桌面#106冷启动约75秒无Banner，恢复Clash后再现Banner。29请求/29响应含完整get_app_config200，340次TLS失败；有界目标日志22次公钥拒绝、49次WebView -202、Unity初始化超时。21个APK摘要一致，原3条ADB映射/HTTP proxy=null/无活动VPN基线恢复，旧机提醒摘要不变。未改产品或发布；详见规格 | AD-1精确区分广告端点/连接身份与解密分支；广告修复尚未完成 |
-| AD-1 | DOING | PokeHub卡片视频广告与完整业务采集共存（不要求Banner） | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py、android_physical_ad_routing.py、android_physical_opaque_probe.py；tests/test_android_physical_routing*.py、test_android_physical_ad_routing.py、test_android_physical_opaque_probe.py；scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py；本地构建/私有有界证据 | 原VPN视频基线；RED-GREEN、原TLS/无广告正文归档/无直连回退；抓包建立后冷启动点击卡片出现视频且业务正文完整；原网络和APK恢复 | #122/#123/#124三次限定修订均无视频，不能标修复成功；#124有58条归档，业务RPC complete=true，桌面Request/Response检查通过。131项回归130通过/1可选跳过。三轮已停止、原Clash恢复、原APK及历史恢复文件摘要一致、稳定桌面已还原。详见规格15:31结果 | 停止固定主机试错；缺少广告加载尝试/具体适配器与失败素材的关联证据，先重新设计有界诊断或业务/广告区分策略，再恢复实机验证。探针保持默认关闭，不发布 |
+| AD-1 | BLOCKED | PokeHub卡片视频广告与完整业务采集共存（不要求Banner） | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py、android_physical_ad_routing.py、android_physical_opaque_probe.py；tests/test_android_physical_routing*.py、test_android_physical_ad_routing.py、test_android_physical_opaque_probe.py；scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py；本地构建/私有有界证据 | 原VPN视频基线；RED-GREEN、原TLS/无广告正文归档/无直连回退；抓包建立后冷启动点击卡片出现视频且业务正文完整；原网络和APK恢复 | #126视频未通过，47条归档/40条完整RPC；SDK实际只输出network_request且内部verbose受默认false的第二开关限制。诊断9项通过，Android131项130通过/1可选跳过。原Clash/广告调试/Ads级别已恢复。16:40连续三次无ADB设备，新对照未启动。详见规格 | 待PKG110重连，恢复同一任务；用已验签的既有六主机探针做同network_request请求/响应诊断对照，不新增主机。稳定桌面与原网络保持原样，不发布 |
 
 ## 2026-11-12 StickerHub Google 登录
 
