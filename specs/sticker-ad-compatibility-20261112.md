@@ -1,8 +1,27 @@
 # Android 真机广告兼容计划与 AD-0 验收
 
+## 11-15 15:50 正式默认路径验收
+
+- 独立监听补验：`CAPTURE_TEST_PHYSICAL_WORKER=1 macos-native/build/physical-runtime/bin/python3 -m unittest discover -s tests -p 'test_android_physical_worker.py'`实际1项通过（2.651秒），仅本机隔离监听与租约过期退出，不改变手机VPN；合计134项均已执行通过。
+
+- 用户确认Banner即可，首页德语卡片概率触发视频仅作为后续线索，不是本轮阻塞条件。AD-1按新标准完成；历史视频失败/未知证据保留，不宣称已经修复视频。
+- 修改仅将既有StickerHub包级广告策略默认启用；PokeHub仍需显式诊断开关。没有新增主机或通配范围，没有关闭TLS校验。已匹配广告连接经现有电脑代理原样转发，不归档其正文；业务域名仍走完整采集，未知归属和缺失上游继续拒绝。
+- 本地构建sticker-banner-20261115签名严格校验通过，包内路由模块与工作区cmp一致，实际运行进程来自macos-native/build/抓包工具.app。桌面Android真机开始#134后冷启动原版StickerHub3.18.15(196)，15:47截图底部Banner可见；未点击广告内容，没有开启广告调试。
+- #134共30条归档，20组/rest/v1/rpc/请求响应均complete=true/truncated=false，落盘长度一致。39个非空JSON（17个gzip经1MiB有界解压）、1个零长度正文校验通过；桌面Request/Response正文控件均可查看。101仅升级握手，不证明WebSocket帧完整。归档目录为本机runtime-native/captures/web-physical-749f6dd162984c8891e640393d1fb2a7，不提交原始正文或请求头。
+- 桌面停止后，原Clash显示运行中、规则模式、新配置已激活，桌面“检查网络恢复”明确通过。Android http_proxy=null，Mac HTTP/HTTPS均保持127.0.0.1:7897；原21个APK联合SHA256仍a7809813798530f42def1bc439171ab08a2f6e5ff02f303aed39bb33833645c4。旧PHK110待恢复文件SHA256仍3a2bb229461addc57d3c15775ac9ccf5f40b94a56f53b326dbbce69259dacb27，不删除该提醒。自有mobilecli58791映射移除，原19387/46619保留。
+- 最终Android回归134项：133通过，1项独立WireGuard监听测试默认跳过（另行显式执行）。本轮TDD的两项RED和21项GREEN见上方实现记录。仍可观察其他SDK TLS失败与空闲时网络告警，不扩大透传，不宣称所有SDK或视频兼容。适用边界已写入使用说明；没有推送或发布远端安装包，没有覆盖Applications旧版。
+
 ## 11-15 公开播放器诊断可用性
 
+### 15:31 验收标准简化
+
+本轮Scope补充docs/desktop-user-guide.md，用于说明已验StickerHub Banner兼容、广告连接保持原TLS不归档及版本限制；不变更其他应用说明或发布物。#133冷启动Banner可见，33归档/26组RPC双向完整，50非空JSON/22gzip/2零长度均核验通过；桌面Request/Response配置接口展示200及结构化正文，停止恢复原Clash已通过。默认策略2项RED后21项GREEN，Android134项133通过/1可选跳过；只改默认包选择，不增加域名、权限或降低TLS。最终构建和正式路径实机验收尚待完成。
+
+用户明确“有Banner其实也就可以了”：当前StickerHub AD-1不再要求视频。验收改为已有Banner兼容策略在新一轮冷启动抓包中可见、业务双向正文完整、原Clash恢复。保留视频未验证事实，不为视频继续扩域。原Clash下已冷启动15331，Banner可见；画册2/3的贴纸搜索正常列表，没有执行交易/提议。此前暖进程广告页灰黑区域不能判定视频失败，media.metrics返回旧音频条目，不能用于本轮归因。下一步只复验既有诊断策略；若通过再按TDD启用StickerHub限定默认行为，PokeHub仍显式探针，原TLS/上游/归属边界不变，完整业务与非目标/未知归属回归必须通过。
+
 ### 15:23 视频触发基线续验
+
+解锁续验：用户确认解锁后已见com.google.android.gms.ads.AdActivity，广告区域灰黑但不能仅据截图判失败（可能为视频渲染/受保护表面）。沿本条原VPN基线核查公开播放器状态并关闭广告回只读页面，不新开抓包或改变网络。
 
 本轮实际前置结果：Clash首页运行中/规则模式/新配置已激活，随后启动StickerHub时出现锁屏；keyguard showing=true，尚无法执行只读页面基线。已请求用户解锁，没有切换VPN、开启抓包或修改广告调试。21个APK联合摘要仍a7809813798530f42def1bc439171ab08a2f6e5ff02f303aed39bb33833645c4，http_proxy=null。自有mobilecli58037映射移除，原19387/46619保留。当前BLOCKED仅为手机锁屏，不新增广告根因结论；解锁后恢复本条既定验收。git diff --check通过，无产品代码修改或发布。
 

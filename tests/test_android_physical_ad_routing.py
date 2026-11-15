@@ -123,13 +123,47 @@ class AdRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(item.layer.child_layer.flow)
         self.assertEqual(route.diagnostics.summary()['entries'][0]['route'], 'opaque')
 
-    async def test_unaccepted_policy_is_disabled_by_default(self):
+    async def test_sticker_banner_compatibility_is_enabled_by_default(self):
         route = ConnectionRouting(SimpleNamespace(role=AsyncMock(return_value='target')),
                                   ('127.0.0.1', 7897), package='com.meta.inno.sticker')
+        item = self.item(client_hello('googleads.g.doubleclick.net'))
+        await route.next_layer(item)
+        self.assertTrue(hasattr(item.layer, 'send_connect'))
+        self.assertTrue(item.layer.send_connect)
+        self.assertIsInstance(item.layer.child_layer, tcp.TCPLayer)
+        self.assertIsNone(item.layer.child_layer.flow)
+
+    async def test_poke_video_probe_is_still_disabled_by_default(self):
+        route = ConnectionRouting(SimpleNamespace(role=AsyncMock(return_value='target')),
+                                  ('127.0.0.1', 7897), package='com.mi.poketrade')
         item = self.item(client_hello('googleads.g.doubleclick.net'))
         original = item.layer
         await route.next_layer(item)
         self.assertIs(item.layer, original)
+
+    async def test_default_banner_policy_keeps_business_and_other_apps_captured(self):
+        for package, host in (
+            ('com.meta.inno.sticker', 'pbzhiqxtoqqgizddjblb.supabase.co'),
+            ('com.meta.inno.sticker', 'rr4---sn-i3b7kn6k.gvt1.com'),
+            ('com.meta.inno.sticker', 'doubleclick.net.evil.example'),
+            ('another.package', 'googleads.g.doubleclick.net'),
+        ):
+            with self.subTest(package=package, host=host):
+                route = ConnectionRouting(SimpleNamespace(role=AsyncMock(return_value='target')),
+                                          ('127.0.0.1', 7897), package=package)
+                item = self.item(client_hello(host))
+                original = item.layer
+                await route.next_layer(item)
+                self.assertIs(item.layer, original)
+
+    async def test_default_banner_policy_rejects_unknown_owner_and_missing_upstream(self):
+        for role, upstream in [('unknown', ('127.0.0.1', 7897)), ('target', None)]:
+            with self.subTest(role=role):
+                route = ConnectionRouting(SimpleNamespace(role=AsyncMock(return_value=role)),
+                                          upstream, package='com.meta.inno.sticker')
+                item = self.item(client_hello('googleads.g.doubleclick.net'))
+                await route.next_layer(item)
+                self.assertIsInstance(item.layer, RejectLayer)
 
     async def test_observed_sdk_dependency_is_exact_not_a_cdn_wildcard(self):
         for host in ('static.googleadsserving.cn', 'lh3.googleadsserving.cn', 'rr1---sn-i3belnls.gvt1.com',

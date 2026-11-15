@@ -75,9 +75,10 @@ class ObservedUpstreamProxy(HttpUpstreamProxy):
 class ConnectionRouting:
     def __init__(self, owner, upstream, *, package='', ad_compatibility_probe=False):
         self.owner, self.upstream = owner, upstream
-        # Unaccepted probes stay opt-in and package-scoped; never inherit another app's hosts.
-        probing_ads = ad_compatibility_probe is True and package in (
-            'com.meta.inno.sticker', 'com.mi.poketrade',
+        # StickerHub Banner is accepted; PokeHub video remains an opt-in probe.
+        # Never inherit another app's hosts or learn bypasses from TLS failures.
+        probing_ads = package == 'com.meta.inno.sticker' or (
+            ad_compatibility_probe is True and package == 'com.mi.poketrade'
         )
         self.ad_hosts = frozenset()
         if probing_ads:
