@@ -1,5 +1,9 @@
 # 进度记录
 
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-20261115 | DOING | 合并发布并更新本机桌面 | goal.md、progress.md、specs/release-sticker-banner-20261115.md、release/notes-20261115.md；构建ZIP/本机app及备份 | main与远端一致；构建签名、包指南、上传下载哈希；本机新版启动且空闲 | 用户明确授权；当前main是HEAD祖先，未提交其他任务文件保留 | 记录发布范围、快进合并、打包发布、备份更新并启动 |
+
 补充验收：默认跳过的独立WireGuard监听已显式执行1项通过（2.651秒），因此本轮134项全部有通过证据；不改手机VPN。`git diff --check`通过。
 
 11-15 15:50 AD-1按用户修订的Banner验收标准DONE：正式本地构建#134冷启动Banner显示，30条归档/20组RPC双向完整，39非空JSON含17gzip及1零长度均通过；原Clash/原包/原代理/旧机恢复提醒验证不变。已有StickerHub策略默认启用且不扩域，PokeHub仍探针；视频仅可选且未验收。Android回归133通过/1独立监听默认跳过；签名和包内源码一致性通过。新版构建目录保持打开，未覆盖Applications、未发布远端。详见规格15:50。
