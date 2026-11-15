@@ -1,5 +1,9 @@
 # 进度记录
 
+11-15 15:17本轮StickerHub验收收尾：#131稳定路径32条归档/22组完整RPC，冷启动未见Banner；#132既有私有探针62条归档/47组完整RPC，Banner实际显示并轮换。120秒目标诊断69事件，无视频资源提示；未观察到视频、不能将旋转gvt1主机TLS失败认定为素材根因。AD-1视频关联仍BLOCKED，不扩域、不改生产代码、不发布。原Clash运行/规则模式、新配置及广告调试关闭、稳定桌面恢复；21个原APK联合摘要、旧机提醒摘要一致，原2条ADB转发保留，自有转发移除。详细证据见规格11-15收尾。
+
+11-15用户切换目标StickerHub正式版3.18.15(196)，PokeHub缺失已确认，不重装；恢复同一AD-1 DOING。原VPN广告基线、目标身份媒体诊断、桌面业务/广告对照及原状态恢复，保留不扩域/不改包边界；旧PokeHub视频缺口不抹除。
+
 11-15本轮实机验收BLOCKED：PKG110已连接，但com.mi.poketrade的pm path、保留包查询、用户0/999查询均无结果，dumpsys明确Unable to find package。未自行重装或切VPN；Clash当前已停止、新配置已激活，仅查看。公开media.metrics支持按时间查询，但无目标运行记录，不能作为素材/TLS归因。等待用户确认原版安装，详见规格；未修改产品或透传清单。
 
 11-15恢复同一AD-1：USB已确认PKG110/d265cb0a，先核查公开播放器错误出口，避免重复相同GMA采集或扩大透传。仅本任务恢复DOING；验收和范围见规格11-15条目，原有ANDROID-TOOLS-TRIAL未提交修改不动。
@@ -44,7 +48,7 @@ AD-1本轮范围补充：capture_console/android_physical_opaque_probe.py、test
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | AD-0 | DONE | 原 VPN 与桌面抓包广告基线对照 | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；私有有界日志/截图、已授权 PKG110 的临时 VPN 选择 | 两路径页面、广告错误/连接证据、业务结果；测试后实际基线恢复；git diff --check | PKG110 正式版3.18.14(195) A-B-A对照：原Clash有Banner，桌面#106冷启动约75秒无Banner，恢复Clash后再现Banner。29请求/29响应含完整get_app_config200，340次TLS失败；有界目标日志22次公钥拒绝、49次WebView -202、Unity初始化超时。21个APK摘要一致，原3条ADB映射/HTTP proxy=null/无活动VPN基线恢复，旧机提醒摘要不变。未改产品或发布；详见规格 | AD-1精确区分广告端点/连接身份与解密分支；广告修复尚未完成 |
-| AD-1 | BLOCKED | PokeHub卡片视频广告与完整业务采集共存（不要求Banner） | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py、android_physical_ad_routing.py、android_physical_opaque_probe.py；tests/test_android_physical_routing*.py、test_android_physical_ad_routing.py、test_android_physical_opaque_probe.py；scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py；本地构建/私有有界证据 | 原VPN视频基线；RED-GREEN、原TLS/无广告正文归档/无直连回退；抓包建立后冷启动点击卡片出现视频且业务正文完整；原网络和APK恢复 | #129静态展示但视频未证实，素材/TLS关联仍缺失；InMobi相关错误在内部文件而非Logcat，无已开启WebView入口。PID诊断修复14测试通过，Android130通过/1跳过；67归档/42完整RPC与原网络恢复核验通过，详见规格18:55 | 11-15同一PKG110上原包已不存在（主用户及分身均无），待确认原版安装后才做播放器对照；未切VPN、未改透传，视频修复尚未完成 |
+| AD-1 | BLOCKED | StickerHub正式版广告与完整业务采集共存（11-15用户切换目标） | goal.md、progress.md、specs/sticker-ad-compatibility-20261112.md；capture_console/android_physical_routing.py、android_physical_worker.py、android_physical_ad_routing.py、android_physical_opaque_probe.py；tests/test_android_physical_routing*.py、test_android_physical_ad_routing.py、test_android_physical_opaque_probe.py；scripts/qa_ad_network_trace.py、tests/test_ad_network_trace.py；本地构建/私有有界证据 | 原VPN广告基线；原TLS/无广告正文归档/无直连回退；抓包后冷启动广告可见且业务正文完整；视频另须实际播放及素材关联；原网络和APK恢复 | 新版3.18.15 #132既有探针出现Banner并轮换，62归档/47组RPC双向长度及JSON通过；69条诊断无视频提示，视频未观察到，不能归因旋转gvt1错误。#130出网瞬时检查失败已恢复，#131无冷启动Banner。原Clash/稳定桌面/调试关闭与原APK/旧提醒完整性已验，详见规格11-15 | Banner有单轮正向证据，但最小因果策略及视频关联未完成；不重复无增益采集或扩域，不默认启用探针、不发布 |
 
 ## 2026-11-12 StickerHub Google 登录
 
