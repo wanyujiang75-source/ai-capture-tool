@@ -8,6 +8,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PhysicalCopyTests(unittest.TestCase):
+    def test_safety_stays_visible_while_supplemental_guidance_is_folded(self):
+        view = (ROOT / 'macos-native/Sources/AICaptureNativeApp/AndroidPhysicalView.swift').read_text()
+        folded = view.index('DisclosureGroup(AppCopy.AndroidPhysical.connectionHelp)')
+        for field in ('boundary', 'network'):
+            self.assertLess(view.index(f'Text(AppCopy.AndroidPhysical.{field})'), folded)
+        for field in ('automatic', 'googleLogin', 'bannerHelp', 'recovery'):
+            self.assertGreater(view.index(f'Text(AppCopy.AndroidPhysical.{field})'), folded)
+        self.assertNotIn('Text(AppCopy.AndroidPhysical.terminateHelp)', view)
+        self.assertIn('.help(AppCopy.AndroidPhysical.terminateHelp)', view)
+
     def test_google_login_guidance_is_visible_and_documents_scope(self):
         source = ROOT / 'macos-native/Sources/AICaptureNativeApp'
         self.assertIn('Text(AppCopy.AndroidPhysical.googleLogin)', (source / 'AndroidPhysicalView.swift').read_text())

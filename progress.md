@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| COPY-20261115 | DONE | 精简桌面操作说明与信息层级 | goal.md、progress.md、specs/concise-operation-copy-20261115.md；AndroidPhysicalCopy/View、IOSSetupCopy、AppCopy；OperationGuidanceTests、test_android_physical_copy、隔离UI fixture | 保留授权/信任/恢复边界；说明紧凑、步骤可执行；测试/构建及隔离界面验收，不影响当前抓包 | 旧iPhone两段超长RED；Swift208、Python说明8及fixture冒烟通过；原生构建/签名通过；独立窗口验证初始/准备/抓包/失败/恢复及iPhone步骤，补充说明可展开。稳定版进程保留、预览清理，无手机/VPN操作 | 本地提交；未替换Applications、未推送或发布 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-20261115 | DONE | 合并发布并更新本机桌面 | goal.md、progress.md、specs/release-sticker-banner-20261115.md、release/notes-20261115.md；构建ZIP/本机app及备份 | main与远端一致；构建签名、包指南、上传下载哈希；本机新版启动且空闲 | main快进至f383aa9并已推送；同SHA tag预览版资产250916837B发布，重新下载SHA256通过，匿名下载HTTP200。Swift205/Android134/诊断14/助手9通过；Applications新版签名及build ID核验，后端idle无任务，UI已打开真机页；旧版备份、其他任务脏文件保留 | 交付用户试用；视频不作为已验功能，不自动抓包 |
 
 补充验收：默认跳过的独立WireGuard监听已显式执行1项通过（2.651秒），因此本轮134项全部有通过证据；不改手机VPN。`git diff --check`通过。

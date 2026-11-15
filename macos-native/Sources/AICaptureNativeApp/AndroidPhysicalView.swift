@@ -27,7 +27,6 @@ struct AndroidPhysicalView: View {
                     }
                     Text(AppCopy.AndroidPhysical.boundary).foregroundStyle(.secondary)
                     Text(AppCopy.AndroidPhysical.network).foregroundStyle(.secondary)
-                    Text(AppCopy.AndroidPhysical.googleLogin).font(.callout)
                     Toggle(AppCopy.AndroidPhysical.consent, isOn: $controller.consent).disabled(!controller.status.canStart)
                 }.padding(20).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
                 VStack(alignment: .leading, spacing: 12) {
@@ -76,9 +75,6 @@ struct AndroidPhysicalView: View {
                             }.disabled(controller.status.phase == .preparing)
                         }
                     }
-                    if controller.canTerminate || controller.status.phase == .terminating {
-                        Text(AppCopy.AndroidPhysical.terminateHelp).font(.callout).foregroundStyle(.secondary)
-                    }
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 18))
                 if let pending = controller.status.pendingRecoveries, !pending.isEmpty {
@@ -98,9 +94,14 @@ struct AndroidPhysicalView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(AppCopy.AndroidPhysical.instructions).font(.headline)
                     ForEach(Array(AppCopy.AndroidPhysical.steps.enumerated()), id: \.offset) { index, step in Text("\(index + 1). \(step)") }
-                    Text(AppCopy.AndroidPhysical.automatic).foregroundStyle(.secondary)
-                    Text(AppCopy.AndroidPhysical.bannerHelp).foregroundStyle(.secondary)
-                    Text(AppCopy.AndroidPhysical.recovery).foregroundStyle(.secondary)
+                    DisclosureGroup(AppCopy.AndroidPhysical.connectionHelp) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(AppCopy.AndroidPhysical.automatic)
+                            Text(AppCopy.AndroidPhysical.googleLogin)
+                            Text(AppCopy.AndroidPhysical.bannerHelp)
+                            Text(AppCopy.AndroidPhysical.recovery)
+                        }.foregroundStyle(.secondary)
+                    }
                     DisclosureGroup(AppCopy.AndroidPhysical.details) {
                         Text(AppCopy.AndroidPhysical.compatibility).foregroundStyle(.secondary)
                         VStack(alignment: .leading) {

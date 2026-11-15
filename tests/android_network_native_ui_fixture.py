@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-id', required=True)
+    parser.add_argument('--ios-guidance', action='store_true', help='Show synthetic iPhone setup instructions')
     args = parser.parse_args()
     scenario = {'state': 'waiting'}
 
@@ -33,8 +34,18 @@ def main():
                 value = {'phase': 'capturing', 'serial': 'synthetic', 'device_name': '[合成验收] 无真实手机',
                          'phone_network': 'ready', 'upstream_network': 'ready',
                          'flow_count': 20, 'response_count': 10, 'application_network': dict(scenario)}
+                if scenario['state'] in {'idle', 'preparing', 'failed', 'recovery_required'}:
+                    value['phase'] = scenario['state']
+                    value.pop('application_network')
+                    value.pop('phone_network')
+                    value.pop('upstream_network')
+                if scenario['state'] == 'recovery_required':
+                    value['pending_recoveries'] = [{'serial': 'synthetic', 'name': '[合成验收] 无真实手机'}]
             elif path == '/api/ios-setup':
-                value = {'phase': 'idle', 'connection_state': 'idle', 'recording_state': 'idle'}
+                value = {'phase': 'idle', 'flow_count': 0, 'flows': [], 'recording_state': 'idle'}
+                if args.ios_guidance:
+                    value.update(phase='waiting_phone', certificate_name='Synthetic Preview CA',
+                                 profile_path='/tmp/capture-copy-preview/ios-setup/iPhone.mobileconfig')
             else:
                 value = {'devices': [], 'apps': [], 'sessions': [], 'packages': []}
             self.reply(200, value)
@@ -46,7 +57,7 @@ def main():
                 return
             state = json.loads(self.rfile.read(size)).get('state')
             if state not in {'waiting', 'responded', 'partial', 'server_error', 'connection_failed',
-                             'quiet', 'unverified', 'unavailable'}:
+                             'quiet', 'unverified', 'unavailable', 'idle', 'preparing', 'failed', 'recovery_required'}:
                 self.reply(400, {})
                 return
             scenario['state'] = state
@@ -59,6 +70,7 @@ def main():
             data = json.dumps(value).encode()
             self.send_response(code)
             self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
             self.wfile.write(data)

@@ -106,7 +106,7 @@ enum AppCopy {
         static let clearList = "清空列表"
         static let clearExplanation = "仅清空当前显示；抓包不会停止，新接口仍会继续出现。"
         static let notStarted = "尚未开始抓包"
-        static let waiting = "等待接口，请在模拟器中操作应用。"
+        static let waiting = "等待接口，请在设备中操作应用。"
         static let cleared = "列表已清空，新的接口会继续实时显示。"
         static let noSearchResults = "没有匹配的接口，请更换关键词或筛选条件。"
         static let noResponse = "暂无响应"
