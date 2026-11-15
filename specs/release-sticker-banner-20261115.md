@@ -18,3 +18,12 @@
 3. ZIP包含app、INSTALL.md、USER_GUIDE.md、BREAKPOINTS.md及安装说明；不含私有配置、运行数据或其他任务草稿。
 4. 发布GitHub预览版并重新下载资产核对SHA256。
 5. 本机新版从/Applications启动，构建ID与发布包一致，后端健康、未自动抓包；记录交付链接。
+
+## 交付证据
+
+- 2026-11-15 main快进至f383aa963eb7da9a257226235fb3429ad71d7594，origin/main与发布tag均核对一致。旧分支和其他工作区保留；goal/progress其他任务未提交片段及未跟踪文档未纳入提交。
+- `AI_CAPTURE_BUILD_ID=f383aa9 bash macos-native/scripts/build-app.sh`退出0，codesign深度严格校验通过；连接助手Gradle9项无失败。`swift test --package-path macos-native`205项通过，诊断14项通过；134项Android沿最终相同产品源码的上一轮通过证据。
+- 发布页：https://github.com/wanyujiang75-source/ai-capture-tool/releases/tag/desktop-preview-20261115-f383aa9 ，公开预览版非草稿。ZIP250916837B，SHA256为bb60107fc2c5e0a3688d5fffa5b65605b78daa6a50911f03557ae23f3d46eb0a。CRC/指南/构建ID检查通过，不含运行数据或未提交草稿；GitHub资产digest与本地一致，gh重新下载并shasum -c通过，匿名HEAD跟随跳转HTTP200。
+- /Applications/抓包工具.app已替换为同一构建，旧版备份在用户Library/Application Support/AI抓包工具/app-backups/20261115-f383aa9/抓包工具.app。主二进制摘要与构建目录一致，包内路由源码cmp一致，严格签名通过。
+- 实际启动进程来自/Applications，UI停在Android真机页并识别PKG110，未勾选授权或启动抓包。/api/status返回health=idle、active_session=null、desktop.build_id=f383aa9。没有删除数据、修改手机VPN或旧PHK110恢复提醒。
+- 收尾提交只补发布证据，不改变安装包产品源码，因此发布tag和安装包继续对应f383aa9。

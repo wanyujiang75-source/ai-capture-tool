@@ -2,7 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| RELEASE-20261115 | DOING | 合并发布并更新本机桌面 | goal.md、progress.md、specs/release-sticker-banner-20261115.md、release/notes-20261115.md；构建ZIP/本机app及备份 | main与远端一致；构建签名、包指南、上传下载哈希；本机新版启动且空闲 | 用户明确授权；当前main是HEAD祖先，未提交其他任务文件保留 | 记录发布范围、快进合并、打包发布、备份更新并启动 |
+| RELEASE-20261115 | DONE | 合并发布并更新本机桌面 | goal.md、progress.md、specs/release-sticker-banner-20261115.md、release/notes-20261115.md；构建ZIP/本机app及备份 | main与远端一致；构建签名、包指南、上传下载哈希；本机新版启动且空闲 | main快进至f383aa9并已推送；同SHA tag预览版资产250916837B发布，重新下载SHA256通过，匿名下载HTTP200。Swift205/Android134/诊断14/助手9通过；Applications新版签名及build ID核验，后端idle无任务，UI已打开真机页；旧版备份、其他任务脏文件保留 | 交付用户试用；视频不作为已验功能，不自动抓包 |
 
 补充验收：默认跳过的独立WireGuard监听已显式执行1项通过（2.651秒），因此本轮134项全部有通过证据；不改手机VPN。`git diff --check`通过。
 
