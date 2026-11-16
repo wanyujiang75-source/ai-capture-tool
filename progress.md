@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| IOS-COPY-SHORT | DONE | 精简iPhone连接说明 | goal.md、progress.md、specs/ios-copy-short.md、IOSSetupCopy、OperationGuidanceTests | 说明简洁且保留证书、转发与手动恢复边界；Swift与说明契约通过 | 旧文案长度测试RED；最终Swift 209项及Python说明契约8项通过，未操作运行中抓包 | 本地提交，不发布或重启 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-USB | DONE | 发布并安装设备USB状态更新 | goal.md、progress.md、specs/release-usb-status.md；release构建、GitHub及本机应用 | 主分支推送；完整安装包签名、指南及摘要验证；本机备份更新启动，保留恢复提醒 | main推送5d5008c；完整包构建签名及本地SHA通过，GitHub资产同摘要；本机新版ID和真实PKG110 USB已连接显示通过，旧PHK110提醒摘要不变；沿用Swift209测试结果 | 用户试用；预览包未经Apple公证 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

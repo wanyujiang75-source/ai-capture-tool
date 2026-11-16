@@ -28,6 +28,12 @@ struct OperationGuidanceTests {
     }
 
     @Test func iphoneSetupExplainsManualConfirmationAndRecoveryConcisely() {
+        for text in [AppCopy.IOSSetup.lifetimeHelp, AppCopy.IOSSetup.shareHelp,
+                     AppCopy.IOSSetup.vpnPreparation, AppCopy.IOSSetup.vpnSwitch,
+                     AppCopy.IOSSetup.vpnRestore, AppCopy.IOSSetup.installHelp,
+                     AppCopy.IOSSetup.nodeSummary, AppCopy.IOSSetup.verifyHelp] {
+            #expect(text.count <= 75)
+        }
         for text in [AppCopy.IOSSetup.summary, AppCopy.IOSSetup.nodeSummary,
                      AppCopy.IOSSetup.nodeSent, AppCopy.IOSSetup.vpnSwitch,
                      AppCopy.IOSSetup.vpnPreparation, AppCopy.IOSSetup.vpnRestore,
