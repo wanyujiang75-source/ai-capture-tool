@@ -12,8 +12,8 @@ public class LeaseTest {
     }
     @Test public void durationIsBoundedEvenWithFreshHeartbeat() {
         Lease lease = new Lease(0);
-        for (long now = 0; now < 900000; now += 1000) assertTrue(lease.renew("a" + now, now));
-        assertFalse(lease.renew("last", 900000));
+        for (long now = 0; now < 1800000; now += 1000) assertTrue(lease.renew("a" + now, now));
+        assertFalse(lease.renew("last", 1800000));
     }
     @Test public void emptyLeaseDoesNotStartOrExtendTunnel() {
         assertFalse(new Lease(0).renew("", 0));

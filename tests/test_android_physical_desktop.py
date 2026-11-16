@@ -11,6 +11,13 @@ from capture_console.android_physical_device import BRIDGE, PhysicalDevice, pars
 from capture_console.android_physical_network import PreparationCancelled
 
 
+class WorkerDurationTests(unittest.TestCase):
+    def test_worker_expires_at_thirty_minutes(self):
+        from capture_console.android_physical_worker import duration_expired
+        self.assertFalse(duration_expired(100, 1899.999))
+        self.assertTrue(duration_expired(100, 1900))
+
+
 class PhysicalContractTests(unittest.TestCase):
     def test_cancel_during_activity_resolution_prevents_am_start(self):
         device = PhysicalDevice('adb', 'phone')

@@ -10,7 +10,7 @@ struct OperationGuidanceTests {
         #expect(AppCopy.AndroidPhysical.steps.allSatisfy { $0.count <= 65 })
         #expect(primary.joined().contains("临时替换手机 VPN"))
         #expect(primary.joined().contains("不再由原 VPN 保护"))
-        #expect(primary.joined().contains("15 分钟"))
+        #expect(primary.joined().contains("30 分钟"))
         #expect(AppCopy.AndroidPhysical.steps.joined().contains("停止并恢复网络"))
         #expect(AppCopy.AndroidPhysical.recovery.contains("检查网络恢复"))
     }

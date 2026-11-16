@@ -85,6 +85,10 @@ class PhysicalRecorder:
         flow.messages.clear()
 
 
+def duration_expired(started, now):
+    return now - started >= 1800
+
+
 async def run(config):
     os.umask(0o077)
     root = Path(config['directory'])
@@ -109,7 +113,7 @@ async def run(config):
         exported = False
         try:
             while True:
-                if (os.getppid() != config['parent_pid'] or time.monotonic() - started >= 900
+                if (os.getppid() != config['parent_pid'] or duration_expired(started, time.monotonic())
                         or time.time() - (root / 'lease').stat().st_mtime > 20
                         or await asyncio.to_thread(process_identity, config['owner_pid']) != config['owner_identity']):
                     break

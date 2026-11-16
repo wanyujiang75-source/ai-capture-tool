@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| LIMIT-30 | DONE | 真机单次抓包延长至30分钟 | Android助手、worker、对应测试与操作指南、goal.md、progress.md、specs/android-physical-30min.md | 30分钟边界一致、20秒失联及异常清理不变、测试与构建通过 | 旧助手/文案测试RED；助手构建和单测通过，Swift 208项通过，Python 38项通过及独立worker失联测试1项通过；diff检查通过。未操作真机，未进行30分钟实机计时 | 本地提交；未发布和替换桌面端 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | COPY-20261115 | DONE | 精简桌面操作说明与信息层级 | goal.md、progress.md、specs/concise-operation-copy-20261115.md；AndroidPhysicalCopy/View、IOSSetupCopy、AppCopy；OperationGuidanceTests、test_android_physical_copy、隔离UI fixture | 保留授权/信任/恢复边界；说明紧凑、步骤可执行；测试/构建及隔离界面验收，不影响当前抓包 | 旧iPhone两段超长RED；Swift208、Python说明8及fixture冒烟通过；原生构建/签名通过；独立窗口验证初始/准备/抓包/失败/恢复及iPhone步骤，补充说明可展开。稳定版进程保留、预览清理，无手机/VPN操作 | 本地提交；未替换Applications、未推送或发布 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
