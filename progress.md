@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| BODY-PREVIEW | BLOCKED | 修复响应乱码和大正文卡顿 | goal.md、progress.md、specs/response-preview-safety.md、预览解码和桌面展示及测试 | 合法编码正确、未知二进制不伪装文本；长正文有界显示并保留原始数据；相关测试与隔离验收通过 | 现场桌面主线程采样为NSTextView布局高CPU；复现GB18030乱码及长行无界；修复后Swift210项、Python55项通过。当前手机网络状态recovery_required，不能安全重启桌面或做现场验收 | 用户恢复原VPN网络并确认后，构建独立验收/更新桌面，复查原响应及性能 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | INSTALL-COPY | DONE | 精简GitHub下载与安装说明 | goal.md、progress.md、specs/install-copy-short.md、README.md、INSTALL.md、release/安装说明.md | 下载目标、架构、校验及安全提示准确；iPhone与Android流程不矛盾；说明测试通过并推送 | Python说明契约8项通过，目标文件与锚点存在，diff检查通过；修正过时iPhone和真机描述 | 提交并推送，不重发已发布包 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

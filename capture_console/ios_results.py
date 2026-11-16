@@ -1,7 +1,9 @@
 """Bounded iOS HTTP archive, independent of Android exporter files."""
 
 from contextlib import contextmanager
+import codecs
 from datetime import datetime, timezone
+from email.message import Message
 import hashlib
 import json
 import shlex
@@ -13,6 +15,24 @@ from pathlib import Path
 
 PREVIEW_LIMIT = 256 * 1024
 SUMMARY_KEYS = ("id", "flow_id", "time", "method", "status", "host", "path", "url", "total_duration_ms")
+
+
+def decode_preview(data, content_type, truncated):
+    try:
+        if '\r' in content_type or '\n' in content_type:
+            raise ValueError('invalid content type')
+        header = Message()
+        header['content-type'] = content_type
+        charset = header.get_content_charset() or 'utf-8'
+        decoder = codecs.getincrementaldecoder(charset)(errors='strict')
+        text = decoder.decode(data[:PREVIEW_LIMIT], final=not truncated and len(data) <= PREVIEW_LIMIT)
+    except (LookupError, UnicodeError, ValueError):
+        return '正文编码无法识别，无法预览。', True
+    encoded = text.encode('utf-8')
+    if len(encoded) > PREVIEW_LIMIT:
+        text = encoded[:PREVIEW_LIMIT].decode('utf-8', 'ignore')
+        truncated = True
+    return text, truncated or len(data) > PREVIEW_LIMIT
 
 
 class IOSCaptureArchive:
@@ -190,6 +210,7 @@ class IOSCaptureArchive:
             headers = {name.lower(): value for name, value in meta[kind + "_headers"]}
             content_type = headers.get("content-type", "")
             data = b""
+            preview_error = None
             truncated = meta[kind + "_truncated"] or (meta[kind + "_size"] > 0 and not meta[kind + "_complete"])
             if path.exists():
                 encoding = headers.get("content-encoding", "identity").lower()
@@ -204,22 +225,26 @@ class IOSCaptureArchive:
                                 data += decoder.decompress(chunk, PREVIEW_LIMIT + 1 - len(data))
                         truncated |= not decoder.eof
                     except zlib.error:
-                        data, truncated = "压缩正文无法预览。".encode(), True
+                        preview_error, truncated = "压缩正文无法预览。", True
                 elif encoding in {"identity", ""}:
                     with path.open("rb") as file:
                         data = file.read(PREVIEW_LIMIT + 1)
                 else:
-                    data, truncated = "此压缩格式暂不提供正文预览。".encode(), True
-            text = data[:PREVIEW_LIMIT].decode("utf-8", "replace").encode()
-            truncated |= len(data) > PREVIEW_LIMIT or len(text) > PREVIEW_LIMIT
+                    preview_error, truncated = "此压缩格式暂不提供正文预览。", True
             body_kind = "json" if "json" in content_type else "text"
             if not meta[kind + "_size"]:
                 body_kind = "empty"
             elif (content_type.startswith(("image/", "audio/", "video/"))
                   or content_type.split(";")[0] in {"application/octet-stream", "application/pdf"}):
-                body_kind, text = "binary", b""
+                body_kind = "binary"
+            if body_kind == 'binary':
+                text = ''
+            elif preview_error:
+                text = preview_error
+            else:
+                text, truncated = decode_preview(data, content_type, truncated)
             detail[kind + "_body_kind"] = body_kind
-            detail[kind + "_text"] = text[:PREVIEW_LIMIT].decode("utf-8", "ignore")
+            detail[kind + "_text"] = text
             detail[kind + "_body"] = {"kind": body_kind, "content_type": content_type,
                                       "size_bytes": meta[kind + "_size"], "truncated": truncated,
                                       "path": str(path) if path.exists() else None}

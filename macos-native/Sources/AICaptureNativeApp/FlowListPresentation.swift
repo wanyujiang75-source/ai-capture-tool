@@ -85,13 +85,31 @@ enum FlowListPresentation {
         } else {
             formatted = FlowJSONFormatter.formatted(preview) ?? preview
         }
+        let display = boundedDisplay(formatted)
         return FlowBodyPresentation(
-            text: formatted,
-            isTruncated: truncated,
+            text: display.text,
+            isTruncated: truncated || display.truncated,
             sizeBytes: info?.sizeBytes ?? text.utf8.count,
             fullFileURL: nonempty(info?.path).map { URL(fileURLWithPath: $0) },
             notice: isBinary ? AppCopy.Flow.binaryBody : (text == AppCopy.Flow.unavailableBody ? text : nil)
         )
+    }
+
+    private static func boundedDisplay(_ text: String) -> (text: String, truncated: Bool) {
+        let byteLimit = 32 * 1024
+        let lineLimit = 4096
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(min(text.utf8.count, byteLimit))
+        var lineBytes = 0
+        for character in text {
+            let encoded = Array(String(character).utf8)
+            if bytes.count + encoded.count > byteLimit || (character != "\n" && lineBytes + encoded.count > lineLimit) {
+                return (String(decoding: bytes, as: UTF8.self), true)
+            }
+            bytes.append(contentsOf: encoded)
+            lineBytes = character == "\n" ? 0 : lineBytes + encoded.count
+        }
+        return (String(decoding: bytes, as: UTF8.self), false)
     }
 
     private static func nonempty(_ value: String?) -> String? {

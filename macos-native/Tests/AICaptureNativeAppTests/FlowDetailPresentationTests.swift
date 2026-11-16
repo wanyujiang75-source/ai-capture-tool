@@ -138,7 +138,17 @@ struct FlowDetailPresentationTests {
         let shown = FlowListPresentation.responseBody(try makeDetail(["response_text": huge]))
         #expect(shown.isTruncated)
         #expect(shown.text.utf8.count <= FlowJSONFormatter.inputLimit)
-        #expect(shown.text == String(huge.prefix(FlowJSONFormatter.inputLimit)))
+        #expect(shown.text.utf8.count <= 32 * 1024)
+    }
+
+    @Test func longSingleLineBodyIsSafelyLimitedWithoutReplacementCharacters() throws {
+        let raw = String(repeating: "a", count: 4095) + "中文" + String(repeating: "z", count: 20000)
+        let detail = try makeDetail(["response_text": raw, "response_body": ["kind": "text", "size_bytes": raw.utf8.count]])
+        let shown = FlowListPresentation.responseBody(detail)
+        #expect(shown.isTruncated)
+        #expect(shown.text.utf8.count <= 4096)
+        #expect(!shown.text.contains("�"))
+        #expect(shown.sizeBytes == raw.utf8.count)
     }
 
     @Test func truncatedJSONIsNotMadeToLookComplete() throws {

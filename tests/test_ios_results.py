@@ -64,6 +64,58 @@ class IOSArchiveTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 
+    def test_response_preview_decodes_declared_charset_and_preserves_raw(self):
+        archive = IOSCaptureArchive(self.root)
+        flow = make_flow()
+        body = '你好，世界'.encode('gb18030')
+        flow.response.headers['content-type'] = 'text/plain; charset=gb18030'
+        archive.begin(flow)
+        archive.append_body(flow.id, 'response', body)
+        archive.finish(flow)
+        detail = archive.detail(flow.id)
+        self.assertEqual(detail['response_text'], '你好，世界')
+        self.assertEqual(Path(detail['files']['response']).read_bytes(), body)
+
+    def test_truncated_utf8_preview_does_not_invent_replacement_character(self):
+        from capture_console.ios_results import PREVIEW_LIMIT
+        archive = IOSCaptureArchive(self.root)
+        flow = make_flow()
+        body = b'a' * (PREVIEW_LIMIT - 1) + '中'.encode('utf-8') + b'z'
+        archive.begin(flow)
+        archive.append_body(flow.id, 'response', body)
+        archive.finish(flow)
+        detail = archive.detail(flow.id)
+        self.assertTrue(detail['response_body']['truncated'])
+        self.assertNotIn('�', detail['response_text'])
+
+    def test_unsupported_encoding_is_not_displayed_as_garbled_text(self):
+        archive = IOSCaptureArchive(self.root)
+        flow = make_flow()
+        flow.response.headers['content-type'] = 'text/plain; charset=unsupported-charset'
+        archive.begin(flow)
+        archive.append_body(flow.id, 'response', b'example')
+        archive.finish(flow)
+        detail = archive.detail(flow.id)
+        self.assertEqual(detail['response_text'], '正文编码无法识别，无法预览。')
+        self.assertTrue(detail['response_body']['truncated'])
+        self.assertEqual(Path(detail['files']['response']).read_bytes(), b'example')
+
+    def test_gzip_with_declared_charset_is_decoded(self):
+        archive = IOSCaptureArchive(self.root)
+        flow = make_flow()
+        flow.response.headers['content-type'] = 'text/plain; charset=gb18030'
+        flow.response.headers['content-encoding'] = 'gzip'
+        archive.begin(flow)
+        archive.append_body(flow.id, 'response', gzip.compress('测试内容'.encode('gb18030')))
+        archive.finish(flow)
+        self.assertEqual(archive.detail(flow.id)['response_text'], '测试内容')
+
+    def test_malformed_content_type_does_not_crash_preview(self):
+        from capture_console.ios_results import decode_preview
+        text, truncated = decode_preview(b'example', 'text/plain\ninvalid', False)
+        self.assertEqual(text, '正文编码无法识别，无法预览。')
+        self.assertTrue(truncated)
+
     def test_summary_types_update_with_headers_and_remain_readable_in_old_archives(self):
         archive = IOSCaptureArchive(self.root)
         flow = make_flow()

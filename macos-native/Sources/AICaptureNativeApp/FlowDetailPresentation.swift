@@ -58,7 +58,7 @@ enum FlowDetailPresentation {
             let budget = max(0, metadataLimit - size - 3)
             let head = limited(name, bytes: budget)
             let tail = limited(value, bytes: max(0, budget - head.text.utf8.count))
-            let line = limited(escaped(head.text) + ": " + escaped(tail.text), bytes: max(0, metadataLimit - size))
+            let line = limited(escaped(head.text) + ": " + escaped(tail.text), bytes: min(4096, max(0, metadataLimit - size)))
             lines.append(line.text)
             size += line.text.utf8.count + 1
             if head.truncated || tail.truncated || line.truncated || size >= metadataLimit {
