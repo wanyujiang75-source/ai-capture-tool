@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-RECOVERY | DONE | 发布并启动网络恢复确认版 | goal.md、progress.md、specs/release-recovery-confirm.md、发布资产及本机应用 | 主分支远端一致；包内版本、签名、校验一致；本机新版启动；恢复记录和 VPN 配置保留 | main 1e63c08；Python 41项；预览包签名、双运行时、构建号和本地/远端SHA-256通过；新版已启动，两个恢复记录摘要不变 | 用户自行确认对应手机网络并操作 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RECOVERY-CONFIRM | DONE | 安全确认当前网络并解除对应提醒 | goal.md、progress.md、specs/android-recovery-confirm.md、真机恢复服务/API/桌面、使用说明及测试 | 显式确认；仅原机在线、本工具VPN和转发停止；不切换VPN、不影响其他记录；自动化及隔离UI验收 | Python 41项、Swift 211项通过；隔离UI验证取消保留与确认解除；真实设备和现有提醒未改动 | 按需更新本机应用后由用户自行确认 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
