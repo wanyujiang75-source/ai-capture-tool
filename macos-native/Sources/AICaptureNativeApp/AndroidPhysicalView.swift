@@ -3,6 +3,8 @@ import SwiftUI
 struct AndroidPhysicalView: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject var controller: AndroidPhysicalController
+    @State private var confirmationSerial: String?
+    @State private var showsNetworkConfirmation = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -71,6 +73,13 @@ struct AndroidPhysicalView: View {
                                 .disabled(!controller.canTerminate)
                                 .help(AppCopy.AndroidPhysical.terminateHelp)
                         }
+                        if controller.status.phase == .recoveryRequired, let serial = controller.status.serial {
+                            Button(AppCopy.AndroidPhysical.confirmNetwork) {
+                                confirmationSerial = serial
+                                showsNetworkConfirmation = true
+                            }
+                                .disabled(!controller.canConfirmNetwork(serial))
+                        }
                         if let id = controller.status.sessionID {
                             Button(AppCopy.AndroidPhysical.results) {
                                 Task {
@@ -93,6 +102,11 @@ struct AndroidPhysicalView: View {
                                 Spacer()
                                 Button(AppCopy.AndroidPhysical.recover) { Task { await controller.recover(phone.serial) } }
                                     .disabled(!controller.canRecover(phone.serial))
+                                Button(AppCopy.AndroidPhysical.confirmNetwork) {
+                                    confirmationSerial = phone.serial
+                                    showsNetworkConfirmation = true
+                                }
+                                    .disabled(!controller.canConfirmNetwork(phone.serial))
                             }
                         }
                     }.padding(20).background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
@@ -119,7 +133,18 @@ struct AndroidPhysicalView: View {
                     }
                 }
             }.padding(28)
-        }.task {
+        }.alert(AppCopy.AndroidPhysical.confirmNetworkTitle, isPresented: $showsNetworkConfirmation) {
+            Button(AppCopy.AndroidPhysical.confirmNetworkCancel, role: .cancel) { confirmationSerial = nil }
+            Button(AppCopy.AndroidPhysical.confirmNetworkAction) {
+                if let serial = confirmationSerial { Task { await controller.confirmNetwork(serial) } }
+                confirmationSerial = nil
+            }
+        } message: {
+            let serial = confirmationSerial ?? ""
+            let name = controller.devices.first(where: { $0.serial == serial })?.label ?? AppCopy.AndroidPhysical.device
+            Text(AppCopy.AndroidPhysical.phoneLabel(name: name, serial: serial) + "\n" + AppCopy.AndroidPhysical.confirmNetworkHelp)
+        }
+        .task {
             await controller.discover()
             while !Task.isCancelled {
                 await controller.refresh()

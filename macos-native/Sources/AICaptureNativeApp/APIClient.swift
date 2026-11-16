@@ -119,6 +119,12 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
         return try await physicalRequest("/recover/" + serial, body: Data("{}".utf8))
     }
 
+    func confirmAndroidNetwork(serial: String) async throws -> AndroidPhysicalStatus {
+        guard !serial.isEmpty, serial.count <= 128,
+              serial.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { throw APIClientError.invalidResponse }
+        return try await physicalRequest("/confirm-network/" + serial, body: Data(#"{"confirmed":true}"#.utf8))
+    }
+
     private func physicalRequest<Response: Decodable>(_ suffix: String, body: Data? = nil) async throws -> Response {
         var request = URLRequest(url: baseURL.appendingPathComponent("api/android-physical" + suffix))
         request.timeoutInterval = 12

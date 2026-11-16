@@ -87,6 +87,7 @@ protocol AndroidPhysicalAPI: Sendable {
     func startAndroidPhysical(serial: String, consent: Bool) async throws -> AndroidPhysicalStatus
     func actAndroidPhysical(_ action: String) async throws -> AndroidPhysicalStatus
     func recoverAndroidPhysical(serial: String) async throws -> AndroidPhysicalStatus
+    func confirmAndroidNetwork(serial: String) async throws -> AndroidPhysicalStatus
 }
 
 @MainActor
@@ -125,6 +126,11 @@ final class AndroidPhysicalController: ObservableObject {
     }
     func canRecover(_ serial: String) -> Bool {
         !busy && status.canStart && isConnected(serial) && (status.pendingRecoveries ?? []).contains(where: { $0.serial == serial })
+    }
+    func canConfirmNetwork(_ serial: String) -> Bool {
+        guard !busy, isConnected(serial) else { return false }
+        if status.phase == .recoveryRequired { return status.serial == serial }
+        return status.canStart && (status.pendingRecoveries ?? []).contains(where: { $0.serial == serial })
     }
     func refresh() async {
         guard !busy, !refreshing else { return }
@@ -190,6 +196,16 @@ final class AndroidPhysicalController: ObservableObject {
         issue = nil
         defer { busy = false }
         do { status = try await api.recoverAndroidPhysical(serial: serial) }
+        catch { issue = (error as? APIClientError)?.userFacingIssue.message ?? AppCopy.AndroidPhysical.connectionFailed }
+    }
+
+    func confirmNetwork(_ serial: String) async {
+        guard canConfirmNetwork(serial) else { return }
+        busy = true
+        revision += 1
+        issue = nil
+        defer { busy = false }
+        do { status = try await api.confirmAndroidNetwork(serial: serial) }
         catch { issue = (error as? APIClientError)?.userFacingIssue.message ?? AppCopy.AndroidPhysical.connectionFailed }
     }
 }

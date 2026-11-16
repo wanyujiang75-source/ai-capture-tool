@@ -14,8 +14,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-id', required=True)
     parser.add_argument('--ios-guidance', action='store_true', help='Show synthetic iPhone setup instructions')
+    parser.add_argument('--confirm-recovery', action='store_true', help='Enable confirmation for the synthetic device only')
     args = parser.parse_args()
-    scenario = {'state': 'waiting'}
+    scenario = {'state': 'recovery_required' if args.confirm_recovery else 'waiting'}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -34,12 +35,12 @@ def main():
                 value = {'phase': 'capturing', 'serial': 'synthetic', 'device_name': '[合成验收] 无真实手机',
                          'phone_network': 'ready', 'upstream_network': 'ready',
                          'flow_count': 20, 'response_count': 10, 'application_network': dict(scenario)}
-                if scenario['state'] in {'idle', 'preparing', 'failed', 'recovery_required'}:
+                if scenario['state'] in {'idle', 'preparing', 'failed', 'recovery_required', 'stopped'}:
                     value['phase'] = scenario['state']
                     value.pop('application_network')
                     value.pop('phone_network')
                     value.pop('upstream_network')
-                if scenario['state'] == 'recovery_required':
+                if scenario['state'] == 'recovery_required' and not args.confirm_recovery:
                     value['pending_recoveries'] = [{'serial': 'synthetic', 'name': '[合成验收] 无真实手机'}]
             elif path == '/api/ios-setup':
                 value = {'phase': 'idle', 'flow_count': 0, 'flows': [], 'recording_state': 'idle'}
@@ -64,6 +65,12 @@ def main():
             self.reply(200, scenario)
 
         def do_POST(self):
+            if args.confirm_recovery and self.path == '/api/android-physical/confirm-network/synthetic':
+                size = int(self.headers.get('Content-Length', '0'))
+                if size <= 128 and json.loads(self.rfile.read(size)) == {'confirmed': True}:
+                    scenario['state'] = 'stopped'
+                    self.reply(200, {'phase': 'stopped', 'message': '已由用户确认当前网络正常，恢复提醒已解除。'})
+                    return
             self.reply(409, {'detail': 'Synthetic view only: no capture or phone access'})
 
         def reply(self, code, value):

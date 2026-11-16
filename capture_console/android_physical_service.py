@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -23,6 +24,22 @@ from .ios_results import IOSCaptureArchive
 
 MODE = 'android-physical-wireguard'
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def owned_worker_active():
+    result = subprocess.run(['/bin/ps', '-axo', 'command='], capture_output=True, text=True, timeout=5)
+    if result.returncode:
+        raise ValueError('无法确认本机抓包进程状态，请稍后重试。')
+    for line in result.stdout.splitlines():
+        if 'capture_console.android_physical_worker' not in line:
+            continue
+        try:
+            args = shlex.split(line)
+        except ValueError:
+            raise ValueError('无法确认本机抓包进程状态，请稍后重试。') from None
+        if any(args[i:i + 2] == ['-m', 'capture_console.android_physical_worker'] for i in range(len(args) - 1)):
+            return True
+    return False
 
 
 def existing_upstream():
@@ -342,6 +359,51 @@ class PhysicalCaptureService:
             self.update(phase='stopping', message='正在检查原网络连接…')
             self.thread = threading.Thread(target=self._finish_recovery, daemon=True)
             self.thread.start()
+            return self.status()
+
+    def confirm_network(self, serial, *, confirmed):
+        with self.lock:
+            if confirmed is not True:
+                raise ValueError('请先确认手机当前网络正常。')
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', serial) or serial.startswith('emulator-'):
+                raise ValueError('请选择对应的 Android 真机。')
+            if self.terminating or (self.thread and self.thread.is_alive()) or (self.process and self.process.poll() is None):
+                raise ValueError('抓包任务尚未结束，请先停止抓包。')
+            if self.marker.exists():
+                info = json.loads(self.marker.read_text())
+                if info.get('serial') != serial:
+                    raise ValueError('请先结束当前手机的恢复流程。')
+                path = self.marker
+            else:
+                path = self.pending.path(serial)
+                if not path.exists():
+                    raise ValueError('未找到该手机的待恢复记录。')
+                info = json.loads(path.read_text())
+                if info.get('serial') != serial:
+                    raise ValueError('待恢复设备信息不匹配。')
+            if not any(item['serial'] == serial and item['status'] == 'device' for item in devices(self.adb)):
+                raise ValueError('请连接对应手机并允许 USB 调试。')
+            device = PhysicalDevice(self.adb, serial)
+            if owned_worker_active():
+                raise ValueError('本机抓包进程尚未退出，请稍后重试。')
+            if device.vpn() == BRIDGE or device.shell('sh', '-c', f'pidof {BRIDGE} || true').strip():
+                raise ValueError('抓包连接助手仍在运行，请先停止抓包。')
+            if path == self.marker:
+                self.device = device
+                self._close_local_capture()
+            else:
+                session = self.store.get_session(info['session_id']) if info.get('session_id') else None
+                if info.get('owner_channel') or (session and session.get('status') in {'running', 'starting'}):
+                    raise ValueError('本机抓包资源尚未确认结束，请先检查网络恢复。')
+            if owned_worker_active() or device.vpn() == BRIDGE or device.shell('sh', '-c', f'pidof {BRIDGE} || true').strip():
+                raise ValueError('抓包连接助手仍在运行，请先停止抓包。')
+            path.unlink()
+            if path == self.marker:
+                self.info = {}
+                self.device = self.process = self.directory = None
+                self.last = {'phase': 'stopped', 'message': '已由用户确认当前网络正常，恢复提醒已解除。'}
+            else:
+                self.update(message='已由用户确认当前网络正常，恢复提醒已解除。')
             return self.status()
 
     def terminate(self):

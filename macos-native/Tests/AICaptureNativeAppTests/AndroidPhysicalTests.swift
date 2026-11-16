@@ -4,6 +4,19 @@ import Testing
 
 @MainActor
 struct AndroidPhysicalTests {
+    @Test func manualNetworkConfirmationOnlyTargetsConnectedRecoveryDevice() async {
+        let api = PhysicalSwitchAPI()
+        let controller = AndroidPhysicalController(api: api)
+        await api.set(status: AndroidPhysicalStatus(phase: .recoveryRequired, serial: "old"), devices: [oldPhone, newPhone])
+        await controller.refresh()
+        #expect(controller.canConfirmNetwork("old"))
+        #expect(!controller.canConfirmNetwork("new"))
+        await controller.confirmNetwork("new")
+        #expect(await api.actions.isEmpty)
+        await controller.confirmNetwork("old")
+        #expect(await api.actions == ["confirm:old"])
+        #expect(controller.status.phase == .stopped)
+    }
     @Test func deviceConnectionStatusDistinguishesAuthorizationAndFailure() async {
         let api = PhysicalSwitchAPI()
         let controller = AndroidPhysicalController(api: api)
@@ -184,6 +197,10 @@ struct AndroidPhysicalTests {
 }
 
 private actor PhysicalSwitchAPI: AndroidPhysicalAPI {
+    func confirmAndroidNetwork(serial: String) async throws -> AndroidPhysicalStatus {
+        actions.append("confirm:" + serial)
+        return AndroidPhysicalStatus(phase: .stopped)
+    }
     var failing = false
     func failReads() { failing = true }
     var value = AndroidPhysicalStatus(phase: .idle)

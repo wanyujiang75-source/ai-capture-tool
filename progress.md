@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RECOVERY-CONFIRM | DONE | 安全确认当前网络并解除对应提醒 | goal.md、progress.md、specs/android-recovery-confirm.md、真机恢复服务/API/桌面、使用说明及测试 | 显式确认；仅原机在线、本工具VPN和转发停止；不切换VPN、不影响其他记录；自动化及隔离UI验收 | Python 41项、Swift 211项通过；隔离UI验证取消保留与确认解除；真实设备和现有提醒未改动 | 按需更新本机应用后由用户自行确认 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | BODY-PREVIEW | DONE | 修复响应乱码和大正文卡顿 | goal.md、progress.md、specs/response-preview-safety.md、预览解码、桌面展示及测试与隔离UI fixture | 合法编码正确、未知二进制不伪装文本；长正文有界显示并保留原始数据；相关测试与隔离验收通过 | Swift210项、Python55项通过；隔离UI合成4MB响应显示截断和中文，切换正常；现场5.3MB异常文本只读预览安全提示、约1ms且文件保留。本机修复版已启动，原VPN已连接，但PKG110历史恢复检查未通过、记录保留 | 本地试用；未推送或发布，非所有编码均可解码 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

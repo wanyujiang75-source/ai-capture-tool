@@ -72,3 +72,13 @@ class PhysicalAPITests(unittest.TestCase):
         response = self.request('POST', '/api/android-physical/start', headers=self.headers,
                                 payload={'serial': 'test', 'desktop_pid': 42})
         self.assertEqual((response.status_code, response.body), (409, {'detail': {'user_message': '请先恢复网络。'}}))
+
+    def test_network_confirmation_requires_desktop_and_boolean_confirmation(self):
+        path = '/api/android-physical/confirm-network/phone'
+        self.service.confirm_network.return_value = {'phase': 'stopped'}
+        self.assertEqual(self.request('POST', path, headers={}, payload={'confirmed': True}).status_code, 403)
+        for payload in ({}, {'confirmed': 'true'}, {'confirmed': True, 'extra': 1}):
+            self.assertEqual(self.request('POST', path, headers=self.headers, payload=payload).status_code, 422)
+        self.service.confirm_network.assert_not_called()
+        self.assertEqual(self.request('POST', path, headers=self.headers, payload={'confirmed': True}).status_code, 200)
+        self.service.confirm_network.assert_called_once_with('phone', confirmed=True)

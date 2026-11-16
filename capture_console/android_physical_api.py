@@ -2,7 +2,7 @@
 
 import subprocess
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from .android_physical_device import devices
 
 
@@ -11,6 +11,11 @@ class PhysicalStart(BaseModel):
     serial: str = Field(min_length=1, max_length=128)
     desktop_pid: int = Field(gt=1)
     experimental_consent: bool = False
+
+
+class PhysicalConfirmation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    confirmed: StrictBool
 
 
 def physical_router(service):
@@ -69,5 +74,15 @@ def physical_router(service):
             raise HTTPException(409, detail={'user_message': str(exc)}) from exc
         except (OSError, subprocess.TimeoutExpired):
             raise HTTPException(503, detail={'user_message': '无法检测原手机，请检查 USB 连接后重试。'}) from None
+
+    @router.post('/confirm-network/{serial}')
+    def confirm_network(request: Request, serial: str, payload: PhysicalConfirmation):
+        desktop(request)
+        try:
+            return service.confirm_network(serial, confirmed=payload.confirmed)
+        except ValueError as exc:
+            raise HTTPException(409, detail={'user_message': str(exc)}) from exc
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            raise HTTPException(503, detail={'user_message': '无法确认手机或本机状态，请检查连接后重试。'}) from None
 
     return router
