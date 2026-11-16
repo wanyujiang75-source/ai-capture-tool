@@ -1,0 +1,5 @@
+# 30分钟与文案更新发布
+
+基于已测试提交be1ada9和1528078，快进main并推送，固定源码构建完整Apple Silicon预览包。校验签名、助手APK和指南、哈希及GitHub发布资产。当前Android抓包运行，保留VPN及待恢复状态；仅抓包停止并确认安全后备份、替换并验证本机应用，不擅自停止或清理用户会话。保留无关工作区文件和历史发布。无Apple公证则准确说明。
+
+验收：用户操作停止#135后，后端报告原网络已恢复。main推送1528078；release完整构建及签名通过，ZIP SHA256为54feb6a20765aade75abc5c66f48a2758418017aedcba3fa2774e1266b57ad2a，GitHub资产同摘要、249928265字节、非草稿预发布。新版Applications已启动，后端ID为1528078，UI显示30分钟和精简文案；PHK110待恢复提醒及文件摘要不变。旧应用备份于`~/Library/Application Support/AI抓包工具/app-backups/20261116-before-1528078/`。沿用前述Swift 208、Python及助手测试结果；未进行30分钟实机计时。

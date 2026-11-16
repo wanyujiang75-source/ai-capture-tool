@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-30 | DONE | 发布30分钟限制和文案精简 | goal.md、progress.md、specs/release-copy-30min.md；构建包、GitHub发布、本机应用备份 | 主分支和远端一致；完整包含助手、指南且签名与哈希校验；本机安全更新并验证 | 用户停止#135，状态确认原网络已恢复；main推送1528078；release签名及本地SHA通过，GitHub资产摘要一致；Applications新版启动且build ID一致，旧机恢复提醒和文件摘要不变 | 用户试用；30分钟实际计时尚未实机验收 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | COPY-TRIM | DONE | 按截图移除冗余真机说明 | goal.md、progress.md、specs/android-copy-trim.md、AndroidPhysicalCopy及相关测试 | 首页仅保留时限，技术详情保留兼容性；Google保留失败恢复，重复终止说明不显示；测试通过 | 修改前文案测试RED；修改后Swift 208项与Python 8项通过，diff检查通过 | 本地提交，不发布或重启应用 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
