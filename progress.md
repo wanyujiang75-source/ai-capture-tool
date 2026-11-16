@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-IOS-COPY | DONE | 发布iPhone连接说明优化 | goal.md、progress.md、specs/release-ios-copy.md；发布包、GitHub及本机应用 | 主分支推送、完整安装包签名及摘要校验、远端资产一致、本机备份更新；保留证书及旧机恢复记录 | 00fcbbb已推送，完整包签名及本地和GitHub摘要一致；用户确认恢复网络后已安装启动新版，后端ID核验通过；旧机恢复文件摘要不变 | 发布记录提交，另行精简GitHub指南 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | IOS-COPY-SHORT | DONE | 精简iPhone连接说明 | goal.md、progress.md、specs/ios-copy-short.md、IOSSetupCopy、OperationGuidanceTests | 说明简洁且保留证书、转发与手动恢复边界；Swift与说明契约通过 | 旧文案长度测试RED；最终Swift 209项及Python说明契约8项通过，未操作运行中抓包 | 本地提交，不发布或重启 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

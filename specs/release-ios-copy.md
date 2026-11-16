@@ -1,0 +1,5 @@
+# iPhone说明更新发布
+
+将已通过209项Swift测试的00fcbbb快进合并至main并推送，以该提交构建包含独立运行时、助手和指南的Apple Silicon开发签名预览包，验证签名、本地及GitHub资产摘要。用户确认手机已恢复原节点与网络，录制已停止；正常退出桌面、备份旧应用、安装并启动新版，保留钥匙串身份、抓包记录和旧手机待恢复状态。未经Apple公证须明确说明。不操作手机VPN或原有配置。
+
+验收：GitHub预发布资产249930807字节、SHA256 5ce447fc35fbbfd78797424f3b8f0c76b90785a048b471690bc60ab058f289b5，与本地相同；安装说明、使用指南、助手APK均在包内。新版Applications签名通过并已启动，后端ID为00fcbbb；旧版备份于`~/Library/Application Support/AI抓包工具/app-backups/20261116-before-00fcbbb/`。旧Android恢复提醒文件摘要不变；iPhone先停止录制，用户确认原网络恢复；未再次启动抓包。
