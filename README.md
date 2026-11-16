@@ -1,6 +1,6 @@
 # 抓包工具
 
-抓包工具是 macOS 优先的本机 Android 抓包工作台。桌面端是 SwiftUI 原生应用，会自动启动本机 FastAPI 后端，并复用已有 adb、Frida、mitmproxy 和抓包脚本。用户可以通过 macOS App 完成环境检查、设备发现、本地 APK/Jenkins 测试包安装、前台 App 自动识别、抓包启动、接口查看和 cURL 导出。
+抓包工具是 macOS 桌面应用，支持 Android 模拟器、部分 Android 真机及 iPhone 的 HTTP(S) 抓包，并提供接口查看、搜索和 cURL 导出。Android 还支持安装 APK 和查看日志。
 
 新版预发布包包含 iPhone 真机 HTTP(S) 抓包，入口位于“抓包”页的平台选择。
 支持小火箭 VPN 保持开启、通过专用节点统一接入，不用逐个添加应用域名；已验证 PokeHub、MelodyCraft、Wishly、StickerHub。
@@ -13,10 +13,10 @@
 
 ## 安装
 
-桌面端 V1 支持 **macOS 14+ / Apple Silicon**，提供多条安装路径：
+桌面端支持 **macOS 14+、Apple Silicon（M 系列芯片）**，不支持 Intel Mac、Windows 或 Linux。仅使用 iPhone 不需要 Android SDK；使用模拟器需安装 Android Studio 或 Android SDK，建议至少 16 GB 内存和 25 GB 可用空间。
 
 - **Codex 辅助安装**：把 [安装指南](INSTALL.md) 交给 Codex，由 Codex 检查环境、下载、校验、安装和验收。
-- **手动下载安装**：从 [GitHub Releases](https://github.com/wanyujiang75-source/ai-capture-tool/releases) 下载 `arm64.zip`，解压后拖入“应用程序”。
+- **手动下载安装**：从 [GitHub Releases](https://github.com/wanyujiang75-source/ai-capture-tool/releases) 下载桌面 ZIP 和同名 SHA-256 校验文件。
 - **源码构建**：克隆仓库后在本机构建，适合开发和调试。
 - **升级或新主机配置**：保留现有数据升级，或在全新 Mac 上准备 Android SDK 和 Google Play 模拟器。
 
@@ -28,15 +28,15 @@
 ### 从 GitHub 手动安装
 
 1. 打开 [GitHub Releases](https://github.com/wanyujiang75-source/ai-capture-tool/releases)，展开最新 Release 的 `Assets`。
-2. 下载 Apple Silicon 版 `AI-Capture-Desktop-*-arm64.zip` 和同名 `.zip.sha256`。文件名含 `development-arm64` 表示它是未经 Apple 公证的内部预览包。
+2. 下载 `AI-Capture-Desktop-...-arm64.zip` 和对应的 `.zip.sha256`，不要下载 `Source code`。文件名含 `development-arm64` 表示未经 Apple 公证的开发预览包。
 3. 在终端校验下载文件：
 
    ```bash
    cd ~/Downloads
-   shasum -a 256 -c AI-Capture-Desktop-*.zip.sha256
+   shasum -a 256 -c '下载的文件名.zip.sha256'
    ```
 
-   看到 `OK` 后再继续。
+   将文件名替换为实际下载的校验文件名；看到 `OK` 后再继续。ZIP 与校验文件须来自同一个 Release。
 4. 双击 ZIP 解压，将 `抓包工具.app` 拖入 Finder 的“应用程序”目录。不要在 ZIP 预览窗口中直接运行。
 5. 在“应用程序”中打开 `抓包工具`。正式公证包应可直接启动；内部预览包可能被 Gatekeeper 拦截。
 6. 如果弹窗显示“Apple 无法验证‘抓包工具’”，点击“完成”，**不要点击“移到废纸篓”**。随后进入“系统设置 -> 隐私与安全性”，在“安全性”区域点击“仍要打开”，完成 Mac 登录验证后再确认“打开”。该按钮通常只在尝试启动 App 后约一小时内出现。
@@ -52,8 +52,8 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 ### 首次 iPhone 抓包
 
 1. 下载包含 iPhone 功能的新预发布包，Mac 与 iPhone 接入可互通的 Wi-Fi；Mac 本身须能访问待测服务。
-2. 在“抓包”选择“iPhone”并“准备连接”；保留小火箭时按指南生成“仅证书＋检查入口”副本，发给自己的手机安装并信任，不使用含Wi-Fi代理的原文件。
-3. 使用小火箭时，首次按[连接参数读取与节点设置](docs/desktop-user-guide.md#133-小火箭首次设置与统一接入)创建本机专用 `Capture-Mac` 节点；不要复制他人的连接凭据。
+2. 在“抓包”选择“iPhone”并准备连接，通过桌面端发送仅含证书和检查入口的配置，在手机安装并信任。
+3. 使用小火箭时，按桌面提示导入专用 `Capture-Mac` 节点；自动导入失败时按[使用指南](docs/desktop-user-guide.md#133-小火箭首次设置与统一接入)手动操作。不要分享连接凭据。
 4. 记录原节点和路由模式，VPN 保持开启，临时选择 `Capture-Mac` 和“代理”；手机检查页通过后在桌面点击“开始抓包”。
 5. 操作待测应用，在“接口”查看 Request、Response 和 cURL。换应用无需重新安装证书或添加域名。
 6. 完成后“停止抓包”，在手机恢复原节点和原路由模式，确认网络正常，再退出桌面。停止记录不会自动恢复手机网络。
@@ -74,7 +74,7 @@ Google Play 系统镜像、创建模拟器并检查网络与 Frida。
 
 主导航固定为“抓包 / 安装应用 / 接口 / 日志”。环境和底层组件只在工具栏“运行检查”中展示，普通操作页不会直接显示后端原始错误、端口或组件命令。
 
-真机日志只要求 Android 已开启开发者选项和 USB/无线调试，并授权当前 Mac，不要求 Root、Frida、Google 登录或代理配置。该能力用于查看 Logcat，不代表当前版本已支持真机网络抓包；完整连接步骤见[桌面端使用指南](docs/desktop-user-guide.md#7-查看日志)。
+Android 真机日志需要调试授权，不要求 Root。真机网络抓包是单独的功能，需 USB 调试及临时网络接入，仅部分应用和版本支持 HTTPS 解密；详见[真机抓包指南](docs/desktop-user-guide.md#android-physical)。
 
 桌面端会自动启动 `.app` 内置的本机后端，不需要手动运行 `./start.sh`。源码构建步骤统一维护在 [安装指南](INSTALL.md#路径-c从源码构建) 中。
 

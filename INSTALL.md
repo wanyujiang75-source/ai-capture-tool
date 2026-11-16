@@ -61,8 +61,10 @@ Codex 可以自动完成：
 
    ```bash
    cd ~/Downloads
-   shasum -a 256 -c AI-Capture-Desktop-*.zip.sha256
+   shasum -a 256 -c '下载的文件名.zip.sha256'
    ```
+
+   将文件名替换为实际下载的校验文件名，确认输出 `OK`；ZIP 和校验文件须来自同一 Release。
 
 5. 双击解压 ZIP，把 `抓包工具.app` 拖入“应用程序”。若安装过旧版 `AI抓包工具.app`，先保留旧版，待新版验收通过后再删除旧 App。
 6. 在 Finder 的“应用程序”目录中打开 `抓包工具`。正式公证包应直接通过 Gatekeeper。
@@ -154,7 +156,7 @@ open "macos-native/build/抓包工具.app"
 
 前置条件：测试 iPhone 已安装目标应用；Mac 与手机可在局域网互通；Mac 能访问目标服务。无需 Android SDK、Root、越狱或 iPhone 镜像。使用小火箭统一接入时，VPN 始终开启，但出口会使用 Mac 的网络路径，可能不同于原节点。
 
-首次使用按[指南第13节](docs/desktop-user-guide.md#13-iphone-真机抓包)准备连接，运行本机命令读取参数并生成“仅证书＋检查入口”副本，隔空投送后安装/信任，再创建专用 `Capture-Mac` HTTP 节点。命令不修改网络/原文件/钥匙串，但会在下载目录创建副本；不是自动导入。不要安装含Wi-Fi代理的原文件或照抄他人IP、端口、密码。
+首次使用按[指南第13节](docs/desktop-user-guide.md#13-iphone-真机抓包)准备连接，通过桌面端发送仅含证书和检查入口的配置，在手机安装并信任；按桌面提示导入专用 `Capture-Mac` 节点，自动导入失败时使用手动方式。不要安装含 Wi-Fi 或 VPN 设置的配置，也不要照抄他人的连接参数。
 
 日常顺序：打开桌面并重新连接 → 记录原选择 → 手机临时选择 Capture-Mac＋代理（VPN开启）→ 手机HTTPS检查通过 → 桌面开始抓包 → 操作应用 → 查看接口 → 停止抓包 → 恢复原选择并确认联网 → 退出桌面。
 

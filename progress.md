@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| INSTALL-COPY | DONE | 精简GitHub下载与安装说明 | goal.md、progress.md、specs/install-copy-short.md、README.md、INSTALL.md、release/安装说明.md | 下载目标、架构、校验及安全提示准确；iPhone与Android流程不矛盾；说明测试通过并推送 | Python说明契约8项通过，目标文件与锚点存在，diff检查通过；修正过时iPhone和真机描述 | 提交并推送，不重发已发布包 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-IOS-COPY | DONE | 发布iPhone连接说明优化 | goal.md、progress.md、specs/release-ios-copy.md；发布包、GitHub及本机应用 | 主分支推送、完整安装包签名及摘要校验、远端资产一致、本机备份更新；保留证书及旧机恢复记录 | 00fcbbb已推送，完整包签名及本地和GitHub摘要一致；用户确认恢复网络后已安装启动新版，后端ID核验通过；旧机恢复文件摘要不变 | 发布记录提交，另行精简GitHub指南 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
