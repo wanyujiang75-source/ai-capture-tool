@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| PHONE-STATUS | DONE | 设备名称旁展示USB连接状态 | goal.md、progress.md、specs/android-device-status.md、AndroidPhysicalCopy/View/Models、AndroidPhysicalTests | 在线、未授权、离线、检测失败和多设备正确；轮询、按钮及抓包逻辑不变；Swift测试通过 | 状态测试先因缺少实现失败；最终Swift完整209项通过（包含原设备切换测试），diff检查通过；未改现有运行桌面端或手机 | 本地提交，按需另行发布 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-30 | DONE | 发布30分钟限制和文案精简 | goal.md、progress.md、specs/release-copy-30min.md；构建包、GitHub发布、本机应用备份 | 主分支和远端一致；完整包含助手、指南且签名与哈希校验；本机安全更新并验证 | 用户停止#135，状态确认原网络已恢复；main推送1528078；release签名及本地SHA通过，GitHub资产摘要一致；Applications新版启动且build ID一致，旧机恢复提醒和文件摘要不变 | 用户试用；30分钟实际计时尚未实机验收 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

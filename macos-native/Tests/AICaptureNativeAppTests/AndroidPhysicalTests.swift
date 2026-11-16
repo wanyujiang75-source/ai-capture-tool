@@ -4,6 +4,20 @@ import Testing
 
 @MainActor
 struct AndroidPhysicalTests {
+    @Test func deviceConnectionStatusDistinguishesAuthorizationAndFailure() async {
+        let api = PhysicalSwitchAPI()
+        let controller = AndroidPhysicalController(api: api)
+        for (raw, expected) in [("device", "USB 已连接"), ("unauthorized", "等待 USB 授权"),
+                                ("offline", "设备离线"), ("other", "连接状态未知")] {
+            let phone = AndroidPhysicalDevice(serial: "phone", model: "PKG110", status: raw)
+            await api.set(status: AndroidPhysicalStatus(phase: .idle), devices: [phone])
+            await controller.refresh()
+            #expect(controller.deviceConnectionText == expected)
+        }
+        await api.failReads()
+        await controller.refresh()
+        #expect(controller.deviceConnectionText == "连接状态未知")
+    }
     @Test func applicationEvidenceDoesNotInferSuccessFromTunnelOrCounters() throws {
         let data = Data(#"{"phase":"capturing","phone_network":"ready","upstream_network":"ready","response_count":20}"#.utf8)
         let status = try JSONDecoder().decode(AndroidPhysicalStatus.self, from: data)

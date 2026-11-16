@@ -17,11 +17,17 @@ struct AndroidPhysicalView: View {
                 }
                 VStack(alignment: .leading, spacing: 14) {
                     if controller.devices.isEmpty { Text(AppCopy.AndroidPhysical.noDevices) }
-                    else if controller.devices.count > 1 {
-                        Picker(AppCopy.AndroidPhysical.chooseDevice, selection: $controller.serial) {
-                            ForEach(controller.devices) { Text(AppCopy.AndroidPhysical.phoneLabel(name: $0.label, serial: $0.serial)).tag($0.serial) }
-                        }.disabled(!controller.status.canStart)
-                    } else { Label(controller.devices[0].label, systemImage: "smartphone") }
+                    else {
+                        HStack {
+                            if controller.devices.count > 1 {
+                                Picker(AppCopy.AndroidPhysical.chooseDevice, selection: $controller.serial) {
+                                    ForEach(controller.devices) { Text(AppCopy.AndroidPhysical.phoneLabel(name: $0.label, serial: $0.serial)).tag($0.serial) }
+                                }.disabled(!controller.status.canStart)
+                            } else { Label(controller.devices[0].label, systemImage: "smartphone") }
+                            Text(controller.deviceConnectionText)
+                                .foregroundStyle(controller.deviceConnectionText == "USB 已连接" ? Color.green : Color.orange)
+                        }
+                    }
                     if controller.devices.first(where: { $0.serial == controller.serial })?.status == "unauthorized" {
                         Text(AppCopy.AndroidPhysical.unauthorized).foregroundStyle(.orange)
                     }

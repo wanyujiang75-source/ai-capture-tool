@@ -6,6 +6,14 @@ extension AppCopy {
         static let subtitle = "连接 Android 手机，抓取指定应用的请求与响应。"
         static let device = "Android 真机"
         static let chooseDevice = "使用手机"
+        static func deviceConnection(_ status: String?) -> String {
+            switch status {
+            case "device": "USB 已连接"
+            case "unauthorized": "等待 USB 授权"
+            case "offline": "设备离线"
+            default: "连接状态未知"
+            }
+        }
         static let discover = "检测手机"
         static let terminate = "结束流程并重新检测"
         static let terminateHelp = "结束当前流程，保留抓包记录并重新检测手机；未恢复的手机会保留提醒。"

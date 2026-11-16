@@ -102,6 +102,10 @@ final class AndroidPhysicalController: ObservableObject {
     private var refreshing = false
     init(api: any AndroidPhysicalAPI = APIClient()) { self.api = api }
     var canTerminate: Bool { !busy && ![.idle, .terminating, .unknown].contains(status.phase) }
+    var deviceConnectionText: String {
+        let deviceStatus = issue == nil ? devices.first(where: { $0.serial == serial })?.status : nil
+        return AppCopy.AndroidPhysical.deviceConnection(deviceStatus)
+    }
     var canPerform: Bool {
         guard !busy else { return false }
         switch status.action {
