@@ -2,7 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| BODY-PREVIEW | BLOCKED | 修复响应乱码和大正文卡顿 | goal.md、progress.md、specs/response-preview-safety.md、预览解码和桌面展示及测试 | 合法编码正确、未知二进制不伪装文本；长正文有界显示并保留原始数据；相关测试与隔离验收通过 | 现场桌面主线程采样为NSTextView布局高CPU；复现GB18030乱码及长行无界；修复后Swift210项、Python55项通过。当前手机网络状态recovery_required，不能安全重启桌面或做现场验收 | 用户恢复原VPN网络并确认后，构建独立验收/更新桌面，复查原响应及性能 |
+| BODY-PREVIEW | DONE | 修复响应乱码和大正文卡顿 | goal.md、progress.md、specs/response-preview-safety.md、预览解码、桌面展示及测试与隔离UI fixture | 合法编码正确、未知二进制不伪装文本；长正文有界显示并保留原始数据；相关测试与隔离验收通过 | Swift210项、Python55项通过；隔离UI合成4MB响应显示截断和中文，切换正常；现场5.3MB异常文本只读预览安全提示、约1ms且文件保留。本机修复版已启动，原VPN已连接，但PKG110历史恢复检查未通过、记录保留 | 本地试用；未推送或发布，非所有编码均可解码 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
