@@ -16,9 +16,9 @@ extension AppCopy {
         static let noDevices = "未检测到手机。请连接 USB，开启 USB 调试并授权此电脑。"
         static let unauthorized = "请解锁手机，并在 USB 调试提示中选择允许。"
         static let consent = "同意临时替换手机 VPN，抓取目标应用并加密转发 Google 登录服务。"
-        static let boundary = "无需 Root 或修改原应用。仅部分应用和版本支持 HTTPS 解密，兼容性可能随更新变化。每次限时 30 分钟，到期自动停止。"
+        static let boundary = "每次限时 30 分钟，到期自动停止。"
         static let network = "请保持电脑 HTTP 代理开启。目标应用经 Mac 出网，原节点和配置保留；其他应用不被抓取，但不再由原 VPN 保护。请勿操作无关敏感应用。"
-        static let googleLogin = "Android 10 及以上加密转发 Google Play 服务，不解密或记录其内容。登录失败时，点击“停止并恢复网络”，先通过手机原 VPN 完成 Google 登录再重试。"
+        static let googleLogin = "Google Play 服务登录失败时，点击“停止并恢复网络”，先通过手机原 VPN 完成 Google 登录再重试。"
         static let instructions = "操作步骤"
         static let steps = [
             "连接 USB 并解锁手机，与 Mac 接入同一 Wi-Fi，打开目标应用。",

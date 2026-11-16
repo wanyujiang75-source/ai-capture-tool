@@ -59,7 +59,8 @@ struct AndroidPhysicalTests {
         #expect(AppCopy.AndroidPhysical.terminateHelp.contains("保留抓包记录"))
         #expect(AppCopy.AndroidPhysical.consent.contains("临时替换手机 VPN"))
         #expect(AppCopy.AndroidPhysical.network.contains("不再由原 VPN 保护"))
-        #expect(AppCopy.AndroidPhysical.boundary.contains("仅部分应用"))
+        #expect(!AppCopy.AndroidPhysical.boundary.contains("仅部分应用"))
+        #expect(AppCopy.AndroidPhysical.compatibility.contains("可能不支持"))
     }
     @Test func returningFromFlowsKeepsPhysicalSelectionAndController() {
         let state = AppState()

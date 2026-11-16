@@ -11,6 +11,8 @@ struct OperationGuidanceTests {
         #expect(primary.joined().contains("临时替换手机 VPN"))
         #expect(primary.joined().contains("不再由原 VPN 保护"))
         #expect(primary.joined().contains("30 分钟"))
+        #expect(!AppCopy.AndroidPhysical.boundary.contains("Root"))
+        #expect(!AppCopy.AndroidPhysical.googleLogin.contains("加密转发"))
         #expect(AppCopy.AndroidPhysical.steps.joined().contains("停止并恢复网络"))
         #expect(AppCopy.AndroidPhysical.recovery.contains("检查网络恢复"))
     }

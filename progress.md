@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| COPY-TRIM | DONE | 按截图移除冗余真机说明 | goal.md、progress.md、specs/android-copy-trim.md、AndroidPhysicalCopy及相关测试 | 首页仅保留时限，技术详情保留兼容性；Google保留失败恢复，重复终止说明不显示；测试通过 | 修改前文案测试RED；修改后Swift 208项与Python 8项通过，diff检查通过 | 本地提交，不发布或重启应用 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | LIMIT-30 | DONE | 真机单次抓包延长至30分钟 | Android助手、worker、对应测试与操作指南、goal.md、progress.md、specs/android-physical-30min.md | 30分钟边界一致、20秒失联及异常清理不变、测试与构建通过 | 旧助手/文案测试RED；助手构建和单测通过，Swift 208项通过，Python 38项通过及独立worker失联测试1项通过；diff检查通过。未操作真机，未进行30分钟实机计时 | 本地提交；未发布和替换桌面端 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
