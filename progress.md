@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-USB | DONE | 发布并安装设备USB状态更新 | goal.md、progress.md、specs/release-usb-status.md；release构建、GitHub及本机应用 | 主分支推送；完整安装包签名、指南及摘要验证；本机备份更新启动，保留恢复提醒 | main推送5d5008c；完整包构建签名及本地SHA通过，GitHub资产同摘要；本机新版ID和真实PKG110 USB已连接显示通过，旧PHK110提醒摘要不变；沿用Swift209测试结果 | 用户试用；预览包未经Apple公证 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | PHONE-STATUS | DONE | 设备名称旁展示USB连接状态 | goal.md、progress.md、specs/android-device-status.md、AndroidPhysicalCopy/View/Models、AndroidPhysicalTests | 在线、未授权、离线、检测失败和多设备正确；轮询、按钮及抓包逻辑不变；Swift测试通过 | 状态测试先因缺少实现失败；最终Swift完整209项通过（包含原设备切换测试），diff检查通过；未改现有运行桌面端或手机 | 本地提交，按需另行发布 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
