@@ -15,6 +15,20 @@ from capture_console.store import CaptureStore
 
 
 class CaptureConsoleApiTests(unittest.TestCase):
+    def test_desktop_update_status_checks_all_active_sessions_without_exposing_details(self):
+        identity = {"enabled": True, "build_id": "desktop-build", "runtime_dir": "/tmp/update-test"}
+        with mock.patch.object(app_module, "desktop_runtime_metadata", return_value=identity):
+            with mock.patch.object(app_module, "list_active_sessions", return_value=[{"device_id": "secondary"}]):
+                self.assertEqual(
+                    {"desktop": identity, "capture_active": True},
+                    app_module.api_desktop_update_status(),
+                )
+            with mock.patch.object(app_module, "list_active_sessions", return_value=[]):
+                self.assertEqual(
+                    {"desktop": identity, "capture_active": False},
+                    app_module.api_desktop_update_status(),
+                )
+
     def test_jenkins_listing_uses_errors_from_same_snapshot(self):
         snapshot = {"packages": [{"id": "music-1"}], "errors": ["poke: offline"], "failed_jobs": ["poke"]}
         with mock.patch.object(app_module.jenkins_source, "list_package_snapshot", return_value=snapshot):

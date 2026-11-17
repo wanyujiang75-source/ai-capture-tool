@@ -34,6 +34,15 @@ final class RuntimeManager {
         self.shutdownCleanupTimeout = shutdownCleanupTimeout
     }
 
+    func captureActiveForUpdate() async throws -> Bool {
+        let api = APIClient(baseURL: backendURL, sessionConfiguration: RuntimeManager.defaultSessionConfiguration())
+        let status = try await api.readDesktopUpdateStatus()
+        guard status.matches(buildID: buildID, runtime: runtimeDirectory) else {
+            throw URLError(.badServerResponse)
+        }
+        return status.captureActive
+    }
+
     func checkStatus() async -> AppState.RuntimeStatus {
         if let statusTask { return await statusTask.value }
         // Coalesce refreshes across suspension points, including orphan recovery.

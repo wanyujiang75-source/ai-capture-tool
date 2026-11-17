@@ -37,16 +37,44 @@ cd ..
 TRACEDECK_RELEASE_KIND=development ./release/package.sh
 ```
 
-开发 ZIP 使用 ad-hoc 签名，文件名会明确包含 `development-arm64`。正式分发必须使用 Apple Developer ID 并完成公证：
+开发 ZIP 使用 ad-hoc 签名，文件名含 `development-arm64`，通过 GitHub 预发布页手动分发。
+
+## 发布支持应用内更新的正式版
+
+首次发布准备 Apple Developer ID Application 签名身份及 `xcrun notarytool` 的钥匙串配置。
+在发行 Mac 上生成 Sparkle 签名密钥并保管好私钥。后续版本继续使用相同的签名团队和更新公钥。
+
+```bash
+# 从仓库根目录执行
+swift package --package-path macos-native resolve
+sparkle_tools=macos-native/.build/artifacts/sparkle/Sparkle/bin
+"$sparkle_tools/generate_keys" --account ai-capture-updates
+export SPARKLE_PUBLIC_ED_KEY="$("$sparkle_tools/generate_keys" --account ai-capture-updates -p)"
+```
+
+为每次发布选取唯一的三段版本号和递增的整数构建号。下方的 `0.2.0` 和 `2` 仅作示例。
+发下一版前，以最新正式 Release 的 `appcast.xml` 里的 `sparkle:version` 为准，确保新构建号更大。
 
 ```bash
 TRACEDECK_RELEASE_KIND=distribution \
+TRACEDECK_VERSION=0.2.0 \
+TRACEDECK_BUILD_NUMBER=2 \
 MACOS_SIGN_IDENTITY="Developer ID Application: Company Name (TEAMID)" \
 MACOS_NOTARY_PROFILE="ai-capture-notary" \
 ./release/package.sh
 ```
 
-`release/notarize-app.sh` 只会在 `notarytool`、`stapler` 和 `spctl` 全部通过后生成最终 ZIP；不存在自动降级为未公证正式包的路径。
+可设置 `SPARKLE_RELEASE_NOTES` 为 Markdown 更新说明的文件路径，打包时会嵌入版本清单。
+Sparkle 私钥默认从钥匙串读取。使用受保护的 CI 密钥文件时，将文件放在仓库目录外，再通过 `SPARKLE_PRIVATE_ED_KEY_FILE` 指定路径。
+Apple 公证成功后，脚本生成并验证 Sparkle 签名。发布同一 tag 对应的四个文件：
+
+| 文件 | 用途 |
+| --- | --- |
+| `release/AI-Capture-Desktop-0.2.0-arm64.zip` 和同名 `.sha256` | 首次安装和手动升级 |
+| `release/.updates/0.2.0/AI-Capture-Update-0.2.0-arm64.zip` | Sparkle 安装 |
+| `release/.updates/0.2.0/appcast.xml` | 已签名的版本清单 |
+
+先以 `v0.2.0` 创建 GitHub Release 草稿，关联构建对应的提交，上传四个文件。核对清单中的下载地址和资产名后一起发布，将该版设为最新正式 Release。App 使用固定的 `/releases/latest/download/appcast.xml`，清单使用带版本 tag 的包地址。签名后保留文件原样。首个正式版发布后，验证「检查更新…」能够读取清单并显示已是最新版。从第二个正式版开始，用上一版验证下载、安装、重启和原有数据。
 
 Jenkins 包源：
 

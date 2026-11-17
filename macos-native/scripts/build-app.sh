@@ -13,6 +13,11 @@ RESOURCES_DIR="$CONTENTS_DIR/Resources"
 BACKEND_DIR="$RESOURCES_DIR/backend"
 EMBED_RUNTIME="${EMBED_RUNTIME:-1}"
 BUILD_ID="${AI_CAPTURE_BUILD_ID:-}"
+APP_VERSION="${AI_CAPTURE_APP_VERSION:-0.1.0}"
+APP_BUILD_NUMBER="${TRACEDECK_BUILD_NUMBER:-1}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+SPARKLE_ARTIFACTS="$ROOT_DIR/.build/artifacts/sparkle/Sparkle"
 ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.png"
 ICONSET_DIR="$ROOT_DIR/build/AppIcon.iconset"
 ICON_OUTPUT="$RESOURCES_DIR/AppIcon.icns"
@@ -21,6 +26,18 @@ if [[ ! -f "$PROJECT_ROOT/web/dist/index.html" ]]; then
   echo "desktop web assets are missing: $PROJECT_ROOT/web/dist/index.html" >&2
   echo "From the project root, run: npm --prefix web ci && npm --prefix web run build" >&2
   exit 1
+fi
+
+if [[ ! "$APP_VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ || ! "$APP_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+  echo "App version must be major.minor.patch and build number must be a positive integer" >&2
+  exit 1
+fi
+if [[ -n "$SPARKLE_FEED_URL" || -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  if [[ ! "$SPARKLE_FEED_URL" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]+)?/[^[:space:]]+$ ||
+        ! "$SPARKLE_PUBLIC_ED_KEY" =~ ^[a-zA-Z0-9+/]{43}=$ ]]; then
+    echo "Sparkle requires an HTTPS feed URL and a valid EdDSA public key" >&2
+    exit 1
+  fi
 fi
 
 if [[ -z "$BUILD_ID" ]]; then
@@ -32,6 +49,11 @@ swift build -c "$CONFIGURATION" >/dev/null
 BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
 EXECUTABLE="$BIN_DIR/$APP_NAME"
 
+SPARKLE_FRAMEWORK_SOURCE="$SPARKLE_ARTIFACTS/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [[ ! -d "$SPARKLE_FRAMEWORK_SOURCE" ]]; then
+  echo "Sparkle framework is missing after SwiftPM build" >&2
+  exit 1
+fi
 if [[ ! -x "$EXECUTABLE" ]]; then
   echo "executable not found: $EXECUTABLE" >&2
   exit 1
@@ -43,6 +65,9 @@ if [[ "$APP_NAME" == "抓包工具" ]]; then
 fi
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/$APP_NAME"
+SPARKLE_FRAMEWORK="$CONTENTS_DIR/Frameworks/Sparkle.framework"
+ditto "$SPARKLE_FRAMEWORK_SOURCE" "$SPARKLE_FRAMEWORK"
+cp "$SPARKLE_ARTIFACTS/LICENSE" "$RESOURCES_DIR/Sparkle-LICENSE.txt"
 printf '%s\n' "$BUILD_ID" >"$RESOURCES_DIR/backend-build-id.txt"
 
 if [[ ! -f "$ICON_SOURCE" ]]; then
@@ -120,9 +145,9 @@ cat >"$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>$APP_BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
@@ -133,14 +158,37 @@ cat >"$CONTENTS_DIR/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [[ -n "$SPARKLE_FEED_URL" ]]; then
+  plutil -insert SUFeedURL -string "$SPARKLE_FEED_URL" "$CONTENTS_DIR/Info.plist"
+  plutil -insert SUPublicEDKey -string "$SPARKLE_PUBLIC_ED_KEY" "$CONTENTS_DIR/Info.plist"
+  plutil -insert SUEnableAutomaticChecks -bool NO "$CONTENTS_DIR/Info.plist"
+  plutil -insert SUAllowsAutomaticUpdates -bool NO "$CONTENTS_DIR/Info.plist"
+  plutil -insert SUVerifyUpdateBeforeExtraction -bool YES "$CONTENTS_DIR/Info.plist"
+  plutil -insert SURequireSignedFeed -bool YES "$CONTENTS_DIR/Info.plist"
+fi
+
 printf 'APPL????' >"$CONTENTS_DIR/PkgInfo"
 
 SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:--}"
-if [[ "$SIGN_IDENTITY" == "-" ]]; then
-  codesign --force --sign - "$APP_DIR"
-else
-  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_DIR"
+SIGN_ARGS=(--force --sign "$SIGN_IDENTITY")
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  SIGN_ARGS+=(--options runtime --timestamp)
+  if [[ "$EMBED_RUNTIME" == "1" ]]; then
+    # Notarization inspects the Mach-O executables and libraries inside Resources too.
+    while IFS= read -r -d '' component; do
+      if [[ "$(file -b "$component")" == Mach-O* ]]; then
+        codesign "${SIGN_ARGS[@]}" --preserve-metadata=identifier,entitlements "$component"
+      fi
+    done < <(find "$RESOURCES_DIR/runtime" "$RESOURCES_DIR/physical-runtime" -type f \
+      \( -perm -111 -o -name '*.so' -o -name '*.dylib' \) -print0)
+  fi
 fi
+SPARKLE_VERSION_DIR="$SPARKLE_FRAMEWORK/Versions/Current"
+for component in "$SPARKLE_VERSION_DIR/Autoupdate" "$SPARKLE_VERSION_DIR/Updater.app" "$SPARKLE_VERSION_DIR"/XPCServices/*.xpc; do
+  codesign "${SIGN_ARGS[@]}" --preserve-metadata=identifier,entitlements "$component"
+done
+codesign "${SIGN_ARGS[@]}" "$SPARKLE_FRAMEWORK"
+codesign "${SIGN_ARGS[@]}" "$APP_DIR"
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 echo "$APP_DIR"

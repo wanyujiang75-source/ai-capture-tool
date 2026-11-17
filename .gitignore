@@ -36,6 +36,7 @@ runtime/
 release/*.tar.gz
 release/*.zip
 release/*.sha256
+release/.updates/
 
 # Downloaded/vendor binaries.
 tools/frida/

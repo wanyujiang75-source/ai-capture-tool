@@ -2687,6 +2687,14 @@ def api_stop_capture(device_id: str = DEFAULT_DEVICE_ID) -> Dict[str, Any]:
     }
 
 
+@app.get("/api/desktop/update-status")
+def api_desktop_update_status() -> Dict[str, Any]:
+    return {
+        "desktop": desktop_runtime_metadata(),
+        "capture_active": bool(list_active_sessions()),
+    }
+
+
 @app.post("/api/desktop/stop-captures")
 def api_desktop_stop_captures() -> Dict[str, Any]:
     weak_network_service.restore_all()

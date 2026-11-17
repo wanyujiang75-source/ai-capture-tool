@@ -83,6 +83,10 @@ struct APIClient: LogcatAPI, DeviceDiscoveryAPI, JenkinsPackageAPI, ForegroundTa
         return URL(string: "http://127.0.0.1:7001")!
     }
 
+    func readDesktopUpdateStatus() async throws -> DesktopUpdateBackendStatus {
+        try await get("api/desktop/update-status", timeoutInterval: 3)
+    }
+
     func getDevices() async throws -> [CaptureDevice] {
         let response: DevicesResponse = try await get("api/devices")
         return response.devices

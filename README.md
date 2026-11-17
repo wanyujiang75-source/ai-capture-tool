@@ -201,16 +201,7 @@ TRACEDECK_RELEASE_KIND=development ./release/package.sh
 
 输出的桌面包名包含 `development-arm64.zip`，使用 ad-hoc 签名，只用于本机/内部开发验收，不能当作已通过 Gatekeeper 的公开分发包。
 
-生成他人可下载的正式包：
-
-```bash
-TRACEDECK_RELEASE_KIND=distribution \
-MACOS_SIGN_IDENTITY="Developer ID Application: Company Name (TEAMID)" \
-MACOS_NOTARY_PROFILE="ai-capture-notary" \
-./release/package.sh
-```
-
-正式模式会在构建前校验 Developer ID 证书和 Keychain 中的 notary profile，然后依次执行整包签名校验、Apple 公证、staple 和 Gatekeeper 评估。任何一步失败都不会产生正式 ZIP。首次使用前需由证书管理员执行 `xcrun notarytool store-credentials ai-capture-notary ...`。
+正式发布需要 Apple Developer ID、公证配置和 Sparkle 签名密钥。按[桌面端发布说明](macos-native/README.md#发布支持应用内更新的正式版)构建手动安装 ZIP、签名更新 ZIP 和版本清单，再发布到同一个 GitHub 正式 Release。安装支持应用内更新的正式版后，可以从「抓包工具 → 检查更新…」升级。
 
 发布包包含 SwiftUI 原生 `.app`、后端代码、抓包脚本、`web/dist`、桌面打包脚本、配置模板、README、`setup.sh`、`start.sh`、`package.json` 和 `requirements-console.txt`。
 

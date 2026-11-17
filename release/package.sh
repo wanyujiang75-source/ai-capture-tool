@@ -7,6 +7,8 @@ RELEASE_KIND="${TRACEDECK_RELEASE_KIND:-development}"
 HOST_ARCH="$(uname -m)"
 SIGN_IDENTITY="${MACOS_SIGN_IDENTITY:--}"
 NOTARY_PROFILE="${MACOS_NOTARY_PROFILE:-}"
+UPDATE_RELEASES_URL="https://github.com/wanyujiang75-source/ai-capture-tool/releases"
+UPDATE_OUTPUT_DIR="$ROOT_DIR/release/.updates/$VERSION"
 ARCHIVE_NAME="TraceDeck-$VERSION.tar.gz"
 ARCHIVE_PATH="$ROOT_DIR/release/$ARCHIVE_NAME"
 if [[ "$RELEASE_KIND" == "distribution" ]]; then
@@ -33,6 +35,17 @@ case "$RELEASE_KIND" in
   development)
     ;;
   distribution)
+    if [[ -n "${SPARKLE_PRIVATE_ED_KEY_FILE:-}" ]]; then
+      if [[ ! -f "$SPARKLE_PRIVATE_ED_KEY_FILE" ]]; then
+        echo "Sparkle private key file is missing" >&2
+        exit 1
+      fi
+      private_key_path="$(realpath "$SPARKLE_PRIVATE_ED_KEY_FILE")"
+      if [[ "$private_key_path" == "$(cd "$ROOT_DIR" && pwd -P)/"* ]]; then
+        echo "Sparkle private key file must be outside the source checkout" >&2
+        exit 1
+      fi
+    fi
     if [[ "$SIGN_IDENTITY" != Developer\ ID\ Application:* ]]; then
       echo "distribution release requires MACOS_SIGN_IDENTITY=\"Developer ID Application: Company Name (TEAMID)\"" >&2
       exit 1
@@ -43,6 +56,19 @@ case "$RELEASE_KIND" in
     fi
     if ! security find-identity -v -p codesigning | grep -F "$SIGN_IDENTITY" >/dev/null; then
       echo "Developer ID Application identity is not available in the current Keychain: $SIGN_IDENTITY" >&2
+      exit 1
+    fi
+    if [[ ! "${TRACEDECK_VERSION:-}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ||
+          ! "${TRACEDECK_BUILD_NUMBER:-}" =~ ^[1-9][0-9]*$ || "$TRACEDECK_BUILD_NUMBER" == "1" ]]; then
+      echo "distribution release requires TRACEDECK_VERSION=major.minor.patch and TRACEDECK_BUILD_NUMBER greater than 1" >&2
+      exit 1
+    fi
+    if [[ ! "${SPARKLE_PUBLIC_ED_KEY:-}" =~ ^[a-zA-Z0-9+/]{43}=$ ]]; then
+      echo "distribution release requires SPARKLE_PUBLIC_ED_KEY for the Sparkle signing key" >&2
+      exit 1
+    fi
+    if [[ -e "$UPDATE_OUTPUT_DIR" ]]; then
+      echo "Update output already exists for this version: $UPDATE_OUTPUT_DIR" >&2
       exit 1
     fi
     ;;
@@ -88,8 +114,12 @@ if [[ ! -f "$ROOT_DIR/web/dist/index.html" ]]; then
   exit 1
 fi
 
-if command -v swift >/dev/null 2>&1; then
-  (cd "$ROOT_DIR/macos-native" && MACOS_SIGN_IDENTITY="$SIGN_IDENTITY" ./scripts/build-app.sh >/dev/null)
+if [[ "$RELEASE_KIND" == "distribution" ]]; then
+  AI_CAPTURE_APP_VERSION="$VERSION" SPARKLE_FEED_URL="$UPDATE_RELEASES_URL/latest/download/appcast.xml" \
+    MACOS_SIGN_IDENTITY="$SIGN_IDENTITY" "$ROOT_DIR/macos-native/scripts/build-app.sh" >/dev/null
+else
+  SPARKLE_FEED_URL="" SPARKLE_PUBLIC_ED_KEY="" \
+    MACOS_SIGN_IDENTITY="$SIGN_IDENTITY" "$ROOT_DIR/macos-native/scripts/build-app.sh" >/dev/null
 fi
 
 if [[ ! -d "$NATIVE_APP_PATH" ]]; then
@@ -102,6 +132,8 @@ if [[ "$RELEASE_KIND" == "distribution" ]]; then
   "$ROOT_DIR/release/notarize-app.sh" \
     "$NATIVE_APP_PATH" \
     "$DESKTOP_ARCHIVE_PATH"
+  "$ROOT_DIR/release/build-appcast.sh" "$NATIVE_APP_PATH" "$UPDATE_OUTPUT_DIR" \
+    "$UPDATE_RELEASES_URL/download/v$VERSION/"
 else
   ditto -c -k --sequesterRsrc --keepParent \
     "$NATIVE_APP_PATH" \
@@ -149,6 +181,7 @@ write_checksum "$DESKTOP_ARCHIVE_PATH"
     release/安装说明.md \
     release/package.sh \
     release/notarize-app.sh \
+    release/build-appcast.sh \
     package.json \
     package-lock.json \
     requirements-console.txt \
@@ -169,3 +202,7 @@ write_checksum "$DESKTOP_ARCHIVE_PATH"
 write_checksum "$ARCHIVE_PATH"
 echo "$DESKTOP_ARCHIVE_PATH"
 echo "$ARCHIVE_PATH"
+if [[ "$RELEASE_KIND" == "distribution" ]]; then
+  echo "$UPDATE_OUTPUT_DIR/AI-Capture-Update-$VERSION-arm64.zip"
+  echo "$UPDATE_OUTPUT_DIR/appcast.xml"
+fi

@@ -71,6 +71,12 @@ final class AppState: ObservableObject {
     private var deviceStartRunID: UUID?
     private var noticeDismissTask: Task<Void, Never>?
 
+    var hasPendingWorkForUpdate: Bool {
+        captureWorkflowRunID != nil || deviceStartRunID != nil || captureActionState == .loading
+            || androidPhysicalController.busy || iosController.busy || breakpointController.busy
+            || jenkinsInstallState == .loading || localInstallState == .loading
+    }
+
     var visibleFlows: [FlowSummary] {
         flows.filter { !clearedFlowIDs.contains($0.id) }
     }

@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| DESKTOP-UPDATER | DONE | 原生桌面应用内安全更新及签名发布产物 | goal.md、progress.md、specs/desktop-updater.md、macos-native Swift/打包/说明、release 打包、最小只读后端状态和测试、README.md、INSTALL.md、.gitignore | Swift 全量；更新状态测试；构建及严格签名；双版本签名 appcast 和更新包校验；shell/diff 检查 | origin/main c25d606；基线 Swift 211 项通过。新增门控、版本与 appcast 缺失和密钥位置 RED 已确认。修正 Swift actor 与 Sparkle 方法导入名后，Swift 215 项、后端与核心 187 项、打包 11 项通过，补测密钥位置和正式包前置检查 2 项通过。两个隔离版本的签名和错误密钥测试通过。 | 本地提交。正式 Apple 公证及 GitHub 线上升级待发行证书、公证凭据和授权 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-RECOVERY | DONE | 发布并启动网络恢复确认版 | goal.md、progress.md、specs/release-recovery-confirm.md、发布资产及本机应用 | 主分支远端一致；包内版本、签名、校验一致；本机新版启动；恢复记录和 VPN 配置保留 | main 1e63c08；Python 41项；预览包签名、双运行时、构建号和本地/远端SHA-256通过；新版已启动，两个恢复记录摘要不变 | 用户自行确认对应手机网络并操作 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |

@@ -4,7 +4,16 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let mainWindowIdentifier = NSUserInterfaceItemIdentifier("ai-capture-main-window")
-    private let fallbackAppState = AppState()
+    let appState = AppState()
+    lazy var desktopUpdater = DesktopUpdater { [weak self] in
+        guard let self else { return .backendUnavailable }
+        let runtime = RuntimeManager.shared
+        return await DesktopUpdateSafety.blocker(
+            runtime: runtime.runtimeDirectory,
+            pendingWork: { self.appState.hasPendingWorkForUpdate },
+            captureActive: { try await runtime.captureActiveForUpdate() }
+        )
+    }
     private var fallbackWindowController: NSWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if desktopUpdater.blocksQuit { return .terminateCancel }
         let physical = AndroidPhysicalQuitSafety.requiresWarning(runtimeDirectory: RuntimeManager.shared.runtimeDirectory)
         guard physical || IOSQuitSafety.requiresWarning(runtimeDirectory: RuntimeManager.shared.runtimeDirectory) else { return .terminateNow }
         let alert = NSAlert()
@@ -58,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.minSize = NSSize(width: 1180, height: 760)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(
-            rootView: ContentView().environmentObject(fallbackAppState)
+            rootView: DesktopContent(appState: appState, updater: desktopUpdater)
         )
         window.center()
 
@@ -73,24 +83,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct AICaptureNativeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var appState = AppState()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(appState)
+            DesktopContent(appState: appDelegate.appState, updater: appDelegate.desktopUpdater)
                 .frame(minWidth: 1180, minHeight: 760)
         }
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    appDelegate.desktopUpdater.checkForUpdates()
+                }
                 Button("刷新状态") {
                     Task {
-                        await appState.refreshRuntimeStatus()
+                        await appDelegate.appState.refreshRuntimeStatus()
                     }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
             }
         }
+    }
+}
+
+private struct DesktopContent: View {
+    let appState: AppState
+    @ObservedObject var updater: DesktopUpdater
+
+    var body: some View {
+        ContentView()
+            .environmentObject(appState)
+            .disabled(updater.isUpdating)
     }
 }
