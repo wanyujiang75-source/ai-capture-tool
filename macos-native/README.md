@@ -74,7 +74,7 @@ Apple 公证成功后，脚本生成并验证 Sparkle 签名。发布同一 tag 
 | `release/.updates/0.2.0/AI-Capture-Update-0.2.0-arm64.zip` | Sparkle 安装 |
 | `release/.updates/0.2.0/appcast.xml` | 已签名的版本清单 |
 
-先以 `v0.2.0` 创建 GitHub Release 草稿，关联构建对应的提交，上传四个文件。核对清单中的下载地址和资产名后一起发布，将该版设为最新正式 Release。App 使用固定的 `/releases/latest/download/appcast.xml`，清单使用带版本 tag 的包地址。签名后保留文件原样。首个正式版发布后，验证「检查更新…」能够读取清单并显示已是最新版。从第二个正式版开始，用上一版验证下载、安装、重启和原有数据。
+先以 `v0.2.0` 创建 GitHub Release 草稿，关联构建对应的提交，上传四个文件。把要在桌面「更新」窗口显示的版本说明写入 GitHub Release 正文。核对清单中的下载地址和资产名后一起发布，将该版设为最新正式 Release。App 使用固定的 `/releases/latest/download/appcast.xml`，清单使用带版本 tag 的包地址。签名后保留文件原样。首个正式版发布后，验证「检查更新…」能够读取清单并显示已是最新版。从第二个正式版开始，用上一版验证下载、安装、重启和原有数据。
 
 Jenkins 包源：
 

@@ -13,11 +13,13 @@ final class DesktopUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         self.blocker = blocker
     }
 
+    var supportsInstallation: Bool { Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil }
+
     var blocksQuit: Bool { isUpdating && !installApproved }
 
     func checkForUpdates() {
         guard !isUpdating else { return }
-        guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else {
+        guard supportsInstallation else {
             showMessage("请手动更新", detail: "请从发布页下载新版。安装支持应用内更新的正式版后，可以在此检查更新。")
             return
         }
@@ -69,9 +71,8 @@ final class DesktopUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         alert.informativeText = detail
         alert.addButton(withTitle: "好")
         alert.addButton(withTitle: "打开发布页")
-        if alert.runModal() == .alertSecondButtonReturn,
-           let url = URL(string: "https://github.com/wanyujiang75-source/ai-capture-tool/releases") {
-            NSWorkspace.shared.open(url)
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.open(DesktopReleaseCatalog.releasesPage)
         }
     }
 }

@@ -1,8 +1,12 @@
 import SwiftUI
 
 struct ContentView: View {
+    let updater: DesktopUpdater
+
     @EnvironmentObject private var appState: AppState
     @State private var showsRuntimeCheck = false
+    @State private var showsUpdate = false
+    @State private var installUpdateAfterDismiss = false
 
     var body: some View {
         NavigationSplitView {
@@ -39,6 +43,25 @@ struct ContentView: View {
                 } label: {
                     Label(AppCopy.Navigation.runtimeCheck, systemImage: "stethoscope")
                 }
+            }
+            ToolbarItem {
+                Button {
+                    showsUpdate = true
+                } label: {
+                    Label("更新", systemImage: "arrow.down.circle")
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+        }
+        .sheet(isPresented: $showsUpdate, onDismiss: {
+            if installUpdateAfterDismiss {
+                installUpdateAfterDismiss = false
+                updater.checkForUpdates()
+            }
+        }) {
+            DesktopUpdateView(supportsInstallation: updater.supportsInstallation) {
+                installUpdateAfterDismiss = true
+                showsUpdate = false
             }
         }
         .sheet(isPresented: $showsRuntimeCheck) {

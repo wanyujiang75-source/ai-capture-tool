@@ -111,7 +111,7 @@ private struct DesktopContent: View {
     @ObservedObject var updater: DesktopUpdater
 
     var body: some View {
-        ContentView()
+        ContentView(updater: updater)
             .environmentObject(appState)
             .disabled(updater.isUpdating)
     }

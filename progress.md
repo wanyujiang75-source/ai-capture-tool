@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| DESKTOP-UPDATE-ENTRY | DONE | 桌面工具栏更新与下载 | goal.md、progress.md、specs/desktop-updater.md、Swift 主窗口和更新视图/API/测试、INSTALL.md、macos-native/README.md、release/安装说明.md | 预览兼容包和正式包选择；加载/重试/无包；说明与下载；Swift 全量及隔离构建、真实 GitHub 资产链接检查 | 预期 RED 为发布目录缺失和限额回退。实机首次出现 GitHub API 403，随后定位站点 HEAD 的 Accept 导致 406 并修正。最终 Swift 220 项通过，隔离 App 严格签名通过，实机点击更新后显示真实预览说明、ZIP 和 SHA-256，ZIP 请求 HTTP 206、校验文件可读 | 本地提交；已发布及已安装版本由后续发行替换 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | DESKTOP-UPDATER | DONE | 原生桌面应用内安全更新及签名发布产物 | goal.md、progress.md、specs/desktop-updater.md、macos-native Swift/打包/说明、release 打包、最小只读后端状态和测试、README.md、INSTALL.md、.gitignore | Swift 全量；更新状态测试；构建及严格签名；双版本签名 appcast 和更新包校验；shell/diff 检查 | origin/main c25d606；基线 Swift 211 项通过。新增门控、版本与 appcast 缺失和密钥位置 RED 已确认。修正 Swift actor 与 Sparkle 方法导入名后，Swift 215 项、后端与核心 187 项、打包 11 项通过，补测密钥位置和正式包前置检查 2 项通过。两个隔离版本的签名和错误密钥测试通过。 | 本地提交。正式 Apple 公证及 GitHub 线上升级待发行证书、公证凭据和授权 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
