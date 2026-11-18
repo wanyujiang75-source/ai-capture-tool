@@ -1,5 +1,7 @@
 # 桌面端完整功能验收目标
 
+2026-11-18 本机桌面升级到 32895f9。构建含内嵌运行时的完整 App，确认抓包空闲、备份应用并保留运行数据，替换 /Applications/抓包工具.app，启动后验证后端构建号和更新入口。仅本机交付。
+
 2026-11-17 桌面工具栏增加「更新」，显示 GitHub Release 的更新说明并提供 macOS Apple Silicon ZIP 下载。正式版复用签名安装流程。验证版本选择、说明和下载链接、Swift 回归及隔离构建。详见 specs/desktop-updater.md。
 
 2026-11-17 基于 GitHub main c25d606 实现 macOS 原生桌面 Sparkle 2 更新。用户主动检查、确认并重启，抓包或手机网络待恢复时延后。正式发行包和 appcast 由 GitHub Releases 托管。验证 Swift、后端状态、版本和签名产物，保留试用包手动升级路径。本轮不推送、不发布、不改本机已安装应用。详见 specs/desktop-updater.md。

@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| DESKTOP-LOCAL-UPGRADE | DONE | 本机安装含更新入口的桌面 App | goal.md、progress.md、specs/desktop-updater.md、工作树构建产物、/Applications/抓包工具.app 和本地备份 | 完整构建和签名；确认抓包空闲；备份和替换；新 App 打开且后端构建号匹配；实见更新按钮和发布说明 | 原版 1e63c08d4e90；真机状态请求缺少桌面头时返回 403，按 App 请求头复查后确认无抓包任务。32895f903adb 完整 arm64 App 通过签名、双运行时导入和 APK 完整性检查。安装后 UI 已打开更新说明、ZIP 和校验文件，后端 idle 且构建号匹配，三条恢复记录的摘要与升级前相同 | 旧版保存在 desktop-backups/20261118-104809-1e63c08.hCVtm1/抓包工具.app |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | DESKTOP-UPDATE-ENTRY | DONE | 桌面工具栏更新与下载 | goal.md、progress.md、specs/desktop-updater.md、Swift 主窗口和更新视图/API/测试、INSTALL.md、macos-native/README.md、release/安装说明.md | 预览兼容包和正式包选择；加载/重试/无包；说明与下载；Swift 全量及隔离构建、真实 GitHub 资产链接检查 | 预期 RED 为发布目录缺失和限额回退。实机首次出现 GitHub API 403，随后定位站点 HEAD 的 Accept 导致 406 并修正。最终 Swift 220 项通过，隔离 App 严格签名通过，实机点击更新后显示真实预览说明、ZIP 和 SHA-256，ZIP 请求 HTTP 206、校验文件可读 | 本地提交；已发布及已安装版本由后续发行替换 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
