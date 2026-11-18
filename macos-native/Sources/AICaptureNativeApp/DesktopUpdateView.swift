@@ -1,8 +1,20 @@
+import AppKit
 import SwiftUI
 
 struct DesktopUpdateView: View {
     private enum UpdateState {
         case loading, available(DesktopRelease), current, unknownVersion, unavailable, failed
+    }
+
+    private enum DownloadState {
+        case idle, downloading(Double?), verifying, saved(URL), failed(String)
+
+        var isWorking: Bool {
+            switch self {
+            case .downloading, .verifying: true
+            case .idle, .saved, .failed: false
+            }
+        }
     }
 
     let supportsInstallation: Bool
@@ -12,6 +24,8 @@ struct DesktopUpdateView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var state: UpdateState = .loading
     @State private var retryCount = 0
+    @State private var downloadID: UUID?
+    @State private var downloadState: DownloadState = .idle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -29,6 +43,10 @@ struct DesktopUpdateView: View {
             statusContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
+            if case let .available(release) = state {
+                downloadStatus(hasChecksum: release.checksumURL != nil)
+            }
+
             Divider()
             HStack(spacing: 12) {
                 Link("GitHub 发布页", destination: DesktopReleaseCatalog.releasesPage)
@@ -40,16 +58,24 @@ struct DesktopUpdateView: View {
                     .keyboardShortcut(.cancelAction)
 
                 if case let .available(release) = state {
-                    if supportsInstallation {
-                        Link("下载 ZIP", destination: release.downloadURL)
-                            .buttonStyle(.bordered)
-                    } else {
-                        Link("下载 ZIP", destination: release.downloadURL)
-                            .buttonStyle(.borderedProminent)
+                    if case let .saved(file) = downloadState {
+                        Button("在 Finder 中显示") {
+                            NSWorkspace.shared.activateFileViewerSelecting([file])
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else if release.checksumURL != nil {
+                        if supportsInstallation {
+                            downloadButton
+                                .buttonStyle(.bordered)
+                        } else {
+                            downloadButton
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
                     if supportsInstallation {
                         Button("应用内安装…", action: install)
                             .buttonStyle(.borderedProminent)
+                            .disabled(downloadState.isWorking)
                     }
                 }
             }
@@ -74,6 +100,65 @@ struct DesktopUpdateView: View {
                 guard !Task.isCancelled else { return }
                 state = .failed
             }
+        }
+        .task(id: downloadID) {
+            guard let id = downloadID, case let .available(release) = state else { return }
+            do {
+                let file = try await DesktopReleaseDownload.download(release) { event in
+                    Task { @MainActor in
+                        guard downloadID == id, case .downloading = downloadState else { return }
+                        switch event {
+                        case let .progress(fraction): downloadState = .downloading(fraction)
+                        case .verifying: downloadState = .verifying
+                        }
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                downloadState = .saved(file)
+            } catch {
+                guard !Task.isCancelled else { return }
+                let message = (error as? DesktopReleaseDownload.Failure)?.errorDescription
+                downloadState = .failed(message ?? "下载失败，请检查网络后重试。")
+            }
+        }
+    }
+
+    private var downloadButton: some View {
+        Button("下载 ZIP") {
+            downloadState = .downloading(nil)
+            downloadID = UUID()
+        }
+        .disabled(downloadState.isWorking)
+    }
+
+    @ViewBuilder private func downloadStatus(hasChecksum: Bool) -> some View {
+        switch downloadState {
+        case .idle:
+            if !hasChecksum {
+                Text("此版本缺少校验文件，请查看 GitHub 发布页。")
+                    .foregroundStyle(.secondary)
+            }
+        case let .downloading(fraction):
+            if let fraction {
+                ProgressView(value: fraction) {
+                    Text("正在下载 ZIP…")
+                } currentValueLabel: {
+                    Text(fraction, format: .percent.precision(.fractionLength(0)))
+                }
+            } else {
+                ProgressView("正在下载 ZIP…")
+            }
+        case .verifying:
+            ProgressView("正在校验 SHA-256…")
+        case let .saved(file):
+            Label("校验通过，已保存到「下载」", systemImage: "checkmark.circle")
+            Text(verbatim: file.lastPathComponent)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        case let .failed(message):
+            Text(message)
+                .foregroundStyle(.secondary)
         }
     }
 

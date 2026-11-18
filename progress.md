@@ -2,6 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| DESKTOP-NATIVE-DOWNLOAD | DOING | 应用内下载并自动发布 1.0.1 | goal.md、progress.md、specs/desktop-updater.md、DesktopReleaseDownload.swift、DesktopUpdateView.swift、DesktopReleaseDownloadTests.swift、release/desktop-previews/1.0.1-in-app-download.md | Swift 下载校验和回归、CI 发布 1.0.1、从隔离桌面窗口下载 GitHub ZIP 并在 Finder 中显示，核对文件摘要及包内版本 | 新校验测试先因实现缺失而失败，再通过。初始实验中的 async 下载委托不回调进度，改用下载任务字节计数。分段 HTTP 实测中途进度和 2097152 字节文件，发布脚本 8 项通过 | 推送说明触发 1.0.1，验收真实 GitHub 下载 |
 | DESKTOP-SEMVER-RELEASE | DONE | 1.0.0 版本判断并自动发布 | goal.md、progress.md、specs/desktop-updater.md、Swift 更新目录/视图/版本测试、build-app.sh、GitHub workflow/发布脚本及测试、macos-native/README.md、release/desktop-previews/1.0.0-version-check.md | 正确比较语义版本；当前版本无下载按钮；自动发布 1.0.0；旧 App 能读到并下载；下载包和校验一致 | Swift 全量 224 项、发布测试 8 项通过。main da2def4 的 GitHub Actions 44232103754 重跑发布步骤后公开预览版。原已安装 0.1.0 能看到 1.0.0 说明，点击下载得到 194898888 字节 ZIP，SHA-256 校验、应用签名、arm64 架构、内嵌 1.0.0 和构建号均已核对。隔离运行同源 1.0.0 并读真实 GitHub Release，原生界面显示「已是最新版」且无下载按钮 | 首次草稿出现在列表有延迟，main 573f395 改用创建接口返回的草稿，后续 Actions 44233016787 构建及测试通过，当前推送无新说明，发布步骤跳过 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
