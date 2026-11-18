@@ -39,6 +39,16 @@ TRACEDECK_RELEASE_KIND=development ./release/package.sh
 
 开发 ZIP 使用 ad-hoc 签名，文件名含 `development-arm64`，通过 GitHub 预发布页手动分发。
 
+## 通过 GitHub Actions 发布预览版
+
+准备好新版本代码后，在同一次推送中新增一份 `release/desktop-previews/YYYYMMDD-name.md`，写上要显示给同事的更新说明，再推送到 `main`。例如 `release/desktop-previews/20261118-update-notes.md`。每次发版使用新的文件名。
+
+「Desktop preview」工作流使用推送结束时的提交，在 GitHub 的 macOS arm64 runner 上构建并验证安装包。发布步骤创建预览 Release，上传桌面 ZIP 和 SHA-256，再公开两项文件。已装带「更新」按钮的同事可以从该入口读到说明并下载。
+
+同一个推送新增一份说明即可。修改历史说明时，直接在已发布 Release 上更正。需要恢复中断的发布任务时，在 Actions 选择重新运行失败的任务，以继续使用原构建产物。
+
+自动发版复用已发布且签名一致的 Android 连接助手。助手源码变更时，需要先用原签名构建发行基准，并在 `release/desktop-preview-ci.py` 更新基准包信息和源码树摘要。这样已有助手可原位升级。
+
 ## 发布支持应用内更新的正式版
 
 首次发布准备 Apple Developer ID Application 签名身份及 `xcrun notarytool` 的钥匙串配置。

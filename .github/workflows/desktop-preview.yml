@@ -1,0 +1,105 @@
+name: Desktop preview
+
+on:
+  push:
+    branches:
+      - main
+      - codex/desktop-updater
+    paths:
+      - 'release/desktop-previews/*.md'
+      - 'release/desktop-preview-ci.py'
+      - 'release/package.sh'
+      - 'macos-native/scripts/build-app.sh'
+      - '.github/workflows/desktop-preview.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-preview-${{ github.ref }}
+  queue: max
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 40
+    outputs:
+      asset: ${{ steps.plan.outputs.asset }}
+      notes: ${{ steps.plan.outputs.notes }}
+      tag: ${{ steps.plan.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: plan
+        name: Identify the release notes and build
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: python3 release/desktop-preview-ci.py plan "$BEFORE_SHA" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.10.7"
+          enable-cache: false
+
+      - name: Test desktop code and release automation
+        run: |
+          test "$(uname -m)" = arm64
+          swift --version
+          node --version
+          python3 -m unittest discover -s tests -p test_desktop_preview_ci.py
+          swift test --package-path macos-native
+
+      - name: Retrieve the signed Android helper from the release baseline
+        run: python3 release/desktop-preview-ci.py bridge "$RUNNER_TEMP/android-bridge.apk"
+
+      - name: Build and verify the Apple Silicon ZIP
+        env:
+          TRACEDECK_VERSION: ${{ steps.plan.outputs.version }}
+          TRACEDECK_RELEASE_KIND: development
+          MACOS_SIGN_IDENTITY: "-"
+          EMBED_RUNTIME: "1"
+          ASSET_NAME: ${{ steps.plan.outputs.asset }}
+        run: |
+          export ANDROID_BRIDGE_APK_PATH="$RUNNER_TEMP/android-bridge.apk"
+          export AI_CAPTURE_BUILD_ID="${GITHUB_SHA:0:12}"
+          ./release/package.sh
+          python3 release/desktop-preview-ci.py verify release "$ASSET_NAME" "$GITHUB_SHA" "$ANDROID_BRIDGE_APK_PATH"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: desktop-preview
+          path: |
+            release/${{ steps.plan.outputs.asset }}
+            release/${{ steps.plan.outputs.asset }}.sha256
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 7
+
+  publish:
+    if: github.repository == 'wanyujiang75-source/ai-capture-tool' && github.ref == 'refs/heads/main' && needs.build.outputs.notes != ''
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: desktop-preview
+          path: release-assets
+      - name: Publish the verified preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES_PATH: ${{ needs.build.outputs.notes }}
+          TAG: ${{ needs.build.outputs.tag }}
+          ASSET_NAME: ${{ needs.build.outputs.asset }}
+        run: |
+          python3 release/desktop-preview-ci.py publish "$GITHUB_REPOSITORY" "$NOTES_PATH" "$GITHUB_SHA" "$TAG" "$ASSET_NAME" release-assets

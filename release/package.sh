@@ -106,7 +106,7 @@ PORTABLE_USER_GUIDE_PATH="$PACKAGE_TEMP_DIR/USER_GUIDE.md"
 cp "$USER_GUIDE_PATH" "$PORTABLE_USER_GUIDE_PATH"
 
 if command -v npm >/dev/null 2>&1; then
-  (cd "$ROOT_DIR/web" && npm install && npm run build)
+  (cd "$ROOT_DIR/web" && npm ci && npm run build)
 fi
 
 if [[ ! -f "$ROOT_DIR/web/dist/index.html" ]]; then
@@ -182,6 +182,7 @@ write_checksum "$DESKTOP_ARCHIVE_PATH"
     release/package.sh \
     release/notarize-app.sh \
     release/build-appcast.sh \
+    release/desktop-preview-ci.py \
     package.json \
     package-lock.json \
     requirements-console.txt \

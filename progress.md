@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| DESKTOP-PREVIEW-CI | DOING | 自动构建和发布桌面预览版 | goal.md、progress.md、specs/desktop-updater.md、.github/workflows/desktop-preview.yml、release/desktop-preview-ci.py、tests/test_desktop_preview_ci.py、macos-native/scripts/build-app.sh、release/package.sh、macos-native/README.md | 发版意图、tag 绑定、草稿恢复与校验测试；完整云端 ZIP 验证；main 普通推送不公开新版 | 本地 6 项触发与发布流程测试通过。RED 覆盖未实现的流程和空上传记录恢复。旧 actionlint 1.7.12 不支持 GitHub 已文档化的 queue 字段，忽略该已知诊断后语法检查通过 | 推送验证分支运行 macOS 云端包构建 |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-DESKTOP-UPDATE-ENTRY | DONE | 发布桌面更新入口预览包 | goal.md、progress.md、specs/desktop-updater.md、release/notes-20261118-desktop-update.md、构建 ZIP 和 SHA-256、GitHub tag 与 Release | 完整 arm64 ZIP 的包内版本号、签名及指南；同 tag 的预览版和两项资产；匿名重新下载校验，桌面更新页可识别 | tag 精确指向 32895f9。中文 ZIP 路径经 UTF-8 复查，解压签名、arm64、两套运行时、桥接 APK 和指南通过；zsh refspec 参数修正，草稿按 tag 查 404 后用发行 ID 验证。2026-11-18 10:56 已公开，ZIP 206012882 字节，匿名 HTTP 200 重新下载与本地逐字节一致。桌面发布目录读到本版说明、ZIP 和校验 | 同事可从该 Release 手动下载并替换旧 App |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
