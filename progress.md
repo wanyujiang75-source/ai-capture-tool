@@ -2,6 +2,10 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
+| RELEASE-DESKTOP-UPDATE-ENTRY | DONE | 发布桌面更新入口预览包 | goal.md、progress.md、specs/desktop-updater.md、release/notes-20261118-desktop-update.md、构建 ZIP 和 SHA-256、GitHub tag 与 Release | 完整 arm64 ZIP 的包内版本号、签名及指南；同 tag 的预览版和两项资产；匿名重新下载校验，桌面更新页可识别 | tag 精确指向 32895f9。中文 ZIP 路径经 UTF-8 复查，解压签名、arm64、两套运行时、桥接 APK 和指南通过；zsh refspec 参数修正，草稿按 tag 查 404 后用发行 ID 验证。2026-11-18 10:56 已公开，ZIP 206012882 字节，匿名 HTTP 200 重新下载与本地逐字节一致。桌面发布目录读到本版说明、ZIP 和校验 | 同事可从该 Release 手动下载并替换旧 App |
+
+| ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
 | DESKTOP-LOCAL-UPGRADE | DONE | 本机安装含更新入口的桌面 App | goal.md、progress.md、specs/desktop-updater.md、工作树构建产物、/Applications/抓包工具.app 和本地备份 | 完整构建和签名；确认抓包空闲；备份和替换；新 App 打开且后端构建号匹配；实见更新按钮和发布说明 | 原版 1e63c08d4e90；真机状态请求缺少桌面头时返回 403，按 App 请求头复查后确认无抓包任务。32895f903adb 完整 arm64 App 通过签名、双运行时导入和 APK 完整性检查。安装后 UI 已打开更新说明、ZIP 和校验文件，后端 idle 且构建号匹配，三条恢复记录的摘要与升级前相同 | 旧版保存在 desktop-backups/20261118-104809-1e63c08.hCVtm1/抓包工具.app |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
