@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
 
+# Keep release pushes queued so a later build cannot publish first.
 concurrency:
   group: desktop-preview-${{ github.ref }}
   queue: max

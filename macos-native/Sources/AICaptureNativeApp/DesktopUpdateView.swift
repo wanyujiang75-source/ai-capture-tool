@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DesktopUpdateView: View {
-    private enum State {
+    private enum UpdateState {
         case loading, available(DesktopRelease), unavailable, failed
     }
 
@@ -9,7 +9,7 @@ struct DesktopUpdateView: View {
     let install: () -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var state: State = .loading
+    @State private var state: UpdateState = .loading
     @State private var retryCount = 0
 
     var body: some View {
@@ -53,7 +53,7 @@ struct DesktopUpdateView: View {
             do {
                 let release = try await DesktopReleaseCatalog().latest(includePreview: !supportsInstallation)
                 guard !Task.isCancelled else { return }
-                state = release.map(State.available) ?? .unavailable
+                state = release.map(UpdateState.available) ?? .unavailable
             } catch {
                 guard !Task.isCancelled else { return }
                 state = .failed
