@@ -2,7 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| DESKTOP-PREVIEW-CI | DOING | 自动构建和发布桌面预览版 | goal.md、progress.md、specs/desktop-updater.md、.github/workflows/desktop-preview.yml、release/desktop-preview-ci.py、tests/test_desktop_preview_ci.py、macos-native/scripts/build-app.sh、macos-native/Sources/AICaptureNativeApp/DesktopUpdateView.swift、release/package.sh、macos-native/README.md | 发版意图、tag 绑定、草稿恢复与校验测试；完整云端 ZIP 验证；main 普通推送不公开新版 | 本地 6 项触发与发布流程测试通过。RED 覆盖未实现的流程和空上传记录恢复。旧 actionlint 1.7.12 不支持 GitHub 已文档化的 queue 字段，忽略该已知诊断后语法检查通过 | 首次 GitHub runner 发现 SwiftUI @State 被私有同名枚举遮蔽，修改视图枚举名称并重跑验证 |
+| DESKTOP-PREVIEW-CI | DONE | 自动构建和发布桌面预览版 | goal.md、progress.md、specs/desktop-updater.md、.github/workflows/desktop-preview.yml、release/desktop-preview-ci.py、tests/test_desktop_preview_ci.py、macos-native/scripts/build-app.sh、macos-native/Sources/AICaptureNativeApp/DesktopUpdateView.swift、release/package.sh、macos-native/README.md | 发版意图、tag 绑定、草稿恢复与校验测试；完整云端 ZIP 验证；main 普通推送不公开新版 | 本地触发与发布流程 6 项及 Swift 220 项通过，同签名助手打包验证通过。actionlint 1.7.12 的 queue 诊断以 GitHub 实际运行确认；首轮云端 SwiftUI 类型命名冲突已修复。验证分支 44229093694 和 main 44229669910 均完成构建、签名校验及上传，main 发布任务 skipped，最新公开预览版仍为 32895f9 | 新增一份发版说明并推送 main 时触发真实发布 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
