@@ -74,6 +74,24 @@ class DesktopPreviewCITests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "higher than"):
             check(existing, "tag-older", "0.9.9")
 
+    def test_uses_the_created_draft_without_a_second_list_query(self):
+        draft = {"id": 42, "name": "抓包工具桌面预览版 v1.0.0", "draft": True, "prerelease": True}
+        args = []
+
+        def run(*call):
+            args.append(call)
+            return json.dumps(draft)
+
+        result = self.cli["create_preview_draft"](
+            run, "example/app", "desktop-preview-20261118-abcdef1", "抓包工具桌面预览版 v1.0.0", Path("notes.md")
+        )
+        self.assertEqual(draft, result)
+        self.assertEqual(1, len(args))
+        self.assertEqual(("api", "--method", "POST", "repos/example/app/releases"), args[0][:4])
+        self.assertIn("body=@notes.md", args[0])
+        self.assertIn("draft=true", args[0])
+        self.assertIn("prerelease=true", args[0])
+
     def test_draft_resumes_without_overwriting_uploaded_assets(self):
         actions = []
         state = {"draft": True, "prerelease": True, "body": "更新说明\n", "id": 42,

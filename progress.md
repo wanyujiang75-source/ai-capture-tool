@@ -2,7 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| DESKTOP-SEMVER-RELEASE | DOING | 1.0.0 版本判断并自动发布 | goal.md、progress.md、specs/desktop-updater.md、Swift 更新目录/视图/版本测试、build-app.sh、GitHub workflow/发布脚本及测试、macos-native/README.md、release/desktop-previews/1.0.0-version-check.md | 正确比较语义版本；当前版本无下载按钮；自动发布 1.0.0；旧 App 能读到并下载；下载包和校验一致 | main 80ce380，已安装 32895f9 的预览包内显示版本 0.1.0；现有预览标签格式受已分发客户端依赖 | 版本测试与发版输入测试先 RED，后 Swift 全量 224 项、发布测试 7 项通过。准备触发 1.0.0 真实发布 |
+| DESKTOP-SEMVER-RELEASE | DOING | 1.0.0 版本判断并自动发布 | goal.md、progress.md、specs/desktop-updater.md、Swift 更新目录/视图/版本测试、build-app.sh、GitHub workflow/发布脚本及测试、macos-native/README.md、release/desktop-previews/1.0.0-version-check.md | 正确比较语义版本；当前版本无下载按钮；自动发布 1.0.0；旧 App 能读到并下载；下载包和校验一致 | main 80ce380，已安装 32895f9 的预览包内显示版本 0.1.0；现有预览标签格式受已分发客户端依赖 | 版本测试与发版输入测试先 RED，后 Swift 全量 224 项、发布测试 7 项通过。main da2def4 行动 44232103754 构建成功，首次发布已创建正确草稿但列表暂未返回，复用同一构建重跑后预览版公开。草稿改用创建请求直接返回的记录 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -195,6 +195,15 @@ def finish_draft(run, repo, tag, notes, release, expected, directory):
     print(published.get("html_url", tag))
 
 
+def create_preview_draft(run, repo, tag, title, notes_path):
+    return json.loads(run(
+        "api", "--method", "POST", f"repos/{repo}/releases",
+        "--raw-field", f"tag_name={tag}", "--raw-field", f"name={title}",
+        "--field", f"body=@{notes_path}", "--field", "draft=true", "--field", "prerelease=true",
+        "--raw-field", "make_latest=false",
+    ))
+
+
 def repository_releases(repo):
     pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"))
     return [release for page in pages for release in page]
@@ -225,15 +234,10 @@ def publish(repo, notes_path, source, tag, asset, directory):
     if remote.split() != [source, f"refs/tags/{tag}"]:
         raise ValueError("Remote tag does not point at the build commit")
 
-    def find_release(releases):
-        return next((release for release in releases if release["tag_name"] == tag), None)
-
-    existing = find_release(releases)
+    existing = next((release for release in releases if release["tag_name"] == tag), None)
     if existing is None:
-        gh("release", "create", tag, "--repo", repo, "--verify-tag", "--draft", "--prerelease",
-           "--latest=false", "--title", release_title, "--notes-file", str(ROOT / notes_path))
-        existing = find_release(repository_releases(repo))
-    if existing is None or existing["name"] != release_title:
+        existing = create_preview_draft(gh, repo, tag, release_title, ROOT / notes_path)
+    if existing["tag_name"] != tag or existing["name"] != release_title:
         raise ValueError("GitHub did not return a preview release with the expected version")
     finish_draft(gh, repo, tag, notes, existing, expected, directory)
 
