@@ -2,7 +2,7 @@
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| DESKTOP-SEMVER-RELEASE | DOING | 1.0.0 版本判断并自动发布 | goal.md、progress.md、specs/desktop-updater.md、Swift 更新目录/视图/版本测试、build-app.sh、GitHub workflow/发布脚本及测试、macos-native/README.md、release/desktop-previews/1.0.0-version-check.md | 正确比较语义版本；当前版本无下载按钮；自动发布 1.0.0；旧 App 能读到并下载；下载包和校验一致 | main 80ce380，已安装 32895f9 的预览包内显示版本 0.1.0；现有预览标签格式受已分发客户端依赖 | 版本测试与发版输入测试先 RED，后 Swift 全量 224 项、发布测试 7 项通过。main da2def4 行动 44232103754 构建成功，首次发布已创建正确草稿但列表暂未返回，复用同一构建重跑后预览版公开。草稿改用创建请求直接返回的记录 |
+| DESKTOP-SEMVER-RELEASE | DONE | 1.0.0 版本判断并自动发布 | goal.md、progress.md、specs/desktop-updater.md、Swift 更新目录/视图/版本测试、build-app.sh、GitHub workflow/发布脚本及测试、macos-native/README.md、release/desktop-previews/1.0.0-version-check.md | 正确比较语义版本；当前版本无下载按钮；自动发布 1.0.0；旧 App 能读到并下载；下载包和校验一致 | Swift 全量 224 项、发布测试 8 项通过。main da2def4 的 GitHub Actions 44232103754 重跑发布步骤后公开预览版。原已安装 0.1.0 能看到 1.0.0 说明，点击下载得到 194898888 字节 ZIP，SHA-256 校验、应用签名、arm64 架构、内嵌 1.0.0 和构建号均已核对。隔离运行同源 1.0.0 并读真实 GitHub Release，原生界面显示「已是最新版」且无下载按钮 | 首次草稿出现在列表有延迟，main 573f395 改用创建接口返回的草稿，后续 Actions 44233016787 构建及测试通过，当前推送无新说明，发布步骤跳过 |
 
 | ID | Status | Task | Scope Files | Acceptance | Evidence Or Reason | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
