@@ -2,11 +2,12 @@ import SwiftUI
 
 struct DesktopUpdateView: View {
     private enum UpdateState {
-        case loading, available(DesktopRelease), unavailable, failed
+        case loading, available(DesktopRelease), current, unknownVersion, unavailable, failed
     }
 
     let supportsInstallation: Bool
     let install: () -> Void
+    private let installedVersion = InstalledDesktopVersion.read()
 
     @Environment(\.dismiss) private var dismiss
     @State private var state: UpdateState = .loading
@@ -14,9 +15,16 @@ struct DesktopUpdateView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("软件更新")
-                .font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("软件更新")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+                if let version = installedVersion.version {
+                    Text("当前版本 \(version.description)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             statusContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -39,10 +47,10 @@ struct DesktopUpdateView: View {
                         Link("下载 ZIP", destination: release.downloadURL)
                             .buttonStyle(.borderedProminent)
                     }
-                }
-                if supportsInstallation {
-                    Button("应用内安装…", action: install)
-                        .buttonStyle(.borderedProminent)
+                    if supportsInstallation {
+                        Button("应用内安装…", action: install)
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             }
         }
@@ -53,7 +61,15 @@ struct DesktopUpdateView: View {
             do {
                 let release = try await DesktopReleaseCatalog().latest(includePreview: !supportsInstallation)
                 guard !Task.isCancelled else { return }
-                state = release.map(UpdateState.available) ?? .unavailable
+                guard let release else {
+                    state = .unavailable
+                    return
+                }
+                switch installedVersion.availability(for: release) {
+                case .newer: state = .available(release)
+                case .current: state = .current
+                case .unknown: state = .unknownVersion
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 state = .failed
@@ -65,6 +81,12 @@ struct DesktopUpdateView: View {
         switch state {
         case .loading:
             ProgressView("正在获取版本…")
+        case .current:
+            Label("已是最新版", systemImage: "checkmark.circle")
+                .font(.headline)
+        case .unknownVersion:
+            Text("暂时无法比较版本，请查看 GitHub 发布页。")
+                .foregroundStyle(.secondary)
         case .unavailable:
             Text("当前没有可下载的 macOS Apple Silicon 安装包。")
                 .foregroundStyle(.secondary)

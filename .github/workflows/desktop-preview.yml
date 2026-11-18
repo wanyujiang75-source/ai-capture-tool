@@ -59,6 +59,7 @@ jobs:
 
       - name: Build and verify the Apple Silicon ZIP
         env:
+          AI_CAPTURE_APP_VERSION: ${{ steps.plan.outputs.app_version }}
           TRACEDECK_VERSION: ${{ steps.plan.outputs.version }}
           TRACEDECK_RELEASE_KIND: development
           MACOS_SIGN_IDENTITY: "-"
@@ -68,7 +69,7 @@ jobs:
           export ANDROID_BRIDGE_APK_PATH="$RUNNER_TEMP/android-bridge.apk"
           export AI_CAPTURE_BUILD_ID="${GITHUB_SHA:0:12}"
           ./release/package.sh
-          python3 release/desktop-preview-ci.py verify release "$ASSET_NAME" "$GITHUB_SHA" "$ANDROID_BRIDGE_APK_PATH"
+          python3 release/desktop-preview-ci.py verify release "$ASSET_NAME" "$GITHUB_SHA" "$AI_CAPTURE_APP_VERSION" "$ANDROID_BRIDGE_APK_PATH"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

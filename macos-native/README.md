@@ -41,9 +41,9 @@ TRACEDECK_RELEASE_KIND=development ./release/package.sh
 
 ## 通过 GitHub Actions 发布预览版
 
-准备好新版本代码后，在同一次推送中新增一份 `release/desktop-previews/YYYYMMDD-name.md`，写上要显示给同事的更新说明，再推送到 `main`。例如 `release/desktop-previews/20261118-update-notes.md`。每次发版使用新的文件名。
+准备好新版本代码后，在同一次推送中新增一份 `release/desktop-previews/X.Y.Z-name.md`，写上要显示给同事的更新说明，再推送到 `main`。例如 `release/desktop-previews/1.0.1-update-notes.md`。每次发布使用新的、更高的三段版本号。小更新可从 1.0.0 升到 1.0.1，功能更新可升到 1.2.0。名称部分使用小写英文字母、数字或短横线。
 
-「Desktop preview」工作流使用推送结束时的提交，在 GitHub 的 macOS arm64 runner 上构建并验证安装包。发布步骤创建预览 Release，上传桌面 ZIP 和 SHA-256，再公开两项文件。已装带「更新」按钮的同事可以从该入口读到说明并下载。
+「Desktop preview」工作流使用推送结束时的提交，在 GitHub 的 macOS arm64 runner 上构建并验证安装包。发布步骤创建预览 Release，上传桌面 ZIP 和 SHA-256，再公开两项文件。已装带「更新」按钮的同事可以从该入口读到新版说明并下载。同版本或更高版本显示「已是最新版」。
 
 同一个推送新增一份说明即可。修改历史说明时，直接在已发布 Release 上更正。需要恢复中断的发布任务时，在 Actions 选择重新运行失败的任务，以继续使用原构建产物。
 

@@ -16,7 +16,11 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTES_DIR = "release/desktop-previews"
-NOTES_PATTERN = re.compile(rf"{NOTES_DIR}/([0-9]{{8}})-[a-z0-9][a-z0-9-]*\.md")
+COMPONENT = r"(?:0|[1-9][0-9]*)"
+VERSION_PATTERN = rf"{COMPONENT}\.{COMPONENT}\.{COMPONENT}"
+NOTES_PATTERN = re.compile(rf"{NOTES_DIR}/({VERSION_PATTERN})-[a-z0-9][a-z0-9-]*\.md")
+RELEASE_TITLE_PREFIX = "抓包工具桌面预览版 v"
+DEFAULT_APP_VERSION = "1.0.0"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 BRIDGE_SOURCE_TREE = "a22f9e3a292e1e0155141f0b27634a7eeee0f98a"
@@ -42,24 +46,41 @@ def release_plan(repo, before, source):
         raise ValueError("Add only one new release notes file per push")
 
     notes = notes_paths[0] if notes_paths else ""
+    app_version = DEFAULT_APP_VERSION
     if notes:
         match = NOTES_PATTERN.fullmatch(notes)
         if not match:
-            raise ValueError(f"Use {NOTES_DIR}/YYYYMMDD-name.md for release notes")
-        date = match[1]
-        datetime.strptime(date, "%Y%m%d")
+            raise ValueError(f"Use {NOTES_DIR}/X.Y.Z-name.md for release notes")
+        app_version = match[1]
         read_notes(repo / notes)
-    else:
-        timestamp = int(git(repo, "show", "-s", "--format=%ct", source))
-        date = datetime.fromtimestamp(timestamp, ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
-    version = f"{date}-{source[:7]}"
+    version = artifact_version(repo, source)
     return {
         "notes": notes,
         "source": source,
+        "app_version": app_version,
         "version": version,
         "tag": f"desktop-preview-{version}",
         "asset": f"AI-Capture-Desktop-{version}-development-arm64.zip",
     }
+
+
+def artifact_version(repo, source):
+    timestamp = int(git(repo, "show", "-s", "--format=%ct", source))
+    date = datetime.fromtimestamp(timestamp, ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d")
+    return f"{date}-{source[:7]}"
+
+
+def check_preview_version(releases, tag, version):
+    candidate = tuple(map(int, version.split(".")))
+    for release in releases:
+        if release["draft"] or not release["prerelease"] or release["tag_name"] == tag:
+            continue
+        name = release.get("name") or ""
+        if not name.startswith(RELEASE_TITLE_PREFIX):
+            continue
+        published = name.removeprefix(RELEASE_TITLE_PREFIX)
+        if re.fullmatch(VERSION_PATTERN, published) and candidate <= tuple(map(int, published.split("."))):
+            raise ValueError(f"Choose a preview version higher than {published}")
 
 
 def read_notes(path):
@@ -102,7 +123,7 @@ def asset_details(directory, name):
     }
 
 
-def verify_package(directory, name, source, bridge):
+def verify_package(directory, name, source, app_version, bridge):
     asset_details(directory, name)
     archive = directory / name
     with tempfile.TemporaryDirectory() as temporary:
@@ -123,8 +144,11 @@ def verify_package(directory, name, source, bridge):
         if (resources / "backend-build-id.txt").read_text().strip() != source[:12]:
             raise ValueError("App build ID does not match the source commit")
         with (contents / "Info.plist").open("rb") as stream:
-            if plistlib.load(stream)["LSMinimumSystemVersion"] != "14.0":
-                raise ValueError("Unexpected minimum macOS version")
+            info = plistlib.load(stream)
+        if info["LSMinimumSystemVersion"] != "14.0":
+            raise ValueError("Unexpected minimum macOS version")
+        if info["CFBundleShortVersionString"] != app_version:
+            raise ValueError("Packaged app version does not match the release notes")
         if sha256(resources / "android-bridge.apk") != sha256(bridge):
             raise ValueError("Packaged Android helper differs from the signed baseline")
         for runtime in ("runtime", "physical-runtime"):
@@ -171,6 +195,11 @@ def finish_draft(run, repo, tag, notes, release, expected, directory):
     print(published.get("html_url", tag))
 
 
+def repository_releases(repo):
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"))
+    return [release for page in pages for release in page]
+
+
 def publish(repo, notes_path, source, tag, asset, directory):
     if os.environ.get("GITHUB_REF") != "refs/heads/main":
         raise ValueError("Desktop previews can only be published from main")
@@ -179,12 +208,16 @@ def publish(repo, notes_path, source, tag, asset, directory):
     match = NOTES_PATTERN.fullmatch(notes_path)
     if not match:
         raise ValueError("Invalid release note path")
-    version = f"{match[1]}-{source[:7]}"
+    app_version = match[1]
+    version = artifact_version(ROOT, source)
+    release_title = RELEASE_TITLE_PREFIX + app_version
     if tag != f"desktop-preview-{version}" or asset != f"AI-Capture-Desktop-{version}-development-arm64.zip":
         raise ValueError("Release tag or asset does not match the source commit")
 
     expected = asset_details(directory, asset)
     notes = read_notes(ROOT / notes_path)
+    releases = repository_releases(repo)
+    check_preview_version(releases, tag, app_version)
     remote = git(ROOT, "ls-remote", "--tags", "origin", f"refs/tags/{tag}")
     if not remote:
         gh("api", "--method", "POST", f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={source}")
@@ -192,17 +225,16 @@ def publish(repo, notes_path, source, tag, asset, directory):
     if remote.split() != [source, f"refs/tags/{tag}"]:
         raise ValueError("Remote tag does not point at the build commit")
 
-    def find_release():
-        pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/releases?per_page=100"))
-        return next((release for page in pages for release in page if release["tag_name"] == tag), None)
+    def find_release(releases):
+        return next((release for release in releases if release["tag_name"] == tag), None)
 
-    existing = find_release()
+    existing = find_release(releases)
     if existing is None:
         gh("release", "create", tag, "--repo", repo, "--verify-tag", "--draft", "--prerelease",
-           "--latest=false", "--title", f"抓包工具桌面预览版 · {match[1]}", "--notes-file", str(ROOT / notes_path))
-        existing = find_release()
-    if existing is None:
-        raise ValueError("GitHub did not return the release draft")
+           "--latest=false", "--title", release_title, "--notes-file", str(ROOT / notes_path))
+        existing = find_release(repository_releases(repo))
+    if existing is None or existing["name"] != release_title:
+        raise ValueError("GitHub did not return a preview release with the expected version")
     finish_draft(gh, repo, tag, notes, existing, expected, directory)
 
 
@@ -218,6 +250,7 @@ def main():
     verify.add_argument("directory", type=Path)
     verify.add_argument("asset")
     verify.add_argument("source")
+    verify.add_argument("app_version")
     verify.add_argument("bridge", type=Path)
     release = subcommands.add_parser("publish")
     release.add_argument("repository")
@@ -233,7 +266,7 @@ def main():
         elif args.command == "bridge":
             prepare_bridge(args.destination)
         elif args.command == "verify":
-            verify_package(args.directory, args.asset, args.source, args.bridge)
+            verify_package(args.directory, args.asset, args.source, args.app_version, args.bridge)
         else:
             publish(args.repository, args.notes, args.source, args.tag, args.asset, args.directory)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
